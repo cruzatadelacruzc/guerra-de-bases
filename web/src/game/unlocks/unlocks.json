@@ -1,0 +1,34 @@
+[
+  {
+    "id": "helicopter_temp",
+    "title": "Helicóptero de apoyo (temporal)",
+    "type": "temporary",
+    "durationSeconds": 25,
+    "trigger": {
+      "event": "kill_streak",
+      "condition": { "killStreak": 5 }
+    },
+    "meta": { "description": "Una racha de 5 bajas te permite solicitar un ataque de helicóptero. Actívalo antes de 25 segundos." }
+  },
+  {
+    "id": "veteran_armor",
+    "title": "Blindaje de veterano",
+    "type": "permanent",
+    "trigger": {
+      "event": "achievement",
+      "condition": { "achievement": "destroy_20_units" }
+    },
+    "meta": { "description": "Destruye 20 unidades enemigas. Los tanques que entrenes tendrán +20% de vida y daño." }
+  },
+  {
+    "id": "airstrike_temp",
+    "title": "Ataque aéreo (temporal)",
+    "type": "temporary",
+    "durationSeconds": 15,
+    "trigger": {
+      "event": "kill_streak",
+      "condition": { "killStreak": 10 }
+    },
+    "meta": { "description": "Una racha de 10 bajas te permite lanzar un bombardeo. Actívalo antes de 15 segundos." }
+  }
+]
