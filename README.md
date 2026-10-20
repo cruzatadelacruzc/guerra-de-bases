@@ -24,7 +24,11 @@ La partida arranca con dos Nexos opuestos y sin soldados gratuitos. El Nexo es e
 
 - `web/src/game/ecs/` contiene el mundo ECS tipado, componentes de bases, fábricas, unidades y estructuras, la autorización de solicitudes de producción, targeting, movimiento, daño y simulación con paso fijo. Los módulos de gameplay no importan Three.js.
 - `web/src/rendering/` contiene adaptadores Three.js: los fusileros compatibles comparten geometría/materiales mediante `InstancedMesh`; proyectiles y efectos visuales reutilizan recursos con límites de actividad y ciclos de vida finitos.
-- `web/index.html` inicializa y coordina la aplicación, la escena, la cámara, la interfaz y la sincronización entre ECS y rendering. La cámara, la escena y los recursos de rendering no pertenecen al ECS.
+- `web/index.html` es el shell del documento; `web/src/main.ts` crea las dependencias de UI y desbloqueos y arranca la aplicación.
+- `web/src/GameApplication.ts` es la composición de una partida: conecta los comandos de UI, el estado del match, el ECS y el adaptador de rendering. La UI no accede al almacenamiento interno del ECS.
+- `web/src/game/GameSession.ts`, `GameFrameLoop.ts` y `GameInputController.ts` separan transiciones de partida, scheduling con delta acotado y ciclo de vida idempotente de listeners.
+- `web/src/rendering/ThreeRenderCoordinator.ts` posee la escena, cámara, renderer, controles y recursos visuales de Three.js; sincroniza soldados instanciados y delega efectos y proyectiles a los módulos existentes.
+- La composición de partida sigue coordinando la lógica de combate/IA con la presentación específica de la batalla. Ese código de aplicación puede extraerse en incrementos posteriores; los sistemas y componentes ECS continúan sin importar Three.js.
 
 Se conserva el ECS propio en lugar de migrar a bitECS. Para el alcance actual (decenas de unidades), el ECS compacto con componentes tipados y consultas reutilizables cubre las necesidades sin añadir una dependencia ni resolver un problema que no era el cuello de botella observado. El coste dominante era la representación: cada fusilero y sus barras generaban objetos y draw calls independientes. La instanciación ataca esa causa directamente; cambiar de ECS por sí solo no habría optimizado el rendering.
 

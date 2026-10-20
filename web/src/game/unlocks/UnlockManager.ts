@@ -1,31 +1,104 @@
+export interface UnlockCondition {
+  killStreak?: number;
+  achievement?: string;
+  custom?: string;
+}
+
+export interface UnlockDefinition {
+  id: string;
+  title?: string;
+  type: 'permanent' | 'temporary';
+  durationSeconds?: number;
+  trigger?: {
+    event: string;
+    condition?: UnlockCondition;
+  };
+  meta?: { description?: string };
+}
+
+interface UnlockDefinitionInput extends Omit<UnlockDefinition, 'type'> {
+  type: string;
+}
+
+interface ActiveTemporaryUnlock {
+  id: string;
+  expiresAt: number;
+}
+
+interface UnlockEventPayload {
+  id: string;
+  definition?: UnlockDefinition;
+  permanent?: boolean;
+  expiresAt?: number;
+}
+
+type EventListener = (payload: UnlockEventPayload) => void;
+
+function isUnlockDefinition(definition: UnlockDefinitionInput): definition is UnlockDefinition {
+  return definition.type === 'permanent' || definition.type === 'temporary';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isTemporaryUnlock(value: unknown): value is ActiveTemporaryUnlock {
+  return isRecord(value)
+    && typeof value.id === 'string'
+    && typeof value.expiresAt === 'number';
+}
+
+function isCustomCondition(value: unknown): value is (payload: Record<string, unknown>) => unknown {
+  return typeof value === 'function';
+}
+
 export default class UnlockManager {
-  constructor({ definitions, storage = 'localStorage' }) {
+  readonly storageMethod: string;
+  readonly definitions: readonly UnlockDefinition[];
+  readonly unlocked = new Set<string>();
+  readonly activeTemporary = new Map<string, ActiveTemporaryUnlock>();
+  readonly listeners = new Map<string, Set<EventListener>>();
+
+  constructor({
+    definitions,
+    storage = 'localStorage',
+  }: {
+    definitions: readonly UnlockDefinitionInput[];
+    storage?: string;
+  }) {
+    if (!definitions.every(isUnlockDefinition)) {
+      throw new TypeError('Unlock definitions must use a supported type.');
+    }
     this.storageMethod = storage;
     this.definitions = definitions;
-    this.unlocked = new Set();
-    this.activeTemporary = new Map();
-    this.listeners = new Map();
     this._loadState();
   }
 
-  _storageKey() {
+  _storageKey(): string {
     return 'gdb_unlocks_v1';
   }
 
-  _loadState() {
+  _loadState(): void {
     if (this.storageMethod !== 'localStorage' || typeof localStorage === 'undefined') return;
 
     try {
       const raw = localStorage.getItem(this._storageKey());
       if (!raw) return;
 
-      const parsed = JSON.parse(raw);
-      for (const id of parsed.unlocked || []) {
-        if (this.definitions.some((definition) => definition.id === id && definition.type === 'permanent')) {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isRecord(parsed)) return;
+
+      const unlockedIds = Array.isArray(parsed.unlocked) ? parsed.unlocked : [];
+      for (const id of unlockedIds) {
+        if (typeof id === 'string'
+          && this.definitions.some((definition) => definition.id === id && definition.type === 'permanent')) {
           this.unlocked.add(id);
         }
       }
-      for (const reward of parsed.activeTemporary || []) {
+      const activeRewards = Array.isArray(parsed.activeTemporary) ? parsed.activeTemporary : [];
+      for (const entry of activeRewards) {
+        if (!isTemporaryUnlock(entry)) continue;
+        const reward = entry;
         if (reward.expiresAt > Date.now()
           && this.definitions.some((definition) => definition.id === reward.id && definition.type === 'temporary')) {
           this.activeTemporary.set(reward.id, reward);
@@ -37,7 +110,7 @@ export default class UnlockManager {
     }
   }
 
-  _saveState() {
+  _saveState(): void {
     if (this.storageMethod !== 'localStorage' || typeof localStorage === 'undefined') return;
 
     try {
@@ -50,14 +123,14 @@ export default class UnlockManager {
     }
   }
 
-  on(eventName, listener) {
-    const listeners = this.listeners.get(eventName) || new Set();
+  on(eventName: string, listener: EventListener): () => void {
+    const listeners = this.listeners.get(eventName) || new Set<EventListener>();
     listeners.add(listener);
     this.listeners.set(eventName, listeners);
     return () => listeners.delete(listener);
   }
 
-  _emit(eventName, payload) {
+  _emit(eventName: string, payload: UnlockEventPayload): void {
     for (const listener of this.listeners.get(eventName) || []) {
       try {
         listener(payload);
@@ -67,7 +140,7 @@ export default class UnlockManager {
     }
   }
 
-  recordEvent(eventName, payload = {}) {
+  recordEvent(eventName: string, payload: Record<string, unknown> = {}): void {
     for (const definition of this.definitions) {
       if (definition.trigger?.event !== eventName) continue;
       if (definition.type === 'permanent' && this.unlocked.has(definition.id)) continue;
@@ -77,13 +150,16 @@ export default class UnlockManager {
     }
   }
 
-  _matchesCondition(condition = {}, payload) {
+  _matchesCondition(
+    condition: UnlockCondition = {},
+    payload: Record<string, unknown>
+  ): boolean {
     if (condition.killStreak !== undefined && payload.killStreak !== condition.killStreak) return false;
     if (condition.achievement !== undefined && payload.achievement !== condition.achievement) return false;
 
     if (condition.custom) {
-      const predicate = globalThis[condition.custom];
-      if (typeof predicate !== 'function') {
+      const predicate: unknown = Reflect.get(globalThis, condition.custom);
+      if (!isCustomCondition(predicate)) {
         console.error(`No existe la condición de desbloqueo "${condition.custom}".`);
         return false;
       }
@@ -92,7 +168,7 @@ export default class UnlockManager {
     return true;
   }
 
-  grant(id) {
+  grant(id: string): boolean {
     const definition = this.definitions.find((item) => item.id === id);
     if (!definition) {
       console.error(`No existe la recompensa "${id}".`);
@@ -107,7 +183,7 @@ export default class UnlockManager {
       return true;
     }
 
-    if (definition.type !== 'temporary' || this.activeTemporary.has(id)) return false;
+    if (this.activeTemporary.has(id)) return false;
     const expiresAt = Date.now() + (definition.durationSeconds || 30) * 1000;
     this.activeTemporary.set(id, { id, expiresAt });
     this._saveState();
@@ -116,7 +192,7 @@ export default class UnlockManager {
     return true;
   }
 
-  _scheduleExpiration(id, expiresAt) {
+  _scheduleExpiration(id: string, expiresAt: number): void {
     const timeout = setTimeout(() => {
       const reward = this.activeTemporary.get(id);
       if (!reward || reward.expiresAt !== expiresAt || expiresAt > Date.now()) return;
@@ -127,11 +203,11 @@ export default class UnlockManager {
     timeout.unref?.();
   }
 
-  isUnlocked(id) {
+  isUnlocked(id: string): boolean {
     return this.unlocked.has(id) || this.hasTemporary(id);
   }
 
-  hasTemporary(id) {
+  hasTemporary(id: string): boolean {
     const reward = this.activeTemporary.get(id);
     if (!reward) return false;
     if (reward.expiresAt > Date.now()) return true;
@@ -142,7 +218,7 @@ export default class UnlockManager {
     return false;
   }
 
-  consumeTemporary(id) {
+  consumeTemporary(id: string): boolean {
     if (!this.hasTemporary(id)) return false;
     this.activeTemporary.delete(id);
     this._saveState();
@@ -150,13 +226,13 @@ export default class UnlockManager {
     return true;
   }
 
-  resetProgress() {
+  resetProgress(): void {
     this.unlocked.clear();
     this.activeTemporary.clear();
     this._saveState();
   }
 
-  getAvailable() {
+  getAvailable(): Array<UnlockDefinition & { unlocked: boolean; ready: boolean }> {
     for (const id of this.activeTemporary.keys()) this.hasTemporary(id);
     return this.definitions.map((definition) => ({
       ...definition,

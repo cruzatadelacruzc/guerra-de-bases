@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import UnlockManager from './UnlockManager.js';
+import UnlockManager from './UnlockManager.ts';
 
 test('resetProgress clears permanent and temporary unlocks from memory and storage', () => {
   const storage = new Map<string, string>();

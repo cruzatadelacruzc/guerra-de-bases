@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["web/src/game/ecs/**/*.ts", "web/src/rendering/**/*.ts"]
+  "include": ["web/src/**/*.ts"]
 }

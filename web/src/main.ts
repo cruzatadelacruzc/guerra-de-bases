@@ -11,10 +11,11 @@ import '@fontsource/rajdhani/600.css';
 import '@fontsource/rajdhani/700.css';
 import './style.css';
 
-import UnlockManager from './game/unlocks/UnlockManager.js';
+import UnlockManager from './game/unlocks/UnlockManager.ts';
+import { createGameRuntime } from './GameApplication.ts';
+import { GameUI } from './ui/GameUI.ts';
 
 const unlocks = new UnlockManager({ definitions: unlockDefinitions, storage: 'localStorage' });
-window.Unlocks = unlocks;
 
 if (Capacitor.isNativePlatform()) {
   App.addListener('backButton', () => {
@@ -26,3 +27,12 @@ if (Capacitor.isNativePlatform()) {
     if (!isActive) window.dispatchEvent(new Event('native-app-inactive'));
   });
 }
+
+const appRoot = document.getElementById('app');
+if (!(appRoot instanceof HTMLElement)) {
+  throw new Error('Application root #app is missing');
+}
+
+const gameUi = new GameUI(appRoot);
+gameUi.mount();
+createGameRuntime(gameUi, unlocks);

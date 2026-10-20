@@ -480,3 +480,19 @@ A task is complete when:
 - The final implementation summary accurately describes the changes and verification performed.
 
 The overall priority is to keep the game fun, simple, maintainable, and performant on mobile devices while preserving the option to replace Three.js with Babylon.js in the future.
+
+## 15. TypeScript-Only Application Source
+
+- All application source code under `web/src/` must use TypeScript.
+- New application modules must use `.ts` files rather than `.js` files.
+- Existing JavaScript application modules must be migrated to TypeScript
+  incrementally, prioritizing core gameplay, simulation, rendering,
+  application initialization, and UI integration.
+- Do not leave JavaScript application modules indefinitely merely because
+  they are legacy files.
+- Preserve strict type checking and do not use `any` as a migration shortcut.
+- Migrate tests to TypeScript when supported by the existing test setup.
+- Do not convert HTML, CSS, JSON, or configuration files solely to satisfy
+  this rule.
+- Preserve application behavior and verify each migration with the existing
+  tests, type checking, and production build.
