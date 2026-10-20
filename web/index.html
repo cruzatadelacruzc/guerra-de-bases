@@ -1015,6 +1015,7 @@
 
             aiDifficulty = document.getElementById('select-difficulty').value;
             gameMode = document.getElementById('select-mode').value;
+            cancelPlacement();
 
             // Reset Nuclear Explosion Sequence Flags
             hqExplodingSequence = false;
@@ -1134,6 +1135,7 @@
         }
 
         function resetGame() {
+            window.Unlocks?.resetProgress();
             startNewGame();
         }
 

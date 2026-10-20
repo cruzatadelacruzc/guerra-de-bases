@@ -16,6 +16,8 @@ Unlocks.grant('airstrike_temp');
 Unlocks.grant('veteran_armor');
 ```
 
+La opción **Reiniciar batalla** inicia una partida limpia y también borra los desbloqueos permanentes y las recompensas temporales guardados en este dispositivo. Volver al menú e iniciar otra partida no borra ese progreso.
+
 Las recompensas temporales deben activarse desde el panel **Premios** antes de que expire su ventana. Para borrar el progreso local durante las pruebas:
 
 ```js

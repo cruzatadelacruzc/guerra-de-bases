@@ -150,6 +150,12 @@ export default class UnlockManager {
     return true;
   }
 
+  resetProgress() {
+    this.unlocked.clear();
+    this.activeTemporary.clear();
+    this._saveState();
+  }
+
   getAvailable() {
     for (const id of this.activeTemporary.keys()) this.hasTemporary(id);
     return this.definitions.map((definition) => ({
