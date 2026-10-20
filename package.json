@@ -7,6 +7,8 @@
     "dev": "vite --config vite.config.js",
     "build": "vite build --config vite.config.js",
     "preview": "vite preview --config vite.config.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"web/src/**/*.test.ts\"",
     "android:add": "cap add android",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
@@ -22,9 +24,12 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.9",
+    "@types/three": "^0.128.0",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
     "vite": "^6.4.4"
   }
 }

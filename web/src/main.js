@@ -1,5 +1,3 @@
-import * as threeNamespace from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import unlockDefinitions from './game/unlocks/unlocks.json';
@@ -15,7 +13,6 @@ import './style.css';
 
 import UnlockManager from './game/unlocks/UnlockManager.js';
 
-window.THREE = { ...threeNamespace, OrbitControls };
 const unlocks = new UnlockManager({ definitions: unlockDefinitions, storage: 'localStorage' });
 window.Unlocks = unlocks;
 

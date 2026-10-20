@@ -313,10 +313,24 @@
     </div>
 
     <script type="module">
-        import * as threeNamespace from 'three';
+        import * as THREE from 'three';
         import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-
-        const THREE = { ...threeNamespace, OrbitControls };
+        import {
+            COMPONENTS as ECS_COMPONENTS,
+            FACTIONS as ECS_FACTIONS
+        } from '/src/game/ecs/components.ts';
+        import { BattleSimulation } from '/src/game/ecs/BattleSimulation.ts';
+        import {
+            createSoldier as createECSSoldier,
+            createSoldierFactory,
+            createStructure
+        } from '/src/game/ecs/initialBattle.ts';
+        import { applyDamageSystem } from '/src/game/ecs/systems.ts';
+        import { requestSoldierProduction } from '/src/game/ecs/systems.ts';
+        import { InstancedSoldierRenderer } from '/src/rendering/InstancedSoldierRenderer.ts';
+        import { CombatEffects } from '/src/rendering/CombatEffects.ts';
+        import { ProjectilePool } from '/src/rendering/ProjectilePool.ts';
+        import { advanceProjectile } from '/src/rendering/ProjectilePool.ts';
 
         const GAME_STATES = { MENU: 'MENU', PLAYING: 'PLAYING', PAUSED: 'PAUSED', GAMEOVER: 'GAMEOVER' };
         let currentState = GAME_STATES.MENU;
@@ -334,6 +348,7 @@
 
                 const SFX = {
             ctx: null,
+            noiseBuffers: new Map(),
             init: function() {
                 if (!this.ctx) {
                     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -388,11 +403,15 @@
             playCinematicExplosion: function(isNuclear = false) {
                 if (!this.ctx) return;
                 const dur = isNuclear ? 3.8 : 0.8;
-                const bufferSize = this.ctx.sampleRate * dur;
-                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-                const data = buffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    data[i] = Math.random() * 2 - 1;
+                let buffer = this.noiseBuffers.get(dur);
+                if (!buffer) {
+                    const bufferSize = this.ctx.sampleRate * dur;
+                    buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < bufferSize; i++) {
+                        data[i] = Math.random() * 2 - 1;
+                    }
+                    this.noiseBuffers.set(dur, buffer);
                 }
                 const noise = this.ctx.createBufferSource();
                 noise.buffer = buffer;
@@ -414,9 +433,15 @@
         };
 
         let scene, camera, renderer, controls, directionalLight;
+        let soldierRenderer = null;
+        let combatEffects = null;
+        let projectilePool = null;
         const clock = new THREE.Clock();
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
+        const projectileOrigin = new THREE.Vector3();
+        const turretProjectileOrigin = new THREE.Vector3();
+        const turretTargetSearch = { target: null, distanceSquared: 484 };
 
         // Active Game Collections
         let playerBuildings = [];
@@ -424,17 +449,22 @@
         let playerUnits = [];
         let enemyUnits = [];
         let projectiles = [];
-        let particles = [];
-        let shockwaves = [];
         let menuUnits = [];
-        let mushroomParticles = [];
-        let burningWrecks = []; // Wrecks, Ruins, Corpses & Fire Smoke emitters
         let ruinsAndCorpses = []; // Tracked 3D objects for complete cleanup on restart
+        const MAX_BATTLEFIELD_REMAINS = 64;
+        const diagnosticsEnabled = import.meta.env.DEV
+            && new URLSearchParams(window.location.search).get('diagnostics') === '1';
+        const diagnosticsSamples = [];
+        let diagnosticsPreviousFrame = 0;
+        let diagnosticsSimulationMs = 0;
+        let diagnosticsEffectsMs = 0;
 
         // Economy & AI Targets
         let gold = 200;
         let enemyGold = 200;
         let playerHQ, enemyHQ;
+        let battleSimulation = null;
+        const targetObjects = new Map();
         let selectedBuildType = null;
         let placementGhost = null;
         let isDemolishMode = false;
@@ -455,7 +485,6 @@
         };
 
         let enemyAITimer = 0;
-
         function showToast(msg) {
             const toast = document.getElementById('game-toast');
             if (!toast) return;
@@ -511,6 +540,9 @@
             const container = document.getElementById('canvas-container');
 
             scene = new THREE.Scene();
+            soldierRenderer = new InstancedSoldierRenderer(scene);
+            combatEffects = new CombatEffects(scene);
+            projectilePool = new ProjectilePool(scene);
             scene.background = new THREE.Color(0x050811);
             scene.fog = new THREE.FogExp2(0x050811, 0.011);
 
@@ -525,7 +557,7 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             container.appendChild(renderer.domElement);
 
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.maxPolarAngle = Math.PI / 2.1;
@@ -791,29 +823,36 @@
         }
 
         function spawnFireAndSmokeEmitter(position, scale = 1.0) {
-            const fireLight = new THREE.PointLight(0xff5500, 4.5 * scale, 18 * scale);
-            fireLight.position.copy(position).add(new THREE.Vector3(0, 1.2, 0));
-            scene.add(fireLight);
+            combatEffects.addBurningEmitter(position, scale);
+        }
 
-            // Fire Flames
-            const flameMeshes = [];
-            for (let i = 0; i < 4; i++) {
-                const fGeo = new THREE.ConeGeometry(0.35 * scale, 1.1 * scale, 6);
-                const fMat = new THREE.MeshBasicMaterial({ color: Math.random() > 0.5 ? 0xff4500 : 0xffaa00, transparent: true, opacity: 0.9 });
-                const fMesh = new THREE.Mesh(fGeo, fMat);
-                fMesh.position.copy(position).add(new THREE.Vector3((Math.random() - 0.5) * 0.8 * scale, 0.5 * scale, (Math.random() - 0.5) * 0.8 * scale));
-                scene.add(fMesh);
-                flameMeshes.push(fMesh);
-            }
-
-            burningWrecks.push({
-                position: position.clone(),
-                fireLight: fireLight,
-                flames: flameMeshes,
-                scale: scale,
-                timer: 0,
-                nextSmoke: 0
+        function disposeObjectResources(root) {
+            root.traverse((object) => {
+                if (!(object instanceof THREE.Mesh)) return;
+                object.geometry.dispose();
+                const materials = Array.isArray(object.material) ? object.material : [object.material];
+                for (const material of materials) material.dispose();
             });
+        }
+
+        function trackBattlefieldRemains(group) {
+            if (ruinsAndCorpses.length >= MAX_BATTLEFIELD_REMAINS) {
+                const oldest = ruinsAndCorpses.shift();
+                if (oldest) {
+                    scene.remove(oldest);
+                    disposeObjectResources(oldest);
+                }
+            }
+            scene.add(group);
+            ruinsAndCorpses.push(group);
+        }
+
+        function clearBattlefieldRemains() {
+            for (const remains of ruinsAndCorpses) {
+                scene.remove(remains);
+                disposeObjectResources(remains);
+            }
+            ruinsAndCorpses = [];
         }
 
         function createBuildingRuin(position, type) {
@@ -920,8 +959,7 @@
             }
 
             group.position.copy(position);
-            scene.add(group);
-            ruinsAndCorpses.push(group);
+            trackBattlefieldRemains(group);
         }
 
         function createTankWreck(position, colorHex) {
@@ -943,8 +981,7 @@
             group.position.copy(position);
             group.rotation.y = Math.random() * Math.PI * 2;
             group.rotation.z = 0.12;
-            scene.add(group);
-            ruinsAndCorpses.push(group);
+            trackBattlefieldRemains(group);
 
             spawnFireAndSmokeEmitter(position, 0.8);
         }
@@ -968,8 +1005,7 @@
 
             group.position.copy(position);
             group.rotation.y = Math.random() * Math.PI * 2;
-            scene.add(group);
-            ruinsAndCorpses.push(group);
+            trackBattlefieldRemains(group);
 
             spawnFireAndSmokeEmitter(position, 0.4);
         }
@@ -990,29 +1026,23 @@
             menuUnits = [];
 
             // Clear Scene Objects & Previous Battlefield Ruins / Corpses / Fire
-            ruinsAndCorpses.forEach(rc => scene.remove(rc));
-            ruinsAndCorpses = [];
+            clearBattlefieldRemains();
 
             [...playerBuildings, ...enemyBuildings].forEach(b => scene.remove(b.mesh));
-            [...playerUnits, ...enemyUnits].forEach(u => scene.remove(u.mesh));
-            projectiles.forEach(p => scene.remove(p.mesh));
-            particles.forEach(p => scene.remove(p.mesh));
-            mushroomParticles.forEach(mp => scene.remove(mp.mesh));
-            shockwaves.forEach(sw => scene.remove(sw.mesh));
-            burningWrecks.forEach(bw => {
-                if (bw.fireLight) scene.remove(bw.fireLight);
-                bw.flames.forEach(f => scene.remove(f));
+            [...playerUnits, ...enemyUnits].forEach(u => {
+                if (u.type !== 'rifleman') scene.remove(u.mesh);
             });
+            soldierRenderer.clear();
+            projectilePool.clear();
+            combatEffects.clear();
 
             playerBuildings = [];
             enemyBuildings = [];
             playerUnits = [];
             enemyUnits = [];
+            battleSimulation = null;
+            targetObjects.clear();
             projectiles = [];
-            particles = [];
-            mushroomParticles = [];
-            shockwaves = [];
-            burningWrecks = [];
 
             currentState = GAME_STATES.PLAYING;
 
@@ -1094,7 +1124,13 @@
             scene.add(enemyHQ.mesh);
             enemyBuildings.push(enemyHQ);
 
-            showToast("¡INICIO LIMPIO! Ambos bandos comienzan únicamente con su Nexo y 200 de Oro.");
+            battleSimulation = new BattleSimulation();
+            playerHQ.ecsEntityId = battleSimulation.playerBase;
+            enemyHQ.ecsEntityId = battleSimulation.enemyBase;
+            targetObjects.set(playerHQ.ecsEntityId, playerHQ);
+            targetObjects.set(enemyHQ.ecsEntityId, enemyHQ);
+
+            showToast("¡Construye Barracas para desplegar tropas!");
         }
 
         function resetGame() {
@@ -1112,27 +1148,22 @@
         }
 
         function exitToMainMenu() {
-            ruinsAndCorpses.forEach(rc => scene.remove(rc));
-            ruinsAndCorpses = [];
+            clearBattlefieldRemains();
 
             [...playerBuildings, ...enemyBuildings].forEach(b => scene.remove(b.mesh));
             [...playerUnits, ...enemyUnits].forEach(u => scene.remove(u.mesh));
             projectiles.forEach(p => scene.remove(p.mesh));
-            particles.forEach(p => scene.remove(p.mesh));
-            shockwaves.forEach(sw => scene.remove(sw.mesh));
-            burningWrecks.forEach(bw => {
-                if (bw.fireLight) scene.remove(bw.fireLight);
-                bw.flames.forEach(f => scene.remove(f));
-            });
+            projectilePool.clear();
+            combatEffects.clear();
 
             playerBuildings = [];
             enemyBuildings = [];
             playerUnits = [];
             enemyUnits = [];
             projectiles = [];
-            particles = [];
-            shockwaves = [];
-            burningWrecks = [];
+            soldierRenderer.clear();
+            targetObjects.clear();
+            battleSimulation = null;
 
             if (placementGhost) {
                 scene.remove(placementGhost);
@@ -1158,7 +1189,7 @@
             document.getElementById('res-gold').innerText = Math.floor(gold);
             document.getElementById('enemy-gold-text').innerText = `ORO ENEMIGO: ${Math.floor(enemyGold)}`;
 
-            const activeBarracks = playerBuildings.filter(b => b.type === 'barracks' && b.hp > 0);
+            const activeBarracks = playerBuildings.filter(isValidSoldierFactory);
             const barracksCount = activeBarracks.length;
             const barracksStatusEl = document.getElementById('barracks-status');
             const btnRifle = document.getElementById('train-rifleman');
@@ -1166,8 +1197,8 @@
 
             if (barracksCount > 0) {
                 barracksStatusEl.innerHTML = `<span class="text-cyan-400 font-bold">${barracksCount} Barraca(s) (${barracksCount}x Tropas)</span>`;
-                btnRifle.disabled = gold < 50;
-                btnTank.disabled = gold < 180;
+                btnRifle.disabled = gold < 50 * barracksCount;
+                btnTank.disabled = gold < 180 * barracksCount;
             } else {
                 barracksStatusEl.innerHTML = '<span class="text-red-400 font-bold">No construida</span>';
                 btnRifle.disabled = true;
@@ -1177,6 +1208,14 @@
             document.getElementById('build-generator').disabled = gold < 100;
             document.getElementById('build-barracks').disabled = gold < 150;
             document.getElementById('build-turret').disabled = gold < 125;
+        }
+
+        function isValidSoldierFactory(building) {
+            if (building.type !== 'barracks' || building.hp <= 0
+                || building.ecsEntityId === undefined || !battleSimulation) return false;
+            if (!battleSimulation.world.getComponent(building.ecsEntityId, ECS_COMPONENTS.factory)) return false;
+            const health = battleSimulation.world.getComponent(building.ecsEntityId, ECS_COMPONENTS.health);
+            return health !== undefined && health.current > 0;
         }
 
         function toggleDemolishMode() {
@@ -1332,6 +1371,7 @@
                     realMesh.add(newB.healthBar.group);
 
                     scene.add(realMesh);
+                    registerStructureTarget(newB);
                     playerBuildings.push(newB);
 
                     showToast(`¡${selectedBuildType.toUpperCase()} CONSTRUIDO!`);
@@ -1344,44 +1384,82 @@
             }
         }
 
-        function spawnTroop(type, position, isPlayer) {
-            const colorHex = isPlayer ? 0x00f0ff : 0xff3344;
-            const mesh = type === 'rifleman' ? createSoldierMesh(colorHex) : createTankMesh(colorHex);
-            mesh.position.copy(position);
+        function registerStructureTarget(building) {
+            if (!battleSimulation) return;
+            const faction = building.isPlayer ? ECS_FACTIONS.player : ECS_FACTIONS.enemy;
+            const position = {
+                x: building.position.x,
+                y: building.position.y,
+                z: building.position.z
+            };
+            const entity = building.type === 'barracks'
+                ? createSoldierFactory(battleSimulation.world, faction, position, building.maxHp)
+                : createStructure(battleSimulation.world, faction, position, building.maxHp);
+            building.ecsEntityId = entity;
+            targetObjects.set(entity, building);
+        }
 
+        function spawnTroop(type, position, isPlayer, producer) {
+            if (!battleSimulation || !soldierRenderer) {
+                throw new Error('Cannot spawn soldiers before the battle renderer is initialized');
+            }
+            const faction = isPlayer ? ECS_FACTIONS.player : ECS_FACTIONS.enemy;
+            const order = requestSoldierProduction(battleSimulation.world, producer, position);
+            if (!order || order.faction !== faction) return false;
+            const spawnPosition = new THREE.Vector3(order.position.x, order.position.y, order.position.z);
+            const colorHex = isPlayer ? 0x00f0ff : 0xff3344;
             const hasVeteranArmor = isPlayer && type === 'tank' && window.Unlocks?.isUnlocked('veteran_armor');
             const hpVal = type === 'rifleman' ? 100 : Math.round(380 * (hasVeteranArmor ? 1.2 : 1));
+            const speed = type === 'rifleman' ? 8 : 4.5;
+            const range = type === 'rifleman' ? 14 : 18;
+            const entity = createECSSoldier(
+                battleSimulation.world,
+                faction,
+                order.position,
+                speed,
+                range,
+                hpVal
+            );
+            const mesh = type === 'rifleman'
+                ? soldierRenderer.add(entity, faction, spawnPosition)
+                : createTankMesh(colorHex);
+            mesh.position.copy(spawnPosition);
+
             const unitObj = {
                 mesh: mesh,
                 hp: hpVal,
                 maxHp: hpVal,
-                speed: type === 'rifleman' ? 8 : 4.5,
+                speed: speed,
                 damage: type === 'rifleman' ? 12 : Math.round(45 * (hasVeteranArmor ? 1.2 : 1)),
                 fireRate: type === 'rifleman' ? 0.35 : 1.2,
-                range: type === 'rifleman' ? 14 : 18,
+                range: range,
                 lastFire: 0,
                 type: type,
-                isPlayer: isPlayer
+                isPlayer: isPlayer,
+                ecsEntityId: entity
             };
 
-            const barHeight = type === 'tank' ? 1.8 : 1.6;
-            unitObj.healthBar = create3DHealthBar(isPlayer, barHeight, 1.4);
-            mesh.add(unitObj.healthBar.group);
+            if (type !== 'rifleman') {
+                unitObj.healthBar = create3DHealthBar(isPlayer, 1.8, 1.4);
+                mesh.add(unitObj.healthBar.group);
+                scene.add(mesh);
+            }
 
-            scene.add(mesh);
+            targetObjects.set(entity, unitObj);
 
             if (isPlayer) playerUnits.push(unitObj);
             else enemyUnits.push(unitObj);
+            return true;
         }
 
         function trainUnit(unitType) {
-            const activeBarracks = playerBuildings.filter(b => b.type === 'barracks' && b.hp > 0);
+            const activeBarracks = playerBuildings.filter(isValidSoldierFactory);
             if (activeBarracks.length === 0) {
                 showToast("¡Debes construir una Barraca primero!");
                 return;
             }
 
-            const cost = unitType === 'rifleman' ? 50 : 180;
+            const cost = (unitType === 'rifleman' ? 50 : 180) * activeBarracks.length;
             if (gold < cost) {
                 showToast("¡No tienes suficiente Oro!");
                 return;
@@ -1392,9 +1470,10 @@
             SFX.playBuild();
 
             activeBarracks.forEach(barracks => {
-                stats.soldiersTrained++;
                 const spawnPos = barracks.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, 0, -3));
-                spawnTroop(unitType, spawnPos, true);
+                if (spawnTroop(unitType, spawnPos, true, barracks.ecsEntityId)) {
+                    stats.soldiersTrained++;
+                }
             });
 
             if (activeBarracks.length > 1) {
@@ -1419,6 +1498,7 @@
             mesh.add(newB.healthBar.group);
 
             scene.add(mesh);
+            registerStructureTarget(newB);
             enemyBuildings.push(newB);
         }
 
@@ -1435,7 +1515,7 @@
             if (enemyAITimer > decisionCooldown) {
                 enemyAITimer = 0;
 
-                const enemyBarracks = enemyBuildings.filter(b => b.type === 'barracks' && b.hp > 0);
+                const enemyBarracks = enemyBuildings.filter(isValidSoldierFactory);
                 const enemyTurrets = enemyBuildings.filter(b => b.type === 'turret' && b.hp > 0);
 
                 const hasReachedGenTarget = enemyGens >= aiTargetGenerators;
@@ -1466,19 +1546,17 @@
                     spawnAIBuilding('turret', new THREE.Vector3(rx, 0, rz));
                 } 
 
-                // Spawning Armies (Both Tanks and Riflemen Soldiers) randomly from Barracas
+                // Barracks request units only when their faction can afford them.
                 if (enemyBarracks.length > 0) {
                     enemyBarracks.forEach(barracks => {
                         const spawnPos = barracks.position.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, 0, 3));
-                        
-                        // Random choices between Tank and Soldier
                         const roll = Math.random();
-                        if (enemyGold >= 180 && roll < 0.45) { // Spawn Tank
+                        if (enemyGold >= 180 && roll < 0.45) {
                             enemyGold -= 180;
-                            spawnTroop('tank', spawnPos, false);
-                        } else if (enemyGold >= 50 && roll >= 0.45) { // Spawn Soldier
+                            spawnTroop('tank', spawnPos, false, barracks.ecsEntityId);
+                        } else if (enemyGold >= 50 && roll >= 0.45) {
                             enemyGold -= 50;
-                            spawnTroop('rifleman', spawnPos, false);
+                            spawnTroop('rifleman', spawnPos, false, barracks.ecsEntityId);
                         }
                     });
                 }
@@ -1488,88 +1566,7 @@
         function createMushroomCloud(position) {
             cameraShake = 4.5;
             SFX.playCinematicExplosion(true);
-
-            // Nuclear Flash Light
-            const flashLight = new THREE.PointLight(0xffaa00, 35, 200);
-            flashLight.position.copy(position).add(new THREE.Vector3(0, 10, 0));
-            scene.add(flashLight);
-
-            // Nuclear Rising Stem Particles
-            for (let i = 0; i < 110; i++) {
-                const pGeo = new THREE.SphereGeometry(0.9 + Math.random() * 1.3, 8, 8);
-                const pMat = new THREE.MeshStandardMaterial({
-                    color: Math.random() > 0.4 ? 0xff4500 : 0x202025,
-                    emissive: 0xff2200,
-                    emissiveIntensity: 0.85,
-                    roughness: 0.9,
-                    transparent: true,
-                    opacity: 0.95
-                });
-                const pMesh = new THREE.Mesh(pGeo, pMat);
-                const offset = new THREE.Vector3((Math.random() - 0.5) * 3.8, Math.random() * 2, (Math.random() - 0.5) * 3.8);
-                pMesh.position.copy(position).add(offset);
-                scene.add(pMesh);
-
-                mushroomParticles.push({
-                    mesh: pMesh,
-                    type: 'stem',
-                    velocity: new THREE.Vector3((Math.random() - 0.5) * 1.0, 9.5 + Math.random() * 7, (Math.random() - 0.5) * 1.0),
-                    life: 1.0,
-                    maxLife: 3.8 + Math.random() * 1.2,
-                    light: flashLight
-                });
-            }
-
-            // Mushroom Top Cap Dome
-            for (let i = 0; i < 160; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const rad = 1.0 + Math.random() * 5.5;
-                const pGeo = new THREE.SphereGeometry(1.4 + Math.random() * 1.6, 8, 8);
-                const pMat = new THREE.MeshStandardMaterial({
-                    color: Math.random() > 0.3 ? 0xff6600 : 0x151518,
-                    emissive: 0xff3300,
-                    emissiveIntensity: 0.9,
-                    roughness: 0.8,
-                    transparent: true,
-                    opacity: 0.9
-                });
-                const pMesh = new THREE.Mesh(pGeo, pMat);
-                pMesh.position.copy(position).add(new THREE.Vector3(Math.cos(angle) * rad, 14.5 + Math.random() * 3.5, Math.sin(angle) * rad));
-                scene.add(pMesh);
-
-                const expandVel = new THREE.Vector3(Math.cos(angle) * (7.5 + Math.random() * 9.5), 2.8 + Math.random() * 3, Math.sin(angle) * (7.5 + Math.random() * 9.5));
-
-                mushroomParticles.push({
-                    mesh: pMesh,
-                    type: 'cap',
-                    velocity: expandVel,
-                    life: 1.0,
-                    maxLife: 4.2 + Math.random() * 1.8
-                });
-            }
-
-            // Ground Shockwave Expanding Rings
-            for (let s = 0; s < 3; s++) {
-                const ringGeo = new THREE.RingGeometry(0.5, 2.5, 32);
-                const ringMat = new THREE.MeshBasicMaterial({
-                    color: 0xffaa00,
-                    side: THREE.DoubleSide,
-                    transparent: true,
-                    opacity: 0.95
-                });
-                const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-                ringMesh.rotation.x = -Math.PI / 2;
-                ringMesh.position.copy(position);
-                ringMesh.position.y = 0.3;
-                scene.add(ringMesh);
-
-                shockwaves.push({
-                    mesh: ringMesh,
-                    maxScale: 45 + s * 15,
-                    speed: 32 + s * 10,
-                    opacity: 0.95
-                });
-            }
+            combatEffects.createNuclearExplosion(position);
         }
 
         function createCinematicExplosion(position, scale = 1.0, isHQ = false) {
@@ -1580,70 +1577,19 @@
 
             SFX.playCinematicExplosion(false);
             cameraShake = Math.max(cameraShake, scale * 0.7);
-
-            // Persistent fire appears on every explosion
-            spawnFireAndSmokeEmitter(position, Math.max(0.5, scale * 0.8));
-
-            const expLight = new THREE.PointLight(0xff6600, 8 * scale, 30 * scale);
-            expLight.position.copy(position).add(new THREE.Vector3(0, 2, 0));
-            scene.add(expLight);
-
-            const coreCount = Math.floor(18 * scale);
-            for (let i = 0; i < coreCount; i++) {
-                const pGeo = new THREE.SphereGeometry(0.35 * scale, 8, 8);
-                const pMat = new THREE.MeshBasicMaterial({ color: Math.random() > 0.3 ? 0xffaa00 : 0xff3300 });
-                const pMesh = new THREE.Mesh(pGeo, pMat);
-                pMesh.position.copy(position);
-                scene.add(pMesh);
-
-                const vel = new THREE.Vector3(
-                    (Math.random() - 0.5) * 14 * scale,
-                    Math.random() * 12 * scale + 4,
-                    (Math.random() - 0.5) * 14 * scale
-                );
-                particles.push({ mesh: pMesh, velocity: vel, life: 1.0, light: expLight, isCore: true });
-            }
-
-            const debrisCount = Math.floor(12 * scale);
-            for (let i = 0; i < debrisCount; i++) {
-                const dGeo = new THREE.BoxGeometry(0.25 * scale, 0.25 * scale, 0.4 * scale);
-                const dMat = new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.8 });
-                const dMesh = new THREE.Mesh(dGeo, dMat);
-                dMesh.position.copy(position);
-                scene.add(dMesh);
-
-                const vel = new THREE.Vector3(
-                    (Math.random() - 0.5) * 18 * scale,
-                    Math.random() * 16 * scale + 6,
-                    (Math.random() - 0.5) * 18 * scale
-                );
-                particles.push({ mesh: dMesh, velocity: vel, life: 1.2, rotSpeed: (Math.random() - 0.5) * 15, isDebris: true });
-            }
-
-            const ringGeo = new THREE.RingGeometry(0.2, 1.0, 32);
-            const ringMat = new THREE.MeshBasicMaterial({
-                color: 0xffbb00,
-                side: THREE.DoubleSide,
-                transparent: true,
-                opacity: 0.9
-            });
-            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-            ringMesh.rotation.x = -Math.PI / 2;
-            ringMesh.position.copy(position);
-            ringMesh.position.y = 0.2;
-            scene.add(ringMesh);
-            shockwaves.push({ mesh: ringMesh, maxScale: scale * 12, speed: 20 * scale, opacity: 0.9 });
+            combatEffects.createExplosion(position, scale);
         }
 
-        function updateUnitGroup(units, enemyUnits, enemyBuildings, delta, time, isPlayer) {
-            const targets = [...enemyUnits, ...enemyBuildings.filter(b => b.hp > 0)];
-
+        function updateUnitGroup(units, time, isPlayer) {
             for (let i = units.length - 1; i >= 0; i--) {
                 const unit = units[i];
+                const entity = unit.ecsEntityId;
 
                 if (unit.healthBar) {
                     unit.healthBar.update(unit.hp, unit.maxHp);
                     unit.healthBar.billboard(camera);
+                } else {
+                    soldierRenderer.setHealth(entity, unit.hp, unit.maxHp);
                 }
 
                 if (unit.hp <= 0) {
@@ -1679,73 +1625,110 @@
                         createSoldierCorpse(unit.mesh.position);
                     }
 
-                    scene.remove(unit.mesh);
+                    battleSimulation.world.removeEntity(entity);
+                    targetObjects.delete(entity);
+                    if (unit.type === 'rifleman') soldierRenderer.remove(entity);
+                    else scene.remove(unit.mesh);
                     units.splice(i, 1);
                     continue;
                 }
 
-                let closestTarget = null;
-                let minDist = Infinity;
+                const targetEntity = battleSimulation.getTarget(entity);
+                const closestTarget = targetEntity === undefined ? null : targetObjects.get(targetEntity);
+                const targetPosition = targetEntity === undefined
+                    ? null
+                    : battleSimulation.world.getComponent(targetEntity, ECS_COMPONENTS.transform);
+                const transform = battleSimulation.world.getComponent(entity, ECS_COMPONENTS.transform);
+                if (!closestTarget || !targetPosition || !transform) continue;
 
-                targets.forEach(t => {
-                    const pos = t.mesh ? t.mesh.position : t.position;
-                    const d = unit.mesh.position.distanceTo(pos);
-                    if (d < minDist) {
-                        minDist = d;
-                        closestTarget = t;
-                    }
-                });
+                unit.mesh.position.set(transform.x, transform.y, transform.z);
+                unit.mesh.lookAt(targetPosition.x, transform.y, targetPosition.z);
+                const distance = Math.hypot(targetPosition.x - transform.x, targetPosition.z - transform.z);
+                if (distance > unit.range || time - unit.lastFire <= unit.fireRate) continue;
 
-                if (closestTarget) {
-                    const targetPos = closestTarget.mesh ? closestTarget.mesh.position : closestTarget.position;
-                    unit.mesh.lookAt(targetPos.x, unit.mesh.position.y, targetPos.z);
+                unit.lastFire = time;
+                projectileOrigin.copy(unit.mesh.position);
+                projectileOrigin.y += unit.type === 'rifleman' ? 0.8 : 1.2;
 
-                    if (minDist > unit.range) {
-                        const moveDir = new THREE.Vector3().subVectors(targetPos, unit.mesh.position).normalize();
-                        unit.mesh.position.addScaledVector(moveDir, unit.speed * delta);
-                    } else {
-                        if (time - unit.lastFire > unit.fireRate) {
-                            unit.lastFire = time;
-
-                            if (unit.type === 'rifleman') {
-                                SFX.playRifleShot();
-                                fireProjectile(
-                                    unit.mesh.position.clone().add(new THREE.Vector3(0, 0.8, 0)),
-                                    targetPos,
-                                    isPlayer,
-                                    unit.damage,
-                                    isPlayer ? 0x00f0ff : 0xff3344,
-                                    closestTarget,
-                                    false
-                                );
-
-                                if (unit.mesh.userData.muzzleMesh) {
-                                    unit.mesh.userData.muzzleMesh.material.opacity = 1;
-                                    setTimeout(() => {
-                                        if (unit.mesh.userData.muzzleMesh) {
-                                            unit.mesh.userData.muzzleMesh.material.opacity = 0;
-                                        }
-                                    }, 50);
-                                }
-                            } else { // Tank
-                                SFX.playHeavyCannon();
-                                fireProjectile(
-                                    unit.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)),
-                                    targetPos,
-                                    isPlayer,
-                                    unit.damage,
-                                    isPlayer ? 0x00f0ff : 0xff3344,
-                                    closestTarget,
-                                    true
-                                );
-                            }
-                        }
-                    }
+                if (unit.type === 'rifleman') {
+                    SFX.playRifleShot();
+                    fireProjectile(
+                        projectileOrigin,
+                        targetPosition,
+                        isPlayer,
+                        unit.damage,
+                        isPlayer ? 0x00f0ff : 0xff3344,
+                        closestTarget,
+                        false
+                    );
+                    soldierRenderer.showMuzzleFlash(entity, time + 0.05);
                 } else {
-                    const targetHQPos = isPlayer ? new THREE.Vector3(0, 0, -45) : new THREE.Vector3(0, 0, 45);
-                    unit.mesh.lookAt(targetHQPos.x, unit.mesh.position.y, targetHQPos.z);
-                    const moveDir = new THREE.Vector3().subVectors(targetHQPos, unit.mesh.position).normalize();
-                    unit.mesh.position.addScaledVector(moveDir, unit.speed * delta);
+                    SFX.playHeavyCannon();
+                    fireProjectile(
+                        projectileOrigin,
+                        targetPosition,
+                        isPlayer,
+                        unit.damage,
+                        isPlayer ? 0x00f0ff : 0xff3344,
+                        closestTarget,
+                        true
+                    );
+                }
+            }
+        }
+
+        function considerTurretTarget(turret, candidate) {
+            if (candidate.hp <= 0) return;
+            const position = candidate.mesh ? candidate.mesh.position : candidate.position;
+            const deltaX = position.x - turret.position.x;
+            const deltaZ = position.z - turret.position.z;
+            const distanceSquared = deltaX * deltaX + deltaZ * deltaZ;
+            if (distanceSquared < turretTargetSearch.distanceSquared) {
+                turretTargetSearch.distanceSquared = distanceSquared;
+                turretTargetSearch.target = candidate;
+            }
+        }
+
+        function updateTurret(turret, targetUnits, targetBuildings, time) {
+            turretTargetSearch.target = null;
+            turretTargetSearch.distanceSquared = 22 * 22;
+            for (const unit of targetUnits) considerTurretTarget(turret, unit);
+            for (const building of targetBuildings) considerTurretTarget(turret, building);
+
+            const closest = turretTargetSearch.target;
+            if (!closest || !turret.mesh.userData.head) return;
+            const targetPos = closest.mesh ? closest.mesh.position : closest.position;
+            turret.mesh.userData.head.lookAt(
+                targetPos.x,
+                turret.mesh.userData.head.position.y + turret.position.y,
+                targetPos.z
+            );
+            if (time - turret.lastAction <= 0.8) return;
+
+            turret.lastAction = time;
+            turretProjectileOrigin.copy(turret.position);
+            turretProjectileOrigin.y += 1.8;
+            fireProjectile(
+                turretProjectileOrigin,
+                targetPos,
+                turret.isPlayer,
+                35,
+                turret.isPlayer ? 0x00f0ff : 0xff3344,
+                closest,
+                true
+            );
+            SFX.playHeavyCannon();
+        }
+
+        function updateTurrets(time) {
+            for (const turret of playerBuildings) {
+                if (turret.type === 'turret' && turret.hp > 0) {
+                    updateTurret(turret, enemyUnits, enemyBuildings, time);
+                }
+            }
+            for (const turret of enemyBuildings) {
+                if (turret.type === 'turret' && turret.hp > 0) {
+                    updateTurret(turret, playerUnits, playerBuildings, time);
                 }
             }
         }
@@ -1786,169 +1769,45 @@
                 document.getElementById('enemy-hq-hp-text').innerText = `${Math.ceil(enemyHQ.hp)} / ${enemyHQ.maxHp} HP`;
             }
 
+            if (battleSimulation) {
+                const simulationStart = diagnosticsEnabled ? performance.now() : 0;
+                battleSimulation.advance(delta);
+                if (diagnosticsEnabled) diagnosticsSimulationMs = performance.now() - simulationStart;
+            }
+
             // Update Units with identical billboard camera health bars
-            updateUnitGroup(playerUnits, enemyUnits, enemyBuildings, delta, time, true);
-            updateUnitGroup(enemyUnits, playerUnits, playerBuildings, delta, time, false);
+            updateUnitGroup(playerUnits, time, true);
+            updateUnitGroup(enemyUnits, time, false);
 
-            // Update Turrets
-            const allTurrets = [
-                ...playerBuildings.filter(b => b.type === 'turret' && b.hp > 0),
-                ...enemyBuildings.filter(b => b.type === 'turret' && b.hp > 0)
-            ];
-
-            allTurrets.forEach(turret => {
-                const targets = turret.isPlayer ? [...enemyUnits, ...enemyBuildings.filter(b => b.hp > 0)] : [...playerUnits, ...playerBuildings.filter(b => b.hp > 0)];
-                let closest = null;
-                let minDist = 22;
-
-                targets.forEach(t => {
-                    const pos = t.mesh ? t.mesh.position : t.position;
-                    const d = turret.position.distanceTo(pos);
-                    if (d < minDist) {
-                        minDist = d;
-                        closest = t;
-                    }
-                });
-
-                if (closest && turret.mesh.userData.head) {
-                    const targetPos = closest.mesh ? closest.mesh.position : closest.position;
-                    turret.mesh.userData.head.lookAt(targetPos.x, turret.mesh.userData.head.position.y + turret.position.y, targetPos.z);
-
-                    if (time - turret.lastAction > 0.8) {
-                        turret.lastAction = time;
-                        fireProjectile(
-                            turret.position.clone().add(new THREE.Vector3(0, 1.8, 0)),
-                            targetPos,
-                            turret.isPlayer,
-                            35,
-                            turret.isPlayer ? 0x00f0ff : 0xff3344,
-                            closest,
-                            true
-                        );
-                        SFX.playHeavyCannon();
-                    }
-                }
-            });
+            updateTurrets(time);
 
             // Update Projectiles
+            const effectsStart = diagnosticsEnabled ? performance.now() : 0;
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 const proj = projectiles[i];
-                const dir = new THREE.Vector3().subVectors(proj.targetPos, proj.mesh.position);
-                const dist = dir.length();
-
-                if (dist < 1.2) {
-                    if (proj.targetObj && proj.targetObj.hp > 0) {
-                        proj.targetObj.hp -= proj.damage;
+                const advanceResult = advanceProjectile(proj.flight, delta);
+                if (advanceResult !== 'moving') {
+                    if (advanceResult === 'impact' && proj.targetObj && proj.targetObj.hp > 0) {
+                        applyDamage(proj.targetObj, proj.damage);
                     }
-                    if (proj.isHeavy) {
+                    if (advanceResult === 'impact' && proj.isHeavy) {
                         createCinematicExplosion(proj.mesh.position, 0.6, false);
                     }
-                    scene.remove(proj.mesh);
+                    projectilePool.release(proj.mesh);
                     projectiles.splice(i, 1);
-                } else {
-                    dir.normalize();
-                    proj.mesh.position.addScaledVector(dir, delta * 38);
                 }
             }
-
-            // Update Persistent Fire and Dark Smoke Emitters on Wrecks & Ruins
-            burningWrecks.forEach(bw => {
-                bw.timer += delta;
-                bw.nextSmoke += delta;
-
-                // Flickering fire scale and light
-                if (bw.fireLight) {
-                    bw.fireLight.intensity = (3.5 + Math.sin(bw.timer * 12) * 1.5) * bw.scale;
-                }
-                bw.flames.forEach(f => {
-                    f.scale.setScalar(0.8 + Math.sin(bw.timer * 15 + Math.random()) * 0.3);
-                });
-
-                // Spawn rising dark smoke billows
-                if (bw.nextSmoke > 0.12) {
-                    bw.nextSmoke = 0;
-                    const sGeo = new THREE.SphereGeometry(0.35 * bw.scale, 6, 6);
-                    const sMat = new THREE.MeshBasicMaterial({ color: 0x18181c, transparent: true, opacity: 0.6 });
-                    const sMesh = new THREE.Mesh(sGeo, sMat);
-                    sMesh.position.copy(bw.position).add(new THREE.Vector3((Math.random() - 0.5) * 0.6 * bw.scale, 0.8 * bw.scale, (Math.random() - 0.5) * 0.6 * bw.scale));
-                    scene.add(sMesh);
-
-                    particles.push({
-                        mesh: sMesh,
-                        velocity: new THREE.Vector3((Math.random() - 0.5) * 0.8, 2.5 + Math.random() * 2.0, (Math.random() - 0.5) * 0.8),
-                        life: 1.0,
-                        isSmoke: true
-                    });
-                }
-            });
-
-            // Update Mushroom Cloud Particles
-            for (let i = mushroomParticles.length - 1; i >= 0; i--) {
-                const mp = mushroomParticles[i];
-                mp.mesh.position.addScaledVector(mp.velocity, delta);
-                mp.life -= delta / mp.maxLife;
-
-                if (mp.type === 'stem') {
-                    mp.mesh.scale.addScalar(delta * 1.5);
-                } else if (mp.type === 'cap') {
-                    mp.mesh.scale.addScalar(delta * 2.2);
-                    mp.velocity.y += delta * 0.5;
-                }
-
-                if (mp.mesh.material) {
-                    mp.mesh.material.opacity = Math.max(0, mp.life);
-                }
-
-                if (mp.life <= 0) {
-                    if (mp.light) scene.remove(mp.light);
-                    scene.remove(mp.mesh);
-                    mushroomParticles.splice(i, 1);
-                }
-            }
-
-            // Update Shockwaves
-            for (let i = shockwaves.length - 1; i >= 0; i--) {
-                const sw = shockwaves[i];
-                sw.mesh.scale.x += delta * sw.speed;
-                sw.mesh.scale.y += delta * sw.speed;
-                sw.opacity -= delta * 1.2;
-                if (sw.mesh.material) sw.mesh.material.opacity = Math.max(0, sw.opacity);
-                if (sw.opacity <= 0) {
-                    scene.remove(sw.mesh);
-                    shockwaves.splice(i, 1);
-                }
-            }
-
-            // Update Explosive Particles & Shrapnel
-            for (let i = particles.length - 1; i >= 0; i--) {
-                const p = particles[i];
-                p.mesh.position.addScaledVector(p.velocity, delta);
-                
-                if (p.isSmoke) {
-                    p.mesh.scale.addScalar(delta * 1.2);
-                    p.life -= delta * 0.6;
-                    if (p.mesh.material) p.mesh.material.opacity = Math.max(0, p.life * 0.6);
-                } else {
-                    p.velocity.y -= 22 * delta;
-                    p.life -= delta * 1.5;
-
-                    if (p.isDebris && p.rotSpeed) {
-                        p.mesh.rotation.x += p.rotSpeed * delta;
-                        p.mesh.rotation.z += p.rotSpeed * delta;
-                    }
-                }
-
-                if (p.life <= 0 || (!p.isSmoke && p.mesh.position.y < 0)) {
-                    if (p.light) scene.remove(p.light);
-                    scene.remove(p.mesh);
-                    particles.splice(i, 1);
-                }
-            }
+            combatEffects.update(delta);
+            if (diagnosticsEnabled) diagnosticsEffectsMs = performance.now() - effectsStart;
 
             // Building Health Bars & Destruction Ruins
             const updateBuildingList = (bList) => {
                 for (let i = bList.length - 1; i >= 0; i--) {
                     const b = bList[i];
+                    if (battleSimulation && b.ecsEntityId !== undefined) {
+                        const health = battleSimulation.world.getComponent(b.ecsEntityId, ECS_COMPONENTS.health);
+                        if (health) health.current = b.hp;
+                    }
                     if (b.healthBar) {
                         b.healthBar.update(b.hp, b.maxHp);
                         b.healthBar.billboard(camera);
@@ -1962,6 +1821,10 @@
                         }
 
                         scene.remove(b.mesh);
+                        if (b.ecsEntityId !== undefined) {
+                            battleSimulation.world.removeEntity(b.ecsEntityId);
+                            targetObjects.delete(b.ecsEntityId);
+                        }
                         bList.splice(i, 1);
                     }
                 }
@@ -1983,16 +1846,24 @@
             }
         }
 
+        function applyDamage(target, amount) {
+            const entity = target.ecsEntityId;
+            if (battleSimulation && entity !== undefined
+                && battleSimulation.world.getComponent(entity, ECS_COMPONENTS.health)) {
+                target.hp = applyDamageSystem(battleSimulation.world, entity, amount).current;
+                return;
+            }
+            target.hp = Math.max(0, target.hp - amount);
+        }
+
         function fireProjectile(fromPos, toPos, isPlayer, damage, colorHex, targetObj = null, isHeavy = false) {
-            const geo = new THREE.SphereGeometry(isHeavy ? 0.35 : 0.18, 6, 6);
-            const mat = new THREE.MeshBasicMaterial({ color: colorHex });
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.copy(fromPos);
-            scene.add(mesh);
+            const mesh = projectilePool.acquire(fromPos, isPlayer, isHeavy);
+            if (!mesh) return;
+            const targetPos = new THREE.Vector3(toPos.x, toPos.y, toPos.z);
 
             projectiles.push({
                 mesh: mesh,
-                targetPos: toPos.clone(),
+                flight: { position: mesh.position, target: targetPos, remainingSeconds: 5 },
                 damage: damage,
                 color: colorHex,
                 targetObj: targetObj,
@@ -2018,7 +1889,7 @@
                     return distance < closest.distance ? { candidate, distance } : closest;
                 }, { candidate: targets[0], distance: Infinity }).candidate;
                 const targetPosition = target.mesh ? target.mesh.position : target.position;
-                target.hp -= 180;
+                applyDamage(target, 180);
                 createCinematicExplosion(targetPosition, 1.2, false);
                 showToast('🚁 Apoyo de helicóptero: ataque al objetivo enemigo más cercano.');
             } else if (id === 'airstrike_temp') {
@@ -2028,7 +1899,7 @@
                 for (const target of targets) {
                     const position = target.mesh ? target.mesh.position : target.position;
                     if (position.distanceTo(impact) > 18) continue;
-                    target.hp -= 220;
+                    applyDamage(target, 220);
                     hits++;
                 }
                 if (!window.Unlocks.consumeTemporary(id)) return;
@@ -2137,8 +2008,11 @@
         function animate() {
             requestAnimationFrame(animate);
 
-            const delta = clock.getDelta();
+            const frameStart = diagnosticsEnabled ? performance.now() : 0;
+            const delta = Math.min(clock.getDelta(), 0.1);
             const time = clock.getElapsedTime();
+            let combatMs = 0;
+            let renderMs = 0;
 
             if (currentState === GAME_STATES.MENU) {
                 camera.position.x = Math.sin(time * 0.25) * 60;
@@ -2147,11 +2021,142 @@
                 camera.lookAt(0, 0, 0);
             } else if (currentState === GAME_STATES.PLAYING) {
                 controls.update();
+                const combatStart = diagnosticsEnabled ? performance.now() : 0;
                 updateEnemyAI(delta);
                 updateCombat(delta, time);
+                if (diagnosticsEnabled) combatMs = performance.now() - combatStart;
             }
 
+            soldierRenderer.sync(camera.quaternion, time);
+            const renderStart = diagnosticsEnabled ? performance.now() : 0;
             renderer.render(scene, camera);
+            if (diagnosticsEnabled) {
+                const now = performance.now();
+                if (diagnosticsPreviousFrame > 0) {
+                    const effectStats = combatEffects.stats();
+                    const projectileStats = projectilePool.stats();
+                    diagnosticsSamples.push({
+                        frameMs: now - diagnosticsPreviousFrame,
+                        workMs: now - frameStart,
+                        combatMs,
+                        simulationMs: diagnosticsSimulationMs,
+                        effectsMs: diagnosticsEffectsMs,
+                        renderMs: now - renderStart,
+                        drawCalls: renderer.info.render.calls,
+                        geometries: renderer.info.memory.geometries,
+                        textures: renderer.info.memory.textures,
+                        sceneObjects: scene.children.length,
+                        particles: effectStats.activeParticles,
+                        particleSlots: effectStats.particleSlots,
+                        shockwaves: effectStats.activeShockwaves,
+                        emitters: effectStats.activeEmitters,
+                        effectGeometries: effectStats.geometries,
+                        effectMaterials: effectStats.materials,
+                        projectiles: projectiles.length,
+                        cachedProjectiles: projectileStats.cached,
+                        soldiers: playerUnits.length + enemyUnits.length,
+                        playerSoldiers: playerUnits.length,
+                        enemySoldiers: enemyUnits.length
+                    });
+                    if (diagnosticsSamples.length > 300) diagnosticsSamples.shift();
+                }
+                diagnosticsPreviousFrame = now;
+            }
+        }
+
+        if (diagnosticsEnabled) {
+            window.__gameDiagnostics = {
+                read() {
+                    const samples = diagnosticsSamples;
+                    const effectStats = combatEffects.stats();
+                    const projectileStats = projectilePool.stats();
+                    const average = (key) => samples.reduce((sum, sample) => sum + sample[key], 0)
+                        / Math.max(1, samples.length);
+                    const percentile = (key, ratio) => {
+                        const values = samples.map((sample) => sample[key]).sort((a, b) => a - b);
+                        return values[Math.min(values.length - 1, Math.floor(values.length * ratio))] || 0;
+                    };
+                    const maximum = (key) => samples.reduce((max, sample) => Math.max(max, sample[key]), 0);
+                    return {
+                        sampleCount: samples.length,
+                        frameMs: average('frameMs'),
+                        p95FrameMs: percentile('frameMs', 0.95),
+                        fps: 1000 / Math.max(average('frameMs'), 0.001),
+                        workMs: average('workMs'),
+                        combatMs: average('combatMs'),
+                        simulationMs: average('simulationMs'),
+                        effectsMs: average('effectsMs'),
+                        renderMs: average('renderMs'),
+                        drawCalls: average('drawCalls'),
+                        geometries: samples.at(-1)?.geometries ?? renderer.info.memory.geometries,
+                        textures: samples.at(-1)?.textures ?? renderer.info.memory.textures,
+                        maxGeometries: maximum('geometries'),
+                        sceneObjects: samples.at(-1)?.sceneObjects ?? scene.children.length,
+                        maxSceneObjects: maximum('sceneObjects'),
+                        particles: effectStats.activeParticles,
+                        maxParticles: maximum('particles'),
+                        particleSlots: effectStats.particleSlots,
+                        shockwaves: effectStats.activeShockwaves,
+                        maxShockwaves: maximum('shockwaves'),
+                        shockwaveSlots: effectStats.shockwaveSlots,
+                        emitters: effectStats.activeEmitters,
+                        maxEmitters: maximum('emitters'),
+                        emitterSlots: effectStats.emitterSlots,
+                        effectGeometries: effectStats.geometries,
+                        effectMaterials: effectStats.materials,
+                        projectiles: samples.at(-1)?.projectiles ?? 0,
+                        cachedProjectiles: projectileStats.cached,
+                        soldiers: samples.at(-1)?.soldiers ?? 0,
+                        playerSoldiers: samples.at(-1)?.playerSoldiers ?? playerUnits.length,
+                        enemySoldiers: samples.at(-1)?.enemySoldiers ?? enemyUnits.length,
+                        memoryBytes: performance.memory?.usedJSHeapSize ?? null
+                    };
+                },
+                async runStressScenario(explosionCount = 30, intervalMs = 200) {
+                    if (!Number.isInteger(explosionCount) || explosionCount < 1
+                        || !Number.isFinite(intervalMs) || intervalMs < 1) {
+                        throw new RangeError('Stress scenario requires a positive count and interval');
+                    }
+                    startNewGame();
+                    updateEnemyAI = () => {};
+                    const playerFactory = createSoldierFactory(
+                        battleSimulation.world,
+                        ECS_FACTIONS.player,
+                        { x: 0, y: 0, z: 45 }
+                    );
+                    const enemyFactory = createSoldierFactory(
+                        battleSimulation.world,
+                        ECS_FACTIONS.enemy,
+                        { x: 0, y: 0, z: -45 }
+                    );
+                    for (let index = 0; index < 5; index++) {
+                        const x = (index - 2) * 1.4;
+                        spawnTroop('rifleman', new THREE.Vector3(x, 0, 4), true, playerFactory);
+                        spawnTroop('rifleman', new THREE.Vector3(x, 0, -4), false, enemyFactory);
+                    }
+                    battleSimulation.world.removeEntity(playerFactory);
+                    battleSimulation.world.removeEntity(enemyFactory);
+                    for (const x of [-5, 0, 5]) spawnAIBuilding('turret', new THREE.Vector3(x, 0, 0));
+                    diagnosticsSamples.length = 0;
+                    diagnosticsPreviousFrame = 0;
+                    let explosionIndex = 0;
+                    await new Promise((resolve) => {
+                        const timer = window.setInterval(() => {
+                            createCinematicExplosion(
+                                new THREE.Vector3((explosionIndex % 5 - 2) * 2, 0, (explosionIndex % 3 - 1) * 2),
+                                0.6,
+                                false
+                            );
+                            explosionIndex++;
+                            if (explosionIndex >= explosionCount) {
+                                window.clearInterval(timer);
+                                window.setTimeout(resolve, 2500);
+                            }
+                        }, intervalMs);
+                    });
+                    return this.read();
+                }
+            };
         }
 
         function onWindowResize() {
