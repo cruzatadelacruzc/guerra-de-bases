@@ -18,6 +18,8 @@ npm run build
 
 Las dependencias de Three.js, OrbitControls, las fuentes y el CSS se incluyen en el paquete; la partida no necesita descargar recursos de CDN.
 
+La shell web incluye `site.webmanifest` y los iconos para navegadores, instalación PWA en Android y pantalla de inicio de iOS. Los recursos se sirven desde `web/public/`; la aplicación aún no incluye un service worker ni funcionamiento offline.
+
 ## Arquitectura del juego
 
 La partida arranca con dos Nexos opuestos y sin soldados gratuitos. El Nexo es el centro de mando y determina la derrota cuando es destruido; no produce unidades. Las Barracas son fábricas: la orden manual de entrenamiento requiere una Barraca viva y oro suficiente. La IA también solicita unidades solo desde sus Barracas y tras comprobar sus recursos. No hay producción automática por temporizador.

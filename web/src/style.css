@@ -1268,6 +1268,569 @@ select {
   }
 }
 
+#game-hud {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  font-family: 'Rajdhani', sans-serif;
+}
+
+#game-hud.hidden {
+  display: none;
+}
+
+.game-status-rail {
+  min-width: 0;
+}
+
+#game-hud > .game-status-rail > #btn-pause-game {
+  position: static;
+  top: auto;
+  left: auto;
+  transform: none;
+}
+
+#game-hud > .game-toast-anchor {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.game-status-rail {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  left: max(1rem, env(safe-area-inset-left));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: start;
+  gap: clamp(0.4rem, 2vw, 1.5rem);
+}
+
+.game-faction-status {
+  display: flex;
+  width: min(100%, 19rem);
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.35rem;
+  background: rgba(3, 12, 21, 0.88);
+  backdrop-filter: blur(10px);
+}
+
+.game-faction-player {
+  justify-self: start;
+}
+
+.game-faction-enemy {
+  justify-self: end;
+}
+
+.game-faction-heading,
+.game-resource-line,
+.game-enemy-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.game-faction-name,
+.game-faction-name b {
+  overflow: hidden;
+  color: #67e8f9;
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(0.55rem, 0.75vw, 0.68rem);
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-faction-enemy .game-faction-name,
+.game-faction-enemy .game-faction-name b {
+  color: #fb7185;
+}
+
+.game-hp-value,
+.game-resource-line,
+.game-enemy-meta {
+  color: #94a3b8;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.game-hp-value {
+  color: #a5f3fc;
+  font-family: monospace;
+  font-size: 0.65rem;
+}
+
+.game-faction-enemy .game-hp-value {
+  color: #fecdd3;
+}
+
+.game-health-track {
+  height: 0.28rem;
+  overflow: hidden;
+  border: 1px solid rgba(103, 232, 249, 0.25);
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.game-health-fill {
+  display: block;
+  height: 100%;
+  background: #22d3ee;
+  box-shadow: 0 0 0.7rem rgba(34, 211, 238, 0.75);
+  transition: width 250ms ease;
+}
+
+.game-faction-enemy .game-health-track {
+  border-color: rgba(251, 113, 133, 0.3);
+}
+
+.game-faction-enemy .game-health-fill {
+  background: #f43f5e;
+  box-shadow: 0 0 0.7rem rgba(244, 63, 94, 0.7);
+}
+
+.game-resource-line {
+  color: #a8b5c5;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+}
+
+.game-resource-value {
+  color: #facc15;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.game-enemy-meta {
+  gap: 0.7rem;
+  font-size: 0.62rem;
+}
+
+#enemy-gold-text {
+  overflow: hidden;
+  color: #facc15;
+  text-overflow: ellipsis;
+}
+
+#ai-strat-tag {
+  overflow: hidden;
+  color: #fda4af;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.game-pause-button {
+  display: flex;
+  min-width: 3rem;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border-color: rgba(34, 211, 238, 0.42);
+  background: rgba(3, 12, 21, 0.92);
+  color: #a5f3fc;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.game-pause-button > span:first-child {
+  font-size: 1rem;
+}
+
+.game-toast-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.game-controls-drawer {
+  position: absolute;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  left: max(1rem, env(safe-area-inset-left));
+  z-index: 3;
+  display: flex;
+  width: min(100% - 2rem, 56rem);
+  flex-direction: column-reverse;
+  align-items: stretch;
+  gap: 0.45rem;
+  margin-inline: auto;
+}
+
+.game-controls-toggle {
+  display: flex;
+  width: min(100%, 19rem);
+  min-height: 3.25rem;
+  align-items: center;
+  justify-content: space-between;
+  align-self: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.85rem;
+  border-color: rgba(34, 211, 238, 0.72);
+  background: linear-gradient(110deg, rgba(2, 18, 30, 0.97), rgba(4, 25, 34, 0.95));
+  color: #a5f3fc;
+  box-shadow: 0 0 1.3rem rgba(6, 182, 212, 0.12), 0 0.5rem 1.5rem #0008;
+}
+
+.game-controls-toggle-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+}
+
+.game-controls-kicker {
+  color: #647d8e;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.48rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+}
+
+.game-controls-label {
+  overflow: hidden;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-controls-toggle-icon {
+  display: grid;
+  width: 1.85rem;
+  height: 1.85rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(103, 232, 249, 0.55);
+  border-radius: 50%;
+  color: #67e8f9;
+  font-size: 1.05rem;
+}
+
+.game-controls-content:not(.hidden) {
+  display: flex;
+  width: 100%;
+  max-height: min(34dvh, 18rem);
+  align-items: stretch;
+  gap: 0.55rem;
+  overflow: auto;
+  padding: 0.55rem;
+  border: 1px solid rgba(34, 211, 238, 0.36);
+  background:
+    linear-gradient(rgba(18, 117, 137, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(18, 117, 137, 0.045) 1px, transparent 1px),
+    rgba(2, 8, 15, 0.94);
+  background-size: 1rem 1rem;
+  box-shadow: 0 0 1.25rem rgba(6, 182, 212, 0.08), 0 0.75rem 2rem #000a;
+  backdrop-filter: blur(16px);
+  overscroll-behavior: contain;
+  scrollbar-color: #155e75 #07111a;
+}
+
+.game-controls-content > .cyber-panel {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem;
+  border-radius: 0.35rem;
+  background: rgba(4, 15, 25, 0.92);
+  box-shadow: inset 0 0 1rem rgba(6, 182, 212, 0.04);
+}
+
+.game-controls-content > .cyber-panel > div:first-child {
+  min-height: 1.35rem;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.16);
+}
+
+.game-controls-content > .cyber-panel > div:last-child {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.game-controls-content > .cyber-panel:nth-child(2) > div:last-child {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.game-controls-content .cyber-button {
+  display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  padding: 0.35rem;
+  text-align: center;
+  line-height: 1.15;
+}
+
+.game-controls-content .cyber-button span:first-child {
+  font-size: 0.68rem;
+}
+
+.game-controls-content .cyber-button span:nth-child(2) {
+  font-size: 0.57rem;
+}
+
+.game-controls-content .cyber-button span:last-child {
+  margin-top: 0.08rem;
+  font-size: 0.58rem;
+}
+
+.game-controls-content .cyber-button:hover:not(:disabled) {
+  transform: none;
+}
+
+.game-controls-content .cyber-button:disabled {
+  opacity: 0.48;
+}
+
+.unlock-panel:not(.hidden) {
+  display: block;
+  min-width: 12rem;
+  max-height: 15rem;
+  flex: 0 1 15rem;
+  overflow-y: auto;
+  padding: 0.55rem 0.3rem;
+}
+
+#game-controls-content > #unlock-panel.hidden {
+  display: none;
+}
+
+.game-keyboard-hint,
+.game-touch-hint {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .game-keyboard-hint {
+    display: inline;
+  }
+}
+
+@media (pointer: coarse) {
+  .game-touch-hint {
+    display: inline;
+  }
+}
+
+@media (max-width: 767px) {
+  .game-status-rail {
+    top: max(0.45rem, env(safe-area-inset-top));
+    right: max(0.45rem, env(safe-area-inset-right));
+    left: max(0.45rem, env(safe-area-inset-left));
+    gap: 0.35rem;
+  }
+
+  .game-faction-status {
+    gap: 0.25rem;
+    padding: 0.45rem 0.5rem;
+  }
+
+  .game-faction-name,
+  .game-faction-name b {
+    font-size: clamp(0.48rem, 2.3vw, 0.62rem);
+    letter-spacing: 0.06em;
+  }
+
+  .game-hp-value {
+    font-size: clamp(0.48rem, 2vw, 0.58rem);
+  }
+
+  .game-resource-line {
+    font-size: 0.48rem;
+  }
+
+  .game-resource-value {
+    font-size: 0.8rem;
+  }
+
+  .game-enemy-meta {
+    gap: 0.25rem;
+    font-size: 0.48rem;
+  }
+
+  .game-pause-button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.2rem;
+    font-size: 0.44rem;
+  }
+
+  #game-hud > .game-status-rail > #btn-pause-game {
+    min-height: 2.75rem;
+    padding: 0.2rem;
+  }
+
+  .game-pause-button > span:first-child {
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+
+  .game-controls-drawer {
+    right: max(0.4rem, env(safe-area-inset-right));
+    bottom: max(0.4rem, env(safe-area-inset-bottom));
+    left: max(0.4rem, env(safe-area-inset-left));
+    width: auto;
+    gap: 0.35rem;
+  }
+
+  .game-controls-toggle {
+    width: min(100%, 20rem);
+    min-height: 3rem;
+  }
+
+  .game-controls-content:not(.hidden) {
+    max-height: min(36dvh, 18rem);
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.4rem;
+  }
+
+  .game-controls-content > .cyber-panel {
+    flex: 0 0 auto;
+    gap: 0.35rem;
+    padding: 0.45rem;
+  }
+
+  .game-controls-content > .cyber-panel > div:first-child {
+    min-height: 1.25rem;
+    gap: 0.3rem;
+  }
+
+  .game-controls-content > .cyber-panel > div:first-child > span:first-child {
+    font-size: 0.55rem;
+  }
+
+  .game-controls-content > .cyber-panel > div:last-child {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.3rem;
+  }
+
+  .game-controls-content .cyber-button {
+    min-height: 2.75rem;
+    padding: 0.3rem;
+  }
+
+  .game-controls-content .cyber-button span:first-child {
+    font-size: 0.62rem;
+  }
+
+  .game-controls-content .cyber-button span:nth-child(2) {
+    font-size: 0.53rem;
+  }
+
+  .game-controls-content .cyber-button span:last-child {
+    font-size: 0.55rem;
+  }
+
+  .game-controls-content #cancel-build-hint,
+  .game-controls-content #barracks-status {
+    font-size: 0.5rem;
+    text-align: right;
+  }
+
+  .unlock-panel:not(.hidden) {
+    min-width: 0;
+    max-height: 6rem;
+    flex: 0 0 auto;
+  }
+
+  .game-toast-anchor {
+    top: 54%;
+  }
+}
+
+@media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
+  .game-status-rail {
+    top: max(0.3rem, env(safe-area-inset-top));
+    right: max(0.45rem, env(safe-area-inset-right));
+    left: max(0.45rem, env(safe-area-inset-left));
+  }
+
+  .game-faction-status {
+    gap: 0.18rem;
+    padding: 0.28rem 0.55rem;
+  }
+
+  .game-faction-heading {
+    gap: 0.25rem;
+  }
+
+  .game-controls-drawer {
+    right: max(0.45rem, env(safe-area-inset-right));
+    bottom: max(0.3rem, env(safe-area-inset-bottom));
+    left: max(0.45rem, env(safe-area-inset-left));
+    width: min(100% - 1rem, 48rem);
+  }
+
+  .game-controls-toggle {
+    min-height: 2.65rem;
+  }
+
+  .game-controls-content:not(.hidden) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: min(38dvh, 11rem);
+    padding: 0.3rem;
+  }
+
+  .game-controls-content > .cyber-panel {
+    gap: 0.2rem;
+    padding: 0.3rem;
+  }
+
+  .game-controls-content > .cyber-panel > div:last-child {
+    gap: 0.2rem;
+  }
+
+  .game-controls-content .cyber-button {
+    min-height: 2.75rem;
+    padding: 0.2rem;
+  }
+
+  .game-controls-content .cyber-button span:nth-child(2) {
+    display: none;
+  }
+
+  .game-controls-content .cyber-button span:last-child {
+    margin: 0;
+  }
+
+  .unlock-panel:not(.hidden) {
+    grid-column: 1 / -1;
+    max-height: 4.5rem;
+  }
+}
+
 #game-over-modal {
   overflow: hidden;
   overscroll-behavior: none;

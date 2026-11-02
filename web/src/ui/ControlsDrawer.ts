@@ -31,10 +31,10 @@ export class ControlsDrawer {
   }
 
   #renderLabel(): void {
-    const label = this.#button.querySelector<HTMLElement>('span:first-child');
+    const label = this.#button.querySelector<HTMLElement>('.game-controls-label');
     if (!label) throw new Error('Game controls toggle label is missing');
     label.innerText = this.expanded
       ? 'CERRAR CENTRO DE MANDO'
-      : `CENTRO DE MANDO${this.#rewardCount ? ` · ${this.#rewardCount} RECOMPENSA(S)` : ''}`;
+      : `ABRIR CENTRO DE MANDO${this.#rewardCount ? ` · ${this.#rewardCount} RECOMPENSA(S)` : ''}`;
   }
 }

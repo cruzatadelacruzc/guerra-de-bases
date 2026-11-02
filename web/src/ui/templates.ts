@@ -79,62 +79,46 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
         </main>
     </div>`;
 
-export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-4 md:p-6">
-        <div class="flex justify-between items-start gap-4 w-full pointer-events-auto">
-            <!-- Player Status Panel -->
-            <div class="cyber-panel p-4 rounded-lg flex flex-col gap-2 min-w-[220px] md:min-w-[280px]">
-                <div class="flex justify-between items-center border-b border-cyan-500/20 pb-1">
-                    <span class="font-orbitron text-xs font-bold text-cyan-400 uppercase tracking-wider">NEXO ALIADO</span>
-                    <span id="player-hq-hp-text" class="text-xs font-mono font-bold text-cyan-300">1200 / 1200 HP</span>
+export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-0 z-20 pointer-events-none">
+        <div class="game-status-rail pointer-events-auto">
+            <section class="game-faction-status game-faction-player cyber-panel" aria-label="Estado del Nexo aliado">
+                <div class="game-faction-heading">
+                    <span class="game-faction-name">NEXO <b>ALIADO</b></span>
+                    <span id="player-hq-hp-text" class="game-hp-value">1200 / 1200 HP</span>
                 </div>
-                <div class="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden border border-cyan-500/30">
-                    <div id="player-hq-bar" class="bg-cyan-400 h-2.5 rounded-full transition-all duration-300 w-full"></div>
+                <div class="game-health-track"><div id="player-hq-bar" class="game-health-fill w-full"></div></div>
+                <div class="game-resource-line">
+                    <span>ORO DISPONIBLE</span>
+                    <span id="res-gold" class="game-resource-value">200</span>
                 </div>
-                <div class="flex justify-between items-center mt-1">
-                    <div class="flex items-center gap-2">
-                        <div class="w-3 h-3 rounded-full bg-yellow-400 animate-ping"></div>
-                        <span class="text-xs text-slate-400 uppercase">Oro / Energía:</span>
-                    </div>
-                    <span id="res-gold" class="font-orbitron font-black text-yellow-400 text-lg">200</span>
-                </div>
-            </div>
+            </section>
 
-            <!-- Objective & Pause Control Center -->
-            <div class="flex flex-col items-center gap-2">
-                <button id="btn-pause-game" class="cyber-button px-4 py-1.5 text-xs font-orbitron font-bold text-amber-300 hover:text-white flex items-center gap-1 shadow-lg">
-                    <span>⏸️ PAUSA / MENÚ</span>
-                </button>
-                <div class="hidden lg:flex flex-col items-center cyber-panel px-6 py-1.5 rounded-lg text-center">
-                    <span class="text-[10px] text-cyan-400 font-bold tracking-widest uppercase">OBJETIVO PRINCIPAL</span>
-                    <span class="text-xs font-semibold text-slate-200">DESTRUYE EL NEXO ENEMIGO</span>
-                </div>
-            </div>
+            <button id="btn-pause-game" class="cyber-button game-pause-button pointer-events-auto" aria-label="Pausar partida">
+                <span aria-hidden="true">Ⅱ</span><span class="game-pause-label">PAUSA</span>
+            </button>
 
-            <!-- Enemy Status Panel -->
-            <div class="cyber-panel-red p-4 rounded-lg flex flex-col gap-2 min-w-[220px] md:min-w-[280px]">
-                <div class="flex justify-between items-center border-b border-red-500/20 pb-1">
-                    <span class="font-orbitron text-xs font-bold text-red-400 uppercase tracking-wider">NEXO ENEMIGO (IA)</span>
-                    <span id="enemy-hq-hp-text" class="text-xs font-mono font-bold text-red-300">1200 / 1200 HP</span>
+            <section class="game-faction-status game-faction-enemy cyber-panel-red" aria-label="Estado del Nexo enemigo">
+                <div class="game-faction-heading">
+                    <span class="game-faction-name">NEXO <b>HOSTIL</b></span>
+                    <span id="enemy-hq-hp-text" class="game-hp-value">1200 / 1200 HP</span>
                 </div>
-                <div class="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden border border-red-500/30">
-                    <div id="enemy-hq-bar" class="bg-red-500 h-2.5 rounded-full transition-all duration-300 w-full"></div>
+                <div class="game-health-track"><div id="enemy-hq-bar" class="game-health-fill w-full"></div></div>
+                <div class="game-enemy-meta">
+                    <span id="enemy-gold-text">ORO ENEMIGO: 200</span>
+                    <span id="ai-strat-tag">ESTADO IA: CONSTRUYENDO</span>
                 </div>
-                <div class="flex justify-between items-center mt-1 text-xs text-red-300">
-                    <span id="enemy-gold-text" class="font-mono text-yellow-400">ORO ENEMIGO: 200</span>
-                    <span id="ai-strat-tag" class="font-mono text-cyan-400 font-bold">ESTADO IA: CONSTRUYENDO</span>
-                </div>
-            </div>
+            </section>
         </div>
 
-        <!-- Middle Toast Notifications -->
-        <div class="self-center text-center pointer-events-none">
+        <div class="game-toast-anchor self-center text-center pointer-events-none">
             <div id="game-toast" class="opacity-0 transition-opacity duration-300 cyber-panel px-6 py-2 rounded-full border-cyan-400/50 text-cyan-300 font-bold text-sm tracking-wide shadow-lg">
                 Mensaje Táctico
             </div>
         </div>
-        <div class="game-controls-drawer w-full pointer-events-auto">
+        <div class="game-controls-drawer pointer-events-auto">
             <button id="btn-toggle-controls" class="cyber-button game-controls-toggle" type="button" aria-expanded="false" aria-controls="game-controls-content">
-                <span>ABRIR CENTRO DE MANDO</span><span id="controls-toggle-icon" aria-hidden="true">＋</span>
+                <span class="game-controls-toggle-copy"><span class="game-controls-kicker">COMANDO DE CAMPO</span><span class="game-controls-label">ABRIR CENTRO DE MANDO</span></span>
+                <span id="controls-toggle-icon" class="game-controls-toggle-icon" aria-hidden="true">＋</span>
             </button>
             <div id="game-controls-content" class="hidden game-controls-content">
 
@@ -142,7 +126,7 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
             <div class="cyber-panel p-3 rounded-xl flex flex-col gap-2 w-full md:w-auto">
                 <div class="flex justify-between items-center px-1">
                     <span class="font-orbitron text-[11px] font-bold text-cyan-400 uppercase tracking-wider">CONSTRUIR ESTRUCTURAS</span>
-                    <span id="cancel-build-hint" class="hidden text-[10px] text-yellow-400 font-mono animate-pulse">ESC: Cancelar</span>
+                    <span id="cancel-build-hint" class="hidden text-[10px] text-yellow-400 font-mono animate-pulse"><span class="game-keyboard-hint">ESC · CANCELAR</span><span class="game-touch-hint">TOCA EL TERRENO PARA COLOCAR</span></span>
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <button id="build-generator" class="cyber-button p-2.5 flex flex-col items-center min-w-[105px] text-left">
