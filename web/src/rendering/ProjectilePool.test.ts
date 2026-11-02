@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
-import { advanceProjectile, ProjectilePool } from './ProjectilePool.ts';
+import { advanceProjectile } from '../game/ecs/systems.ts';
+import { ProjectilePool } from './ProjectilePool.ts';
 
 test('projectiles report impact without overshooting and expire when their lifetime ends', () => {
   const position = { x: 0, y: 0, z: 0 };

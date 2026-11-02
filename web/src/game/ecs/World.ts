@@ -7,14 +7,22 @@ type ComponentStores = {
 function createComponentStores(): ComponentStores {
   return {
     base: new Map(),
+    building: new Map(),
+    economy: new Map(),
     factory: new Map(),
     faction: new Map(),
     health: new Map(),
     movement: new Map(),
+    production: new Map(),
+    projectile: new Map(),
+    resourceGenerator: new Map(),
     soldier: new Map(),
+    soldierKind: new Map(),
     structure: new Map(),
+    targeting: new Map(),
     targetable: new Map(),
-    transform: new Map()
+    transform: new Map(),
+    weapon: new Map()
   };
 }
 

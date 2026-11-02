@@ -12,8 +12,10 @@ import {
 import {
   applyDamageSystem,
   findNearestTarget,
+  requestUnitProduction,
   requestSoldierProduction,
-  runMovementSystem
+  runMovementSystem,
+  trySpendResources
 } from './systems.ts';
 
 test('world queries, type-safe components, removal, and clear preserve entity lifecycle', () => {
@@ -84,6 +86,200 @@ test('only a living factory can authorize soldier production', () => {
   assert.deepEqual(battle.world.query(COMPONENTS.soldier), [5]);
 });
 
+test('production orders atomically spend resources and create one soldier after simulation time', () => {
+  const simulation = new BattleSimulation();
+  const factory = createSoldierFactory(
+    simulation.world,
+    FACTIONS.player,
+    { x: 4, y: 0, z: 10 }
+  );
+  const wallet = simulation.world.getComponent(simulation.playerBase, COMPONENTS.economy);
+  assert.ok(wallet);
+  assert.equal(wallet.gold, 200);
+
+  const accepted = requestUnitProduction(
+    simulation.world,
+    factory,
+    simulation.playerBase,
+    'rifleman',
+    { x: 3, y: 0, z: 7 }
+  );
+  assert.deepEqual(accepted, { accepted: true, cost: 50, durationSeconds: 2 });
+  assert.equal(wallet.gold, 150);
+  assert.equal(simulation.world.query(COMPONENTS.soldier).length, 0);
+
+  assert.deepEqual(
+    requestUnitProduction(simulation.world, factory, simulation.playerBase, 'tank'),
+    { accepted: false, reason: 'factory-busy' }
+  );
+  assert.equal(wallet.gold, 150);
+
+  for (let index = 0; index < 21; index++) simulation.advance(0.1);
+  const soldiers = simulation.world.query(COMPONENTS.soldier);
+  assert.equal(soldiers.length, 1);
+  assert.equal(simulation.world.getComponent(soldiers[0], COMPONENTS.soldierKind), 'rifleman');
+  const spawnedPosition = simulation.world.getComponent(soldiers[0], COMPONENTS.transform);
+  assert.ok(spawnedPosition);
+  assert.ok(Math.hypot(spawnedPosition.x - 3, spawnedPosition.z - 7) <= 1);
+  assert.equal(simulation.drainProductionEvents().length, 1);
+  assert.equal(simulation.world.getComponent(factory, COMPONENTS.production)?.order, undefined);
+
+  for (let index = 0; index < 60; index++) simulation.advance(0.1);
+  assert.equal(simulation.world.query(COMPONENTS.soldier).length, 1);
+});
+
+test('production rejects unaffordable, faction-mismatched, dead, and invalid factories without spending', () => {
+  const simulation = new BattleSimulation();
+  const playerFactory = createSoldierFactory(
+    simulation.world,
+    FACTIONS.player,
+    { x: 0, y: 0, z: 10 }
+  );
+  const enemyFactory = createSoldierFactory(
+    simulation.world,
+    FACTIONS.enemy,
+    { x: 0, y: 0, z: -10 }
+  );
+  const wallet = simulation.world.getComponent(simulation.playerBase, COMPONENTS.economy);
+  assert.ok(wallet);
+  wallet.gold = 49;
+  assert.deepEqual(
+    requestUnitProduction(simulation.world, playerFactory, simulation.playerBase, 'rifleman'),
+    { accepted: false, reason: 'insufficient-resources' }
+  );
+  assert.equal(wallet.gold, 49);
+
+  assert.deepEqual(
+    requestUnitProduction(simulation.world, enemyFactory, simulation.playerBase, 'rifleman'),
+    { accepted: false, reason: 'invalid-factory' }
+  );
+  assert.deepEqual(
+    requestUnitProduction(simulation.world, simulation.playerBase, simulation.playerBase, 'rifleman'),
+    { accepted: false, reason: 'invalid-factory' }
+  );
+  assert.deepEqual(
+    requestUnitProduction(
+      simulation.world,
+      playerFactory,
+      simulation.playerBase,
+      'rifleman',
+      { x: Number.NaN, y: 0, z: 10 }
+    ),
+    { accepted: false, reason: 'invalid-order' }
+  );
+  assert.deepEqual(
+    requestUnitProduction(
+      simulation.world,
+      playerFactory,
+      simulation.playerBase,
+      'rifleman',
+      undefined,
+      { health: 0 }
+    ),
+    { accepted: false, reason: 'invalid-override' }
+  );
+
+  wallet.gold = 200;
+  applyDamageSystem(simulation.world, playerFactory, 380);
+  assert.deepEqual(
+    requestUnitProduction(simulation.world, playerFactory, simulation.playerBase, 'rifleman'),
+    { accepted: false, reason: 'invalid-factory' }
+  );
+  assert.equal(wallet.gold, 200);
+  assert.equal(trySpendResources(simulation.world, simulation.playerBase, 201), false);
+  assert.equal(wallet.gold, 200);
+});
+
+test('tank production uses its configured cost, duration, and combat state', () => {
+  const simulation = new BattleSimulation();
+  const factory = createSoldierFactory(
+    simulation.world,
+    FACTIONS.player,
+    { x: 0, y: 0, z: 10 }
+  );
+  const accepted = requestUnitProduction(
+    simulation.world,
+    factory,
+    simulation.playerBase,
+    'tank',
+    undefined,
+    { health: 456, weaponDamage: 54 }
+  );
+  assert.deepEqual(accepted, { accepted: true, cost: 180, durationSeconds: 5 });
+
+  for (let index = 0; index < 49; index++) simulation.advance(0.1);
+  assert.equal(simulation.world.query(COMPONENTS.soldier).length, 0);
+  for (let index = 0; index < 4; index++) simulation.advance(0.1);
+
+  const [tank] = simulation.world.query(COMPONENTS.soldier);
+  assert.ok(tank);
+  assert.equal(simulation.world.getComponent(tank, COMPONENTS.soldierKind), 'tank');
+  assert.equal(simulation.world.getComponent(tank, COMPONENTS.health)?.max, 456);
+  assert.equal(simulation.world.getComponent(tank, COMPONENTS.weapon)?.damage, 54);
+});
+
+test('idle Barracks never produce units without an explicit order', () => {
+  const simulation = new BattleSimulation();
+  createSoldierFactory(simulation.world, FACTIONS.player, { x: 0, y: 0, z: 10 });
+  for (let index = 0; index < 300; index++) simulation.advance(0.1);
+  assert.deepEqual(simulation.world.query(COMPONENTS.soldier), []);
+  assert.deepEqual(simulation.drainProductionEvents(), []);
+});
+
+test('buildings and generators store their type and production rates in ECS components', () => {
+  const simulation = new BattleSimulation({ enemyBaseIncome: 6 });
+  const playerGenerator = createStructure(
+    simulation.world,
+    FACTIONS.player,
+    { x: 4, y: 0, z: 10 },
+    380,
+    'generator'
+  );
+  const enemyGenerator = createStructure(
+    simulation.world,
+    FACTIONS.enemy,
+    { x: -4, y: 0, z: -10 },
+    380,
+    'generator'
+  );
+  const barracks = createSoldierFactory(
+    simulation.world,
+    FACTIONS.player,
+    { x: 0, y: 0, z: 15 }
+  );
+  const turret = createStructure(
+    simulation.world,
+    FACTIONS.player,
+    { x: 0, y: 0, z: 20 },
+    380,
+    'turret'
+  );
+
+  assert.deepEqual(simulation.world.getComponent(playerGenerator, COMPONENTS.building), {
+    kind: 'generator'
+  });
+  assert.deepEqual(simulation.world.getComponent(barracks, COMPONENTS.building), {
+    kind: 'barracks'
+  });
+  assert.deepEqual(simulation.world.getComponent(turret, COMPONENTS.building), {
+    kind: 'turret'
+  });
+  assert.equal(simulation.world.getComponent(turret, COMPONENTS.weapon)?.damage, 35);
+  assert.equal(simulation.world.getComponent(barracks, COMPONENTS.factory), true);
+
+  simulation.advance(0.1);
+  const income = simulation.drainGeneratedIncome();
+  assert.ok(Math.abs(income.player - 1.7) < 0.001);
+  assert.ok(Math.abs(income.enemy - 2.2) < 0.001);
+  assert.ok(Math.abs(
+    (simulation.world.getComponent(simulation.playerBase, COMPONENTS.economy)?.gold ?? 0) - 201.7
+  ) < 0.001);
+  assert.ok(Math.abs(
+    (simulation.world.getComponent(simulation.enemyBase, COMPONENTS.economy)?.gold ?? 0) - 202.2
+  ) < 0.001);
+  assert.equal(simulation.world.getComponent(enemyGenerator, COMPONENTS.resourceGenerator)?.incomePerSecond, 16);
+});
+
 test('destroyed or removed factories cannot authorize further production', () => {
   const battle = createInitialBattle();
   const destroyedFactory = createSoldierFactory(
@@ -101,6 +297,84 @@ test('destroyed or removed factories cannot authorize further production', () =>
   assert.equal(requestSoldierProduction(battle.world, destroyedFactory), undefined);
   assert.equal(battle.world.removeEntity(removedFactory), true);
   assert.equal(requestSoldierProduction(battle.world, removedFactory), undefined);
+});
+
+test('destroyed buildings stop targeting and are removed from the ECS world', () => {
+  const battle = createInitialBattle();
+  const attacker = createSoldier(battle.world, FACTIONS.player, { x: 0, y: 0, z: 0 });
+  const turret = createStructure(
+    battle.world,
+    FACTIONS.enemy,
+    { x: 0, y: 0, z: -5 },
+    35,
+    'turret'
+  );
+  const candidates = battle.world.query(COMPONENTS.targetable);
+
+  assert.equal(findNearestTarget(battle.world, attacker, candidates), turret);
+  assert.deepEqual(applyDamageSystem(battle.world, turret, 35), {
+    current: 0,
+    destroyed: true
+  });
+  assert.notEqual(findNearestTarget(battle.world, attacker, candidates), turret);
+  assert.equal(battle.world.removeEntity(turret), true);
+  assert.equal(battle.world.getComponent(turret, COMPONENTS.building), undefined);
+  assert.equal(battle.world.getComponent(turret, COMPONENTS.weapon), undefined);
+});
+
+test('weapons target through ECS and projectiles apply ECS damage on impact', () => {
+  const simulation = new BattleSimulation();
+  const turret = createStructure(
+    simulation.world,
+    FACTIONS.player,
+    { x: 0, y: 0, z: 0 },
+    380,
+    'turret'
+  );
+  const enemyBuilding = createStructure(
+    simulation.world,
+    FACTIONS.enemy,
+    { x: 0, y: 0, z: -5 },
+    50,
+    'generator'
+  );
+
+  simulation.advance(0.1);
+
+  assert.equal(simulation.getTarget(turret), enemyBuilding);
+  assert.equal(simulation.world.getComponent(turret, COMPONENTS.targeting)?.target, enemyBuilding);
+  assert.equal(simulation.drainWeaponEvents().length, 1);
+  simulation.advance(0.1);
+  assert.equal(simulation.drainProjectileImpacts().length, 1);
+  assert.equal(simulation.world.getComponent(enemyBuilding, COMPONENTS.health)?.current, 15);
+  assert.deepEqual(simulation.world.query(COMPONENTS.projectile), []);
+});
+
+test('soldier weapons keep their attack cooldown and damage in ECS state', () => {
+  const simulation = new BattleSimulation();
+  const soldier = createSoldier(
+    simulation.world,
+    FACTIONS.player,
+    { x: 0, y: 0, z: 0 }
+  );
+  const enemyBuilding = createStructure(
+    simulation.world,
+    FACTIONS.enemy,
+    { x: 0, y: 0, z: -5 },
+    100
+  );
+
+  simulation.advance(0.1);
+  assert.equal(simulation.drainWeaponEvents().length, 0);
+  simulation.advance(0.1);
+  simulation.advance(0.1);
+  simulation.advance(0.1);
+  simulation.advance(0.1);
+
+  assert.equal(simulation.world.getComponent(soldier, COMPONENTS.weapon)?.damage, 12);
+  assert.equal(simulation.world.getComponent(soldier, COMPONENTS.weapon)?.cooldownSeconds, 0.35);
+  assert.equal(simulation.world.getComponent(enemyBuilding, COMPONENTS.health)?.current, 88);
+  assert.equal(simulation.getTarget(soldier), enemyBuilding);
 });
 
 test('targeting selects the nearest living entity of the opposing faction', () => {

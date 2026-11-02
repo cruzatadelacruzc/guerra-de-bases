@@ -25,6 +25,12 @@ export interface GameOverSummary {
   enemyBaseDamagePercent: number;
 }
 
+export interface BarracksProductionView {
+  unit: UnitType;
+  remainingSeconds: number;
+  durationSeconds: number;
+}
+
 export interface GameActions {
   startGame(settings: MissionSettings): void;
   restartGame(): void;
@@ -45,7 +51,13 @@ export interface GameUiPort {
   enterGameplay(): void;
   enterMainMenu(): void;
   setPaused(paused: boolean): void;
-  updateResources(gold: number, enemyGold: number, barracksCount: number): void;
+  updateResources(
+    gold: number,
+    enemyGold: number,
+    barracksCount: number,
+    availableFactories: number,
+    production: readonly BarracksProductionView[]
+  ): void;
   setBaseHealth(
     player: { current: number; maximum: number },
     enemy: { current: number; maximum: number }

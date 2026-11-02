@@ -1,46 +1,9 @@
 import * as THREE from 'three';
-import type { Position } from '../game/ecs/components.ts';
 
 type ProjectileKey = 'player-light' | 'enemy-light' | 'player-heavy' | 'enemy-heavy';
-export type ProjectileAdvanceResult = 'moving' | 'impact' | 'expired';
-
-export interface ProjectileFlight {
-  position: Position;
-  target: Position;
-  remainingSeconds: number;
-}
 
 const MAX_CACHED_PROJECTILES_PER_TYPE = 64;
 const MAX_ACTIVE_PROJECTILES = 128;
-
-export function advanceProjectile(
-  flight: ProjectileFlight,
-  deltaSeconds: number,
-  speed = 38,
-  impactRadius = 1.2
-): ProjectileAdvanceResult {
-  if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0
-    || !Number.isFinite(speed) || speed <= 0
-    || !Number.isFinite(impactRadius) || impactRadius < 0
-    || !Number.isFinite(flight.remainingSeconds) || flight.remainingSeconds < 0) {
-    throw new RangeError('Projectile timing and movement values must be finite and non-negative');
-  }
-
-  const deltaX = flight.target.x - flight.position.x;
-  const deltaY = flight.target.y - flight.position.y;
-  const deltaZ = flight.target.z - flight.position.z;
-  const distance = Math.hypot(deltaX, deltaY, deltaZ);
-  if (distance <= impactRadius) return 'impact';
-  if (flight.remainingSeconds === 0) return 'expired';
-
-  const distanceToTravel = Math.min(speed * deltaSeconds, distance);
-  flight.position.x += (deltaX / distance) * distanceToTravel;
-  flight.position.y += (deltaY / distance) * distanceToTravel;
-  flight.position.z += (deltaZ / distance) * distanceToTravel;
-  flight.remainingSeconds = Math.max(0, flight.remainingSeconds - deltaSeconds);
-  if (distance - distanceToTravel <= impactRadius) return 'impact';
-  return flight.remainingSeconds === 0 ? 'expired' : 'moving';
-}
 
 function projectileKey(isPlayer: boolean, isHeavy: boolean): ProjectileKey {
   if (isPlayer) return isHeavy ? 'player-heavy' : 'player-light';

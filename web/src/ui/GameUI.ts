@@ -9,6 +9,7 @@ import { BuildMenu } from './BuildMenu.ts';
 import { ControlsDrawer } from './ControlsDrawer.ts';
 import { GameHud } from './GameHud.ts';
 import type {
+  BarracksProductionView,
   GameActions,
   GameOverSummary,
   GameUiPort,
@@ -98,11 +99,17 @@ export class GameUI implements GameUiPort {
     this.#hud?.setPauseVisible(paused);
   }
 
-  updateResources(gold: number, enemyGold: number, barracksCount: number): void {
+  updateResources(
+    gold: number,
+    enemyGold: number,
+    barracksCount: number,
+    availableFactories: number,
+    production: readonly BarracksProductionView[]
+  ): void {
     this.#element<HTMLElement>('res-gold').innerText = String(Math.floor(gold));
     this.#element<HTMLElement>('enemy-gold-text').innerText =
       `ORO ENEMIGO: ${Math.floor(enemyGold)}`;
-    this.#buildMenu?.updateResources(gold, barracksCount);
+    this.#buildMenu?.updateResources(gold, barracksCount, availableFactories, production);
   }
 
   setBaseHealth(

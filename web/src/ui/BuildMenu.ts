@@ -1,4 +1,9 @@
-import type { BuildingType, GameActions, UnitType } from './contracts.ts';
+import type {
+  BarracksProductionView,
+  BuildingType,
+  GameActions,
+  UnitType
+} from './contracts.ts';
 
 const BUILDING_IDS: Record<BuildingType, string> = {
   generator: 'build-generator',
@@ -19,7 +24,12 @@ export class BuildMenu {
     this.#root = root;
   }
 
-  updateResources(gold: number, barracksCount: number): void {
+  updateResources(
+    gold: number,
+    barracksCount: number,
+    availableFactories: number,
+    production: readonly BarracksProductionView[]
+  ): void {
     for (const type of Object.keys(BUILDING_IDS) as BuildingType[]) {
       this.#button(BUILDING_IDS[type]).disabled = gold < BUILDING_COSTS[type];
     }
@@ -30,10 +40,29 @@ export class BuildMenu {
     if (barracksCount > 0) {
       const label = document.createElement('span');
       label.className = 'text-cyan-400 font-bold';
-      label.textContent = `${barracksCount} Barraca(s) (${barracksCount}x Tropas)`;
+      label.textContent = `${barracksCount} Barraca(s) · ${availableFactories} disponible(s)`;
       status.replaceChildren(label);
-      rifleman.disabled = gold < 50 * barracksCount;
-      tank.disabled = gold < 180 * barracksCount;
+      for (const order of production) {
+        const progress = document.createElement('progress');
+        progress.className = 'w-full h-1.5 accent-cyan-400';
+        progress.max = order.durationSeconds;
+        progress.value = order.durationSeconds - order.remainingSeconds;
+        progress.setAttribute(
+          'aria-label',
+          `Producción de ${order.unit === 'rifleman' ? 'soldado' : 'tanque'}`
+        );
+        const details = document.createElement('div');
+        details.className = 'flex items-center gap-2 text-[10px] text-slate-300';
+        details.append(
+          document.createTextNode(
+            `${order.unit === 'rifleman' ? 'Soldado' : 'Tanque'} · ${order.remainingSeconds.toFixed(1)} s`
+          ),
+          progress
+        );
+        status.append(details);
+      }
+      rifleman.disabled = availableFactories === 0 || gold < 50;
+      tank.disabled = availableFactories === 0 || gold < 180;
     } else {
       const label = document.createElement('span');
       label.className = 'text-red-400 font-bold';
