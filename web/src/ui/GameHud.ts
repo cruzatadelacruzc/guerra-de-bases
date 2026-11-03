@@ -1,14 +1,17 @@
-import type { GameOverSummary, UnlockView } from './contracts.ts';
+import { getRewardDefinitionForDifficulty } from '../game/rewardSystem.ts';
+import type { GameOverSummary, RewardUiState } from './contracts.ts';
+import { createRewardIcon, getRewardCategory } from './rewardPresentation.ts';
 
 export class GameHud {
   readonly #root: ParentNode;
-  readonly #unlockPanel: HTMLElement;
+  readonly #rewardCards: HTMLElement;
+  #rewardStructureKey = '';
 
   constructor(root: ParentNode) {
     this.#root = root;
-    const unlockPanel = root.querySelector<HTMLElement>('#unlock-panel');
-    if (!unlockPanel) throw new Error('Unlock panel element is missing');
-    this.#unlockPanel = unlockPanel;
+    const rewardCards = root.querySelector<HTMLElement>('#tactical-reward-cards');
+    if (!rewardCards) throw new Error('Tactical reward card container is missing');
+    this.#rewardCards = rewardCards;
   }
 
   setBaseHealth(
@@ -23,36 +26,99 @@ export class GameHud {
     this.#element<HTMLElement>('ai-strat-tag').innerText = status;
   }
 
-  setUnlocks(unlocks: readonly UnlockView[]): void {
-    const available = unlocks.filter((item) => item.unlocked);
-    if (!available.length) {
-      this.#unlockPanel.classList.add('hidden');
-      this.#unlockPanel.replaceChildren();
+  setRewardState(state: RewardUiState): void {
+    this.#element<HTMLElement>('reward-combat-points').innerText = String(state.combatPoints);
+    this.#element<HTMLElement>('reward-gold-balance').innerText = String(Math.floor(state.gold));
+    this.#element<HTMLElement>('res-combat-points').innerText = `${state.combatPoints} CP`;
+    this.#element<HTMLElement>('res-gold').innerText = String(Math.floor(state.gold));
+    const structureKey = `${state.difficulty}:${state.rewards.map((reward) => `${reward.id}-${reward.status}`).join('|')}`;
+    if (structureKey === this.#rewardStructureKey) {
+      this.#updateRewardTimers(state);
       return;
     }
+    this.#rewardStructureKey = structureKey;
+    const cards: HTMLElement[] = [];
 
-    const wasOpen = this.#unlockPanel.querySelector('details')?.open ?? false;
-    const details = document.createElement('details');
-    details.className = 'cyber-panel rounded-xl border border-cyan-500/40 bg-slate-950/90 shadow-[0_0_30px_rgba(34,211,238,0.08)]';
-    details.open = wasOpen;
+    for (const rewardState of state.rewards) {
+      const definition = getRewardDefinitionForDifficulty(rewardState.id, state.difficulty);
+      const card = document.createElement('article');
+      card.className = `tactical-reward-card is-${rewardState.status.toLowerCase().replaceAll(' ', '-')}`;
+      card.dataset.rewardCard = rewardState.id;
+      const heading = document.createElement('header');
+      heading.className = 'tactical-reward-card-heading';
+      const identity = document.createElement('div');
+      identity.className = 'tactical-reward-identity';
+      identity.append(createRewardIcon(rewardState.id));
+      const titleGroup = document.createElement('div');
+      const category = document.createElement('span');
+      category.className = 'tactical-reward-category';
+      category.textContent = getRewardCategory(rewardState.id);
+      const title = document.createElement('h3');
+      title.textContent = definition.title;
+      titleGroup.append(category, title);
+      identity.append(titleGroup);
+      const status = document.createElement('span');
+      status.className = 'tactical-reward-status';
+      status.textContent = rewardState.status;
+      heading.append(identity, status);
 
-    const summary = document.createElement('summary');
-    summary.className = 'flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 p-3';
-    const title = document.createElement('span');
-    title.className = 'font-orbitron text-[10px] uppercase tracking-[0.22em] text-cyan-400';
-    title.textContent = 'premios tácticos';
-    const count = document.createElement('span');
-    count.className = 'text-[10px] text-slate-300';
-    count.textContent = `${available.length} DISPONIBLE(S)`;
-    summary.append(title, count);
-    details.append(summary);
+      const description = document.createElement('p');
+      description.className = 'tactical-reward-description';
+      description.textContent = definition.description;
+      const costs = document.createElement('div');
+      costs.className = 'tactical-reward-costs';
+      const points = document.createElement('span');
+      const pointsValue = document.createElement('b');
+      pointsValue.textContent = String(definition.pointsCost);
+      points.append(pointsValue, ' CP');
+      const gold = document.createElement('span');
+      const goldValue = document.createElement('b');
+      goldValue.textContent = String(definition.goldCost);
+      gold.append(goldValue, ' ORO');
+      costs.append(points, gold);
+      card.append(heading, description, costs);
 
-    const entries = document.createElement('div');
-    entries.className = 'space-y-2';
-    for (const item of available) entries.append(this.#createUnlockEntry(item));
-    details.append(entries);
-    this.#unlockPanel.replaceChildren(details);
-    this.#unlockPanel.classList.remove('hidden');
+      if (rewardState.status === 'ACTIVE') {
+        const timer = document.createElement('p');
+        timer.className = 'tactical-reward-timer';
+        timer.textContent = `ACTIVA · ${rewardState.remainingSeconds.toFixed(1)} s`;
+        card.append(timer);
+      } else if (rewardState.status === 'COOLDOWN') {
+        const timer = document.createElement('p');
+        timer.className = 'tactical-reward-timer';
+        timer.textContent = `RECARGA · ${rewardState.cooldownSeconds.toFixed(1)} s`;
+        card.append(timer);
+      }
+
+      if (rewardState.status === 'READY') {
+        const activate = document.createElement('button');
+        activate.type = 'button';
+        activate.dataset.rewardId = rewardState.id;
+        activate.className = 'cyber-button tactical-reward-action';
+        activate.textContent = 'ACTIVAR APOYO';
+        card.append(activate);
+      }
+      cards.push(card);
+    }
+
+    this.#rewardCards.replaceChildren(...cards);
+    this.#updateRewardTimers(state);
+  }
+
+  #updateRewardTimers(state: RewardUiState): void {
+    for (const rewardState of state.rewards) {
+      const card = this.#rewardCards.querySelector<HTMLElement>(
+        `[data-reward-card="${rewardState.id}"]`
+      );
+      if (!card) continue;
+      const timer = card.querySelector<HTMLElement>('.tactical-reward-timer');
+      if (!timer) continue;
+      if (rewardState.status === 'ACTIVE') {
+        timer.textContent = `ACTIVA · ${rewardState.remainingSeconds.toFixed(1)} s`;
+      } else if (rewardState.status === 'COOLDOWN') {
+        timer.textContent = `RECARGA · ${rewardState.cooldownSeconds.toFixed(1)} s`;
+      }
+    }
   }
 
   showGameOver(summary: GameOverSummary): void {
@@ -113,41 +179,6 @@ export class GameHud {
     this.#element<HTMLElement>(`${side}-hq-bar`).style.width = `${percentage}%`;
     this.#element<HTMLElement>(`${side}-hq-hp-text`).innerText =
       `${Math.ceil(health.current)} / ${health.maximum} HP`;
-  }
-
-  #createUnlockEntry(item: UnlockView): HTMLElement {
-    const available = item.unlocked;
-    const entry = document.createElement('div');
-    entry.className = `mx-3 mb-2 rounded-lg border ${available ? 'border-cyan-500/40 bg-cyan-950/20' : 'border-slate-700 bg-slate-900/60'} p-2`;
-
-    const heading = document.createElement('div');
-    heading.className = 'flex items-center justify-between gap-2';
-    const textGroup = document.createElement('div');
-    const type = document.createElement('div');
-    type.className = `text-[10px] uppercase tracking-wide ${available ? 'text-cyan-300' : 'text-slate-400'}`;
-    type.textContent = item.type === 'temporary' ? 'TEMPORAL' : 'PERMANENTE';
-    const title = document.createElement('div');
-    title.className = 'text-xs font-bold text-slate-100';
-    title.textContent = item.title || item.id;
-    textGroup.append(type, title);
-    const state = document.createElement('span');
-    state.className = `text-[10px] ${available ? 'text-cyan-300' : 'text-slate-500'}`;
-    state.textContent = item.ready ? 'Listo' : (available ? 'Desbloqueado' : 'Bloqueado');
-    heading.append(textGroup, state);
-
-    const description = document.createElement('div');
-    description.className = 'mt-1 text-[10px] text-slate-300 leading-relaxed';
-    description.textContent = item.description || 'Recompensa desbloqueada por objetivo.';
-    entry.append(heading, description);
-
-    if (item.ready) {
-      const button = document.createElement('button');
-      button.dataset.unlockId = item.id;
-      button.className = 'mt-2 w-full cyber-button px-2 py-1 text-[10px] font-orbitron font-bold text-cyan-300';
-      button.textContent = 'Activar ahora';
-      entry.append(button);
-    }
-    return entry;
   }
 
   #element<ElementType extends Element>(id: string): ElementType {

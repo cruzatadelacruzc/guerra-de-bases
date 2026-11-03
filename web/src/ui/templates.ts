@@ -7,13 +7,7 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
             <header class="menu-heading">
                 <span class="menu-kicker">COMANDO TÁCTICO <i></i> SECTOR 07</span>
                 <h1 class="font-orbitron">GUERRA <span>DE BASES</span></h1>
-                <p>Construye. Resiste. Destruye el Nexo enemigo.</p>
             </header>
-
-            <div class="menu-status-strip" aria-label="Estado de la misión">
-                <span><i aria-hidden="true">✓</i> NEXO ALIADO <b>100%</b></span>
-                <span>MODO <b>1 JUGADOR VS IA</b></span>
-            </div>
 
             <section class="menu-brief cyber-panel" aria-label="Configuración de misión">
                 <div class="menu-brief-heading">
@@ -51,8 +45,8 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
                 </div>
 
                 <details class="menu-rules">
-                    <summary>Reglas de la misión <span>+</span></summary>
-                    <p>Empiezas con tu Nexo y 200 de oro. Construye generadores, barracas y torretas; entrena soldados y tanques. La primera base que pierda su Nexo, pierde el sector.</p>
+                    <summary>Recompensa <span>+</span></summary>
+                    <div id="mission-rules-content" class="mission-rules-content" aria-live="polite"></div>
                 </details>
             </section>
 
@@ -60,21 +54,7 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
                 <button id="btn-start-game" class="cyber-button menu-start-button font-orbitron">
                     DESPLEGAR UNIDADES <span aria-hidden="true">→</span><small>ST-07</small>
                 </button>
-                <section id="menu-intel-panel" class="menu-intel-panel hidden" aria-live="polite"></section>
-                <nav class="menu-nav" aria-label="Información del comando">
-                    <button type="button" data-menu-tab="arsenal" aria-pressed="false">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8V6.5A2.5 2.5 0 0 1 10.5 4h3A2.5 2.5 0 0 1 16 6.5V8M6 8h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z"/><path d="M4 13h16M8 11v4m8-4v4"/></svg>
-                        ARSENAL
-                    </button>
-                    <button type="button" data-menu-tab="profile" aria-pressed="false">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 3v5.5c0 4.2-2.8 7.8-7 9.5-4.2-1.7-7-5.3-7-9.5V6l7-3Z"/><path d="m9 12 2 2 4-4"/></svg>
-                        PERFIL
-                    </button>
-                    <button type="button" data-menu-tab="system" aria-pressed="false">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3.5h4l.6 2.1a7 7 0 0 1 1.6.9l2-.8 2 3.5-1.5 1.6a7 7 0 0 1 0 1.8l1.5 1.6-2 3.5-2-.8a7 7 0 0 1-1.6.9L14 20.5h-4l-.6-2.1a7 7 0 0 1-1.6-.9l-2 .8-2-3.5 1.5-1.6a7 7 0 0 1 0-1.8L3.8 9.8l2-3.5 2 .8a7 7 0 0 1 1.6-.9L10 3.5Z"/><circle cx="12" cy="11.7" r="2.6"/></svg>
-                        SISTEMA
-                    </button>
-                </nav>
+                <section id="menu-intel-panel" class="menu-intel-panel hidden" aria-live="polite" aria-label="Información del arsenal"></section>
             </div>
         </main>
     </div>`;
@@ -90,6 +70,10 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
                 <div class="game-resource-line">
                     <span>ORO DISPONIBLE</span>
                     <span id="res-gold" class="game-resource-value">200</span>
+                </div>
+                <div class="game-resource-line game-resource-line--cp">
+                    <span>CP DISPONIBLES</span>
+                    <span id="res-combat-points" class="game-resource-value">0 CP</span>
                 </div>
             </section>
 
@@ -176,7 +160,19 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
                     </button>
                 </div>
             </div>
-            <div id="unlock-panel" class="hidden cyber-panel unlock-panel"></div>
+            <section id="tactical-rewards-panel" class="cyber-panel tactical-rewards-panel" aria-label="Apoyo táctico">
+                <div class="tactical-rewards-heading">
+                    <div>
+                        <span class="tactical-rewards-kicker">APOYO TÁCTICO</span>
+                        <h2>RECOMPENSAS DE COMBATE</h2>
+                    </div>
+                    <div class="tactical-rewards-balance">
+                        <span><b id="reward-combat-points">0</b> CP DISPONIBLES</span>
+                        <span><b id="reward-gold-balance">200</b> ORO</span>
+                    </div>
+                </div>
+                <div id="tactical-reward-cards" class="tactical-reward-cards" aria-live="polite"></div>
+            </section>
             </div>
         </div>
     </div>`;

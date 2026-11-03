@@ -8,15 +8,19 @@ import {
 import { BuildMenu } from './BuildMenu.ts';
 import { ControlsDrawer } from './ControlsDrawer.ts';
 import { GameHud } from './GameHud.ts';
+import { getRewardDefinitionForDifficulty, REWARD_DEFINITIONS } from '../game/rewardSystem.ts';
 import type {
   BarracksProductionView,
   GameActions,
   GameOverSummary,
   GameUiPort,
   MissionSettings,
+  RewardId,
+  RewardUiState,
   UnlockView,
 } from './contracts.ts';
 import { ToastNotifications } from './ToastNotifications.ts';
+import { createRewardIcon, getRewardCategory, getRewardEffect } from './rewardPresentation.ts';
 
 export class GameUI implements GameUiPort {
   readonly #root: HTMLElement;
@@ -46,6 +50,7 @@ export class GameUI implements GameUiPort {
     this.#hud = new GameHud(this.#root);
     this.#toast = new ToastNotifications(this.#root);
     this.#root.addEventListener('click', this.#handleClick);
+    this.#renderMissionRules(this.getMissionSettings().difficulty);
     this.#mounted = true;
   }
 
@@ -89,7 +94,6 @@ export class GameUI implements GameUiPort {
     this.#hud?.setPauseVisible(false);
     this.#hud?.setGameOverVisible(false);
     this.#hud?.setGameVisible(false);
-    this.#hud?.setUnlocks([]);
     const mainMenu = this.#element<HTMLElement>('main-menu');
     mainMenu.classList.remove('hidden', 'pointer-events-none');
     window.setTimeout(() => mainMenu.classList.remove('opacity-0'), 50);
@@ -132,8 +136,12 @@ export class GameUI implements GameUiPort {
   }
 
   setUnlocks(unlocks: readonly UnlockView[]): void {
-    this.#hud?.setUnlocks(unlocks);
-    this.#controls?.setRewardCount(unlocks.filter((item) => item.unlocked).length);
+    this.#permanentUnlockCount = unlocks.filter((item) => item.type === 'permanent' && item.unlocked).length;
+  }
+
+  updateRewardState(state: RewardUiState): void {
+    this.#hud?.setRewardState(state);
+    this.#controls?.setCombatPoints(state.combatPoints);
   }
 
   showGameOver(summary: GameOverSummary): void {
@@ -193,9 +201,12 @@ export class GameUI implements GameUiPort {
       this.#showMenuTab(button.dataset.menuTab, button);
       return;
     }
-    if (button.dataset.unlockId) {
+    if (button.dataset.rewardId) {
       event.stopPropagation();
-      actions?.activateUnlock(button.dataset.unlockId);
+      const rewardId = button.dataset.rewardId;
+      if (rewardId === 'artillery_strike' || rewardId === 'air_strike' || rewardId === 'defensive_shield') {
+        actions?.activateReward(rewardId);
+      }
       return;
     }
     if (actions && this.#buildMenu?.dispatchAction(id, actions)) {
@@ -217,9 +228,20 @@ export class GameUI implements GameUiPort {
       hard: 'AMENAZA: CRÍTICA',
     };
     this.#element<HTMLElement>('difficulty-threat').innerText = labels[value];
+    const rulesContent = this.#root.querySelector<HTMLElement>('#mission-rules-content');
+    if (rulesContent) {
+      this.#renderMissionRules(value);
+    }
   }
 
   #showMenuTab(tab: string, button: HTMLButtonElement): void {
+    if (tab === 'mission-rules') {
+      const rulesContent = this.#root.querySelector<HTMLElement>('#mission-rules-content');
+      if (!rulesContent) return;
+      button.setAttribute('aria-pressed', 'true');
+      rulesContent.classList.toggle('expanded');
+      return;
+    }
     const panel = this.#element<HTMLElement>('menu-intel-panel');
     const wasSelected = button.getAttribute('aria-pressed') === 'true';
     this.#root.querySelectorAll<HTMLButtonElement>('[data-menu-tab]').forEach((item) => {
@@ -231,12 +253,6 @@ export class GameUI implements GameUiPort {
       return;
     }
     const contents: Record<string, string[]> = {
-      arsenal: [
-        'ARSENAL DE CAMPAÑA',
-        'Apoyo de helicóptero · racha de 5 bajas',
-        'Bombardeo · racha de 10 bajas',
-        'Blindaje veterano · 20 bajas acumuladas',
-      ],
       profile: [
         'PERFIL LOCAL',
         'Progreso guardado en este dispositivo.',
@@ -260,6 +276,61 @@ export class GameUI implements GameUiPort {
       return span;
     }));
     panel.classList.remove('hidden');
+  }
+
+  #renderMissionRules(difficulty: MissionSettings['difficulty']): void {
+    const panel = this.#root.querySelector<HTMLElement>('#mission-rules-content');
+    if (!panel) return;
+
+    panel.replaceChildren();
+    const intro = document.createElement('p');
+    intro.textContent = 'Construye. Resiste. Destruye el Nexo enemigo.';
+    intro.className = 'mission-rules-intro';
+
+    const grid = document.createElement('div');
+    grid.className = 'mission-rules-grid';
+
+    for (const id of Object.keys(REWARD_DEFINITIONS) as RewardId[]) {
+      const definition = getRewardDefinitionForDifficulty(id, difficulty);
+      const card = document.createElement('article');
+      card.className = 'mission-rules-card';
+
+      const header = document.createElement('div');
+      header.className = 'mission-rules-card-header';
+      header.append(createRewardIcon(id));
+
+      const name = document.createElement('div');
+      name.className = 'mission-rules-card-title';
+      const category = document.createElement('span');
+      category.className = 'mission-rules-card-category';
+      category.textContent = getRewardCategory(id);
+      const title = document.createElement('h3');
+      title.textContent = definition.title;
+      name.append(category, title);
+      header.append(name);
+
+      const description = document.createElement('p');
+      description.textContent = definition.description;
+      const effect = document.createElement('p');
+      effect.className = 'mission-rules-card-effect';
+      effect.textContent = getRewardEffect(id);
+      const costs = document.createElement('div');
+      costs.className = 'mission-rules-card-costs';
+      const points = document.createElement('span');
+      const pointsValue = document.createElement('b');
+      pointsValue.textContent = String(definition.pointsCost);
+      points.append(pointsValue, ' CP');
+      const gold = document.createElement('span');
+      const goldValue = document.createElement('b');
+      goldValue.textContent = String(definition.goldCost);
+      gold.append(goldValue, ' ORO');
+      costs.append(points, gold);
+
+      card.append(header, description, effect, costs);
+      grid.append(card);
+    }
+
+    panel.append(intro, grid);
   }
 
   #element<ElementType extends Element>(id: string): ElementType {

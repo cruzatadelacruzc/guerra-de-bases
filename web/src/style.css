@@ -365,8 +365,9 @@ select {
 .menu-shell {
   width: min(100%, 39rem);
   min-height: min(100%, 56rem);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  gap: clamp(0.6rem, 2vh, 1.35rem);
+  grid-template-rows: auto auto auto;
+  align-content: center;
+  gap: clamp(0.5rem, 1.2vh, 0.8rem);
 }
 
 .menu-heading {
@@ -539,11 +540,34 @@ select {
 }
 
 .menu-rules summary {
+  display: flex;
   min-height: 3.2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  background: rgba(8, 22, 34, 0.7);
+  color: #67e8f9;
   font-family: 'Orbitron', sans-serif;
   font-size: 0.73rem;
   letter-spacing: 0.08em;
+  list-style: none;
   text-transform: uppercase;
+  cursor: pointer;
+}
+
+.menu-rules summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-rules summary span {
+  font-size: 1.2rem;
+  transition: transform 160ms ease;
+}
+
+.menu-rules[open] summary span {
+  transform: rotate(45deg);
 }
 
 .menu-bottom {
@@ -748,7 +772,7 @@ select {
 .menu-shell {
   display: grid;
   width: min(100%, 38rem);
-  gap: clamp(1rem, 3vh, 1.6rem);
+  gap: clamp(0.45rem, 1.25vh, 0.7rem);
   margin: auto;
 }
 
@@ -908,6 +932,92 @@ select {
   transform: rotate(45deg);
 }
 
+.mission-rules-content {
+  display: grid;
+  gap: 0.7rem;
+  padding-top: 0.55rem;
+}
+
+.mission-rules-intro {
+  margin: 0;
+  color: #dbeafe;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.mission-rules-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.mission-rules-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem;
+  border: 1px solid rgba(71, 103, 120, 0.52);
+  background: linear-gradient(145deg, rgba(10, 28, 42, 0.92), rgba(4, 13, 22, 0.9));
+}
+
+.mission-rules-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.mission-rules-card-title {
+  min-width: 0;
+}
+
+.mission-rules-card-category {
+  display: block;
+  color: #67e8f9;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.48rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mission-rules-card h3 {
+  margin: 0.15rem 0 0;
+  color: #f0f9ff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.mission-rules-card p {
+  margin: 0;
+  color: #a9bac8;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.74rem;
+  line-height: 1.22;
+}
+
+.mission-rules-card-effect {
+  color: #67e8f9 !important;
+  font-size: 0.7rem;
+}
+
+.mission-rules-card-costs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(71, 103, 120, 0.4);
+  color: #cbd5e1;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.56rem;
+  letter-spacing: 0.04em;
+}
+
+.mission-rules-card-costs b {
+  color: #fde68a;
+}
+
 .menu-rules p {
   max-width: 58ch;
   margin: 0 0 0.25rem;
@@ -948,7 +1058,7 @@ select {
 
   .menu-shell {
     width: 100%;
-    gap: 0.85rem;
+    gap: clamp(0.5rem, 1.5vh, 0.75rem);
   }
 
   .menu-kicker {
@@ -996,7 +1106,7 @@ select {
     grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
     align-items: center;
     column-gap: 1.25rem;
-    row-gap: 0.7rem;
+    row-gap: 0.65rem;
   }
 
   .menu-heading {
@@ -1037,6 +1147,10 @@ select {
     grid-column: 1;
     min-height: 2.75rem;
     font-size: 0.72rem;
+  }
+
+  .menu-bottom {
+    grid-column: 1;
   }
 }
 
@@ -1413,6 +1527,10 @@ select {
   font-weight: 900;
 }
 
+.game-resource-line--cp .game-resource-value {
+  color: #67e8f9;
+}
+
 .game-enemy-meta {
   gap: 0.7rem;
   font-size: 0.62rem;
@@ -1475,14 +1593,14 @@ select {
 }
 
 .game-controls-toggle {
-  display: flex;
-  width: min(100%, 19rem);
-  min-height: 3.25rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: min(100%, 21rem);
+  min-height: 3.5rem;
   align-items: center;
-  justify-content: space-between;
   align-self: center;
   gap: 0.75rem;
-  padding: 0.45rem 0.85rem;
+  padding: 0.55rem 0.9rem;
   border-color: rgba(34, 211, 238, 0.72);
   background: linear-gradient(110deg, rgba(2, 18, 30, 0.97), rgba(4, 25, 34, 0.95));
   color: #a5f3fc;
@@ -1506,11 +1624,13 @@ select {
 }
 
 .game-controls-label {
+  min-width: 0;
   overflow: hidden;
   font-family: 'Orbitron', sans-serif;
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.07em;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2082,6 +2202,12 @@ select {
 
   .game-over-actions small {
     margin-top: 0;
+  }
+}
+
+@media (max-width: 767px) {
+  #game-controls-content:not(.hidden) > .cyber-panel:not(#tactical-rewards-panel) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -3772,5 +3898,446 @@ select {
 @media (max-height: 520px) {
   #game-over-modal .game-over-actions button {
     min-height: 2rem;
+  }
+}
+
+.reward-icon {
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.menu-intel-panel:not(.hidden) {
+  max-height: min(38dvh, 23rem);
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-left: 2px solid #22d3ee;
+  background: rgba(3, 13, 23, 0.94);
+  overscroll-behavior: contain;
+}
+
+.arsenal-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.18);
+}
+
+.arsenal-heading > span,
+.arsenal-reward-category {
+  color: #7dd3fc;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.55rem;
+  letter-spacing: 0.12em;
+}
+
+.arsenal-heading > strong {
+  color: #e0f2fe;
+  font-size: 0.66rem;
+}
+
+.arsenal-reward-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  padding-top: 0.55rem;
+}
+
+.arsenal-reward-card {
+  min-width: 0;
+  padding: 0.6rem;
+  border: 1px solid rgba(71, 103, 120, 0.52);
+  background: linear-gradient(145deg, rgba(10, 28, 42, 0.92), rgba(4, 13, 22, 0.9));
+}
+
+.arsenal-reward-card-heading,
+.tactical-reward-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.arsenal-reward-card .reward-icon {
+  color: #67e8f9;
+}
+
+.arsenal-reward-card h3,
+.tactical-reward-card h3 {
+  margin-top: 0.18rem;
+  color: #f0f9ff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.arsenal-reward-card > p {
+  margin-top: 0.45rem;
+  color: #a9bac8;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.arsenal-reward-card > .arsenal-reward-effect {
+  color: #67e8f9;
+  font-size: 0.69rem;
+}
+
+.arsenal-reward-costs,
+.tactical-reward-costs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(71, 103, 120, 0.4);
+  color: #cbd5e1;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+}
+
+.arsenal-reward-costs b,
+.tactical-reward-costs b {
+  color: #fde68a;
+  font-size: 0.7rem;
+}
+
+.arsenal-consumption-note {
+  padding-top: 0.55rem;
+  color: #94a3b8;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.game-controls-content:not(.hidden) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: min(42dvh, 25rem);
+}
+
+.game-controls-content > #tactical-rewards-panel {
+  grid-column: 1 / -1;
+}
+
+.tactical-rewards-panel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.55rem;
+  border-color: rgba(34, 211, 238, 0.35);
+  background: rgba(4, 15, 25, 0.96);
+}
+
+.tactical-rewards-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.18);
+}
+
+.tactical-rewards-kicker {
+  color: #67e8f9;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.52rem;
+  letter-spacing: 0.15em;
+}
+
+.tactical-rewards-heading h2 {
+  margin-top: 0.2rem;
+  color: #dffaff;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.07em;
+}
+
+.tactical-rewards-balance {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 0.55rem;
+  color: #94a3b8;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.52rem;
+  white-space: nowrap;
+}
+
+.tactical-rewards-balance span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.14rem;
+  white-space: nowrap;
+}
+
+.tactical-rewards-balance b {
+  color: #67e8f9;
+  font-size: 0.75rem;
+}
+
+.tactical-reward-cards {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.tactical-reward-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 0.5rem;
+  border: 1px solid rgba(71, 103, 120, 0.55);
+  background: linear-gradient(150deg, rgba(9, 28, 41, 0.95), rgba(3, 11, 19, 0.98));
+}
+
+.tactical-reward-card .reward-icon {
+  color: #67e8f9;
+}
+
+.tactical-reward-card.is-active {
+  border-color: rgba(52, 211, 153, 0.72);
+  box-shadow: inset 0 0 1rem rgba(16, 185, 129, 0.08);
+}
+
+.tactical-reward-card.is-active .tactical-reward-status {
+  color: #6ee7b7;
+}
+
+.tactical-reward-card.is-ready {
+  border-color: rgba(34, 211, 238, 0.7);
+}
+
+.tactical-reward-status {
+  color: #fbbf24;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.52rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.tactical-reward-card.is-insufficient-gold .tactical-reward-status,
+.tactical-reward-card.is-no-valid-target .tactical-reward-status {
+  color: #fb923c;
+}
+
+.tactical-reward-description {
+  min-height: 2.2em;
+  margin-top: 0.35rem;
+  color: #a9bac8;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.72rem;
+  line-height: 1.15;
+}
+
+.tactical-reward-costs {
+  margin-top: auto;
+  padding-top: 0.35rem;
+  font-size: 0.53rem;
+}
+
+.tactical-reward-costs b {
+  font-size: 0.66rem;
+}
+
+.tactical-reward-timer {
+  margin-top: 0.3rem;
+  color: #6ee7b7;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.54rem;
+}
+
+.tactical-reward-action {
+  min-height: 2.5rem;
+  margin-top: 0.4rem;
+  padding: 0.35rem;
+  color: #a5f3fc;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+@media (max-width: 767px) {
+  .menu-intel-panel:not(.hidden) {
+    max-height: min(42dvh, 23rem);
+    padding: 0.55rem;
+  }
+
+  .arsenal-reward-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .arsenal-reward-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.5rem;
+    padding: 0.45rem;
+  }
+
+  .arsenal-reward-card-heading {
+    grid-column: 1 / -1;
+  }
+
+  .arsenal-reward-card > p {
+    margin-top: 0.3rem;
+    font-size: 0.71rem;
+  }
+
+  .arsenal-reward-costs {
+    align-self: center;
+    min-width: 6rem;
+    flex-direction: column;
+    align-items: flex-end;
+    margin-top: 0.3rem;
+    padding: 0;
+    border: 0;
+  }
+
+  .arsenal-consumption-note {
+    font-size: 0.69rem;
+  }
+
+  .game-controls-content:not(.hidden) {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: min(43dvh, 26rem);
+    overflow-y: auto;
+  }
+
+  .game-controls-content > #tactical-rewards-panel {
+    grid-column: auto;
+  }
+
+  .tactical-reward-cards {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .tactical-reward-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.5rem;
+    padding: 0.45rem;
+  }
+
+  .tactical-reward-card-heading {
+    grid-column: 1 / -1;
+  }
+
+  .tactical-reward-description {
+    min-height: 0;
+  }
+
+  .tactical-reward-costs {
+    align-self: center;
+    min-width: 6rem;
+    flex-direction: column;
+    align-items: flex-end;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .tactical-reward-action,
+  .tactical-reward-timer {
+    grid-column: 1 / -1;
+  }
+
+  .mission-rules-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mission-rules-card {
+    padding: 0.5rem;
+  }
+
+  .game-controls-toggle {
+    width: min(100%, 17rem);
+  }
+
+  #tactical-rewards-panel .tactical-reward-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
+  .menu-intel-panel:not(.hidden) {
+    max-height: 34dvh;
+  }
+
+  .arsenal-reward-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .arsenal-reward-card {
+    display: block;
+    padding: 0.35rem;
+  }
+
+  .arsenal-reward-card > p {
+    font-size: 0.62rem;
+  }
+
+  .game-controls-content:not(.hidden) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: min(45dvh, 12rem);
+  }
+
+  .game-controls-content > #tactical-rewards-panel {
+    grid-column: 1 / -1;
+  }
+
+  .tactical-reward-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #tactical-rewards-panel .tactical-reward-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tactical-reward-card {
+    display: flex;
+    padding: 0.35rem;
+  }
+
+  .tactical-reward-card h3 {
+    font-size: 0.61rem;
+  }
+
+  .tactical-reward-description {
+    font-size: 0.62rem;
+  }
+
+  .tactical-reward-costs {
+    flex-direction: row;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 0.25rem;
+    border-top: 1px solid rgba(71, 103, 120, 0.4);
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  #game-hud > div.game-controls-drawer:last-child {
+    max-height: 75dvh;
+  }
+
+  .game-controls-content:not(.hidden) {
+    max-height: min(60dvh, 15rem);
   }
 }

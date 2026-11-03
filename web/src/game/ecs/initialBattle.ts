@@ -112,7 +112,7 @@ export function createStructure(
   world.addComponent(entity, COMPONENTS.health, { current: health, max: health });
   if (kind === 'generator') {
     world.addComponent(entity, COMPONENTS.resourceGenerator, {
-      incomePerSecond: faction === FACTIONS.player ? 12 : 16
+      incomePerSecond: 12
     });
   } else if (kind === 'turret') {
     world.addComponent(entity, COMPONENTS.weapon, {

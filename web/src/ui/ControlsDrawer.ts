@@ -2,7 +2,7 @@ export class ControlsDrawer {
   readonly #content: HTMLElement;
   readonly #button: HTMLButtonElement;
   readonly #icon: HTMLElement;
-  #rewardCount = 0;
+  #combatPoints = 0;
 
   constructor(root: ParentNode) {
     const content = root.querySelector<HTMLElement>('#game-controls-content');
@@ -18,14 +18,17 @@ export class ControlsDrawer {
     return !this.#content.classList.contains('hidden');
   }
 
-  setRewardCount(count: number): void {
-    this.#rewardCount = count;
+  setCombatPoints(points: number): void {
+    this.#combatPoints = points;
     this.#renderLabel();
   }
 
   setExpanded(expanded: boolean): void {
     this.#content.classList.toggle('hidden', !expanded);
     this.#button.setAttribute('aria-expanded', String(expanded));
+    this.#button.setAttribute('aria-label', expanded
+      ? 'Cerrar Centro de Mando'
+      : `Abrir Centro de Mando. Apoyo táctico: ${this.#combatPoints} puntos de combate`);
     this.#icon.innerText = expanded ? '−' : '＋';
     this.#renderLabel();
   }
@@ -35,6 +38,6 @@ export class ControlsDrawer {
     if (!label) throw new Error('Game controls toggle label is missing');
     label.innerText = this.expanded
       ? 'CERRAR CENTRO DE MANDO'
-      : `ABRIR CENTRO DE MANDO${this.#rewardCount ? ` · ${this.#rewardCount} RECOMPENSA(S)` : ''}`;
+      : `ABRIR CENTRO DE MANDO · APOYO ${this.#combatPoints} CP`;
   }
 }

@@ -352,7 +352,8 @@ export function runProjectileSystem(
   world: World,
   deltaSeconds: number,
   impacts: ProjectileImpact[],
-  projectileEntities: Entity[]
+  projectileEntities: Entity[],
+  modifyDamage: (target: Entity, damage: number) => number = (_target, damage) => damage
 ): void {
   if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) {
     throw new RangeError('Projectile delta must be a finite, non-negative number');
@@ -377,7 +378,7 @@ export function runProjectileSystem(
 
     const targetHealth = world.getComponent(projectile.target, COMPONENTS.health);
     if (result === 'impact' && targetHealth && targetHealth.current > 0) {
-      applyDamageSystem(world, projectile.target, projectile.damage);
+      applyDamageSystem(world, projectile.target, modifyDamage(projectile.target, projectile.damage));
     }
     if (result === 'impact') {
       impacts.push({

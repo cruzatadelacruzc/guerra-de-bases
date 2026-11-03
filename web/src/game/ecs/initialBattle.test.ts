@@ -9,12 +9,14 @@ import {
   createSoldierFactory,
   createStructure
 } from './initialBattle.ts';
+import { getDifficultyProfile } from '../rewardSystem.ts';
 import {
   applyDamageSystem,
   findNearestTarget,
   requestUnitProduction,
   requestSoldierProduction,
   runMovementSystem,
+  runResourceGenerationSystem,
   trySpendResources
 } from './systems.ts';
 
@@ -266,18 +268,106 @@ test('buildings and generators store their type and production rates in ECS comp
   });
   assert.equal(simulation.world.getComponent(turret, COMPONENTS.weapon)?.damage, 35);
   assert.equal(simulation.world.getComponent(barracks, COMPONENTS.factory), true);
+  assert.equal(
+    simulation.world.getComponent(playerGenerator, COMPONENTS.resourceGenerator)?.incomePerSecond,
+    12
+  );
+  assert.equal(
+    simulation.world.getComponent(enemyGenerator, COMPONENTS.resourceGenerator)?.incomePerSecond,
+    12
+  );
 
   simulation.advance(0.1);
   const income = simulation.drainGeneratedIncome();
   assert.ok(Math.abs(income.player - 1.7) < 0.001);
-  assert.ok(Math.abs(income.enemy - 2.2) < 0.001);
+  assert.ok(Math.abs(income.enemy - 1.8) < 0.001);
   assert.ok(Math.abs(
     (simulation.world.getComponent(simulation.playerBase, COMPONENTS.economy)?.gold ?? 0) - 201.7
   ) < 0.001);
   assert.ok(Math.abs(
-    (simulation.world.getComponent(simulation.enemyBase, COMPONENTS.economy)?.gold ?? 0) - 202.2
+    (simulation.world.getComponent(simulation.enemyBase, COMPONENTS.economy)?.gold ?? 0) - 201.8
   ) < 0.001);
-  assert.equal(simulation.world.getComponent(enemyGenerator, COMPONENTS.resourceGenerator)?.incomePerSecond, 16);
+});
+
+test('resource generation preserves base income and adds 12 per living generator', () => {
+  const difficultyProfiles = [
+    {
+      name: 'Easy',
+      difficulty: 'easy',
+      enemyBaseIncome: 6,
+      expectedEnemyIncome: [6, 18, 30, 42]
+    },
+    {
+      name: 'Normal',
+      difficulty: 'normal',
+      enemyBaseIncome: 11,
+      expectedEnemyIncome: [11, 23, 35, 47]
+    },
+    {
+      name: 'Hard',
+      difficulty: 'hard',
+      enemyBaseIncome: 18,
+      expectedEnemyIncome: [18, 30, 42, 54]
+    }
+  ] as const;
+  const expectedPlayerIncome = [5, 17, 29, 41];
+
+  for (const profile of difficultyProfiles) {
+    assert.equal(getDifficultyProfile(profile.difficulty).enemyBaseIncome, profile.enemyBaseIncome);
+    for (let generatorCount = 0; generatorCount <= 3; generatorCount++) {
+      const battle = createInitialBattle(profile.enemyBaseIncome);
+      const wallets = {
+        player: battle.playerBase,
+        enemy: battle.enemyBase
+      };
+      const playerWallet = battle.world.getComponent(battle.playerBase, COMPONENTS.economy);
+      const enemyWallet = battle.world.getComponent(battle.enemyBase, COMPONENTS.economy);
+      assert.ok(playerWallet);
+      assert.ok(enemyWallet);
+      assert.equal(playerWallet.gold, 200);
+      assert.equal(enemyWallet.gold, 200);
+
+      for (let index = 0; index < generatorCount; index++) {
+        const playerGenerator = createStructure(
+          battle.world,
+          FACTIONS.player,
+          { x: index, y: 0, z: 10 },
+          380,
+          'generator'
+        );
+        const enemyGenerator = createStructure(
+          battle.world,
+          FACTIONS.enemy,
+          { x: index, y: 0, z: -10 },
+          380,
+          'generator'
+        );
+        assert.equal(
+          battle.world.getComponent(playerGenerator, COMPONENTS.resourceGenerator)?.incomePerSecond,
+          12
+        );
+        assert.equal(
+          battle.world.getComponent(enemyGenerator, COMPONENTS.resourceGenerator)?.incomePerSecond,
+          12
+        );
+      }
+
+      const playerGoldBefore = playerWallet.gold;
+      const enemyGoldBefore = enemyWallet.gold;
+      runResourceGenerationSystem(battle.world, 1, [], wallets);
+
+      assert.equal(
+        playerWallet.gold - playerGoldBefore,
+        expectedPlayerIncome[generatorCount],
+        `Player income with ${generatorCount} generators`
+      );
+      assert.equal(
+        enemyWallet.gold - enemyGoldBefore,
+        profile.expectedEnemyIncome[generatorCount],
+        `Enemy ${profile.name} income with ${generatorCount} generators`
+      );
+    }
+  }
 });
 
 test('destroyed or removed factories cannot authorize further production', () => {
@@ -348,6 +438,30 @@ test('weapons target through ECS and projectiles apply ECS damage on impact', ()
   assert.equal(simulation.drainProjectileImpacts().length, 1);
   assert.equal(simulation.world.getComponent(enemyBuilding, COMPONENTS.health)?.current, 15);
   assert.deepEqual(simulation.world.query(COMPONENTS.projectile), []);
+});
+
+test('battle damage modifiers apply before authoritative ECS projectile damage', () => {
+  const simulation = new BattleSimulation({ modifyDamage: (_target, amount) => amount * 0.5 });
+  const turret = createStructure(
+    simulation.world,
+    FACTIONS.player,
+    { x: 0, y: 0, z: 0 },
+    380,
+    'turret'
+  );
+  const enemyBuilding = createStructure(
+    simulation.world,
+    FACTIONS.enemy,
+    { x: 0, y: 0, z: -5 },
+    50,
+    'generator'
+  );
+
+  simulation.advance(0.1);
+  assert.equal(simulation.getTarget(turret), enemyBuilding);
+  simulation.advance(0.1);
+
+  assert.equal(simulation.world.getComponent(enemyBuilding, COMPONENTS.health)?.current, 32.5);
 });
 
 test('soldier weapons keep their attack cooldown and damage in ECS state', () => {

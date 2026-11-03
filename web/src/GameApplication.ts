@@ -21,10 +21,23 @@ import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
 import { GameInputController } from './game/GameInputController.ts';
 import { GameSession } from './game/GameSession.ts';
+import {
+    AIR_STRIKE_EFFECTIVE_RADIUS,
+    applyShieldReduction,
+    getDifficultyProfile,
+    getCombatPointsFor,
+    getRewardDefinitionForDifficulty,
+    selectAirStrikeTarget,
+    selectArtilleryTarget,
+    validateRewardActivation,
+    type RewardId
+} from './game/rewardSystem.ts';
 import { ThreeRenderCoordinator } from './rendering/ThreeRenderCoordinator.ts';
 import type {
     BarracksProductionView,
     BuildingType,
+    RewardStatus,
+    RewardUiState,
     GameUiPort,
     UnitType,
     UnlockView
@@ -86,6 +99,7 @@ interface GameDiagnostics {
         explosionCount?: number,
         intervalMs?: number
     ): Promise<Record<string, number | null>>;
+    prepareRewardScenario(mode?: 'ready' | 'insufficient-gold' | 'no-target'): void;
 }
 
 declare global {
@@ -239,6 +253,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     // Active Game Collections
     let playerBuildings: RuntimeStructure[] = [];
     let enemyBuildings: RuntimeStructure[] = [];
+    let rewardScenarioBuildings: RuntimeStructure[] = [];
     let playerUnits: RuntimeUnit[] = [];
     let enemyUnits: RuntimeUnit[] = [];
     let projectiles: RuntimeProjectile[] = [];
@@ -265,7 +280,20 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let isDemolishMode = false;
     let terrainFloor: THREE.Mesh | null = null;
     let cameraShake = 0;
-    let aiDifficulty = 'normal';
+    let aiDifficulty: 'easy' | 'normal' | 'hard' = 'normal';
+    let playerCombatPoints = 0;
+    let enemyCombatPoints = 0;
+    let gameplayClockMs = 0;
+    let rewardCooldownUntil = 0;
+    let enemyRewardCooldownUntil = 0;
+    let defensiveShieldUntil = 0;
+    let enemyDefensiveShieldUntil = 0;
+    let playerActiveRewardUntil: Partial<Record<RewardId, number>> = {};
+    let enemyActiveRewardUntil: Partial<Record<RewardId, number>> = {};
+    let lastRewardUiUpdateMs = -Infinity;
+    let playerShieldVisual: THREE.Mesh | null = null;
+    let enemyShieldVisual: THREE.Mesh | null = null;
+    const rewardCooldownMs = 15000;
 
     // Enemy AI Satisfaction Thresholds
     let aiTargetGenerators = 3;
@@ -496,6 +524,22 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         group.add(ant);
 
         return group;
+    }
+
+    function createNexusShieldVisual(color: number): THREE.Mesh {
+        const mesh = new THREE.Mesh(
+            new THREE.SphereGeometry(9, 18, 12),
+            new THREE.MeshBasicMaterial({
+                color,
+                transparent: true,
+                opacity: 0.24,
+                wireframe: true,
+                depthWrite: false
+            })
+        );
+        mesh.visible = false;
+        mesh.name = 'nexus-defensive-shield';
+        return mesh;
     }
 
     function createGeneratorMesh(colorHex = 0xeab308): THREE.Group {
@@ -777,6 +821,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         // Clear Scene Objects & Previous Battlefield Ruins / Corpses / Fire
         clearBattlefieldRemains();
+        clearActiveRewardEffects();
+        disposeNexusShieldVisuals();
 
         [...playerBuildings, ...enemyBuildings].forEach(b => scene.remove(b.mesh));
         [...playerUnits, ...enemyUnits].forEach(u => {
@@ -788,6 +834,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         playerBuildings = [];
         enemyBuildings = [];
+        rewardScenarioBuildings = [];
         playerUnits = [];
         enemyUnits = [];
         battleSimulation = null;
@@ -820,6 +867,18 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         enemyKillStreak = 0;
         playerUnitsDestroyed = 0;
         playerUnitsLost = 0;
+        playerCombatPoints = 0;
+        enemyCombatPoints = 0;
+        gameplayClockMs = 0;
+        rewardCooldownUntil = 0;
+        enemyRewardCooldownUntil = 0;
+        defensiveShieldUntil = 0;
+        enemyDefensiveShieldUntil = 0;
+        playerActiveRewardUntil = {};
+        enemyActiveRewardUntil = {};
+        lastRewardUiUpdateMs = -Infinity;
+        playerShieldVisual = null;
+        enemyShieldVisual = null;
 
         // Randomize enemy AI satisfaction thresholds based on difficulty
         if (aiDifficulty === 'easy') {
@@ -850,6 +909,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         playerHQ.mesh.position.copy(playerHQ.position);
         playerHQ.healthBar = create3DHealthBar(true, 5.2, 4.0);
         playerHQ.mesh.add(playerHQ.healthBar.group);
+        playerShieldVisual = createNexusShieldVisual(0x22d3ee);
+        playerHQ.mesh.add(playerShieldVisual);
 
         scene.add(playerHQ.mesh);
         playerBuildings.push(playerHQ);
@@ -866,12 +927,37 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         enemyHQ.mesh.position.copy(enemyHQ.position);
         enemyHQ.healthBar = create3DHealthBar(false, 5.2, 4.0);
         enemyHQ.mesh.add(enemyHQ.healthBar.group);
+        enemyShieldVisual = createNexusShieldVisual(0xfb7185);
+        enemyHQ.mesh.add(enemyShieldVisual);
 
         scene.add(enemyHQ.mesh);
         enemyBuildings.push(enemyHQ);
 
-        const enemyBaseIncome = aiDifficulty === 'easy' ? 6 : aiDifficulty === 'normal' ? 11 : 18;
-        battleSimulation = new BattleSimulation({ enemyBaseIncome });
+        const enemyBaseIncome = getDifficultyProfile(aiDifficulty).enemyBaseIncome;
+        battleSimulation = new BattleSimulation({
+            enemyBaseIncome,
+            modifyDamage: (target, amount) => {
+                const simulation = battleSimulation;
+                if (!simulation) return amount;
+                if (target === simulation.playerBase && defensiveShieldUntil > gameplayClockMs) {
+                    return applyShieldReduction(
+                        amount,
+                        defensiveShieldUntil,
+                        gameplayClockMs,
+                        getRewardDefinitionForDifficulty('defensive_shield', aiDifficulty).reduction
+                    );
+                }
+                if (target === simulation.enemyBase && enemyDefensiveShieldUntil > gameplayClockMs) {
+                    return applyShieldReduction(
+                        amount,
+                        enemyDefensiveShieldUntil,
+                        gameplayClockMs,
+                        getRewardDefinitionForDifficulty('defensive_shield', aiDifficulty).reduction
+                    );
+                }
+                return amount;
+            }
+        });
         playerHQ.ecsEntityId = battleSimulation.playerBase;
         enemyHQ.ecsEntityId = battleSimulation.enemyBase;
         targetObjects.set(playerHQ.ecsEntityId, playerHQ);
@@ -896,6 +982,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function exitToMainMenu() {
         clearBattlefieldRemains();
+        clearActiveRewardEffects();
+        disposeNexusShieldVisuals();
 
         [...playerBuildings, ...enemyBuildings].forEach(b => scene.remove(b.mesh));
         [...playerUnits, ...enemyUnits].forEach(u => {
@@ -907,6 +995,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         playerBuildings = [];
         enemyBuildings = [];
+        rewardScenarioBuildings = [];
         playerUnits = [];
         enemyUnits = [];
         projectiles = [];
@@ -955,6 +1044,46 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             enemyGold = getFactionGold(ECS_FACTIONS.enemy);
         }
         ui.updateResources(gold, enemyGold, activeBarracks.length, availableFactories, production);
+        updateRewardUI();
+    }
+
+    function updateRewardUI() {
+        const targetCount = getRewardTargetCandidates(ECS_FACTIONS.player).length;
+        const rewards: RewardUiState['rewards'][number][] = [];
+        for (const id of ['artillery_strike', 'air_strike', 'defensive_shield'] as const) {
+            const definition = getRewardDefinitionForDifficulty(id, aiDifficulty);
+            const activeUntil = id === 'defensive_shield'
+                ? defensiveShieldUntil
+                : playerActiveRewardUntil[id] ?? 0;
+            const activeRemaining = Math.max(0, (activeUntil - gameplayClockMs) / 1000);
+            const cooldownRemaining = Math.max(0, (rewardCooldownUntil - gameplayClockMs) / 1000);
+            let status: RewardStatus;
+            if (activeRemaining > 0) {
+                status = 'ACTIVE';
+            } else if (playerCombatPoints < definition.pointsCost) {
+                status = 'LOCKED';
+            } else if (getFactionGold(ECS_FACTIONS.player) < definition.goldCost) {
+                status = 'INSUFFICIENT GOLD';
+            } else if (id !== 'defensive_shield' && targetCount === 0) {
+                status = 'NO VALID TARGET';
+            } else if (cooldownRemaining > 0) {
+                status = 'COOLDOWN';
+            } else {
+                status = 'READY';
+            }
+            rewards.push({
+                id,
+                status,
+                remainingSeconds: activeRemaining,
+                cooldownSeconds: cooldownRemaining
+            });
+        }
+        ui.updateRewardState({
+            difficulty: aiDifficulty,
+            combatPoints: playerCombatPoints,
+            gold: getFactionGold(ECS_FACTIONS.player),
+            rewards
+        });
     }
 
     function getEconomyEntity(faction: 'player' | 'enemy'): Entity | undefined {
@@ -1373,6 +1502,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     }
                 );
             }
+
+            maybeActivateEnemyReward();
         }
     }
 
@@ -1437,6 +1568,14 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                         killStreak: enemyKillStreak,
                         unitType: unit.type
                     });
+                }
+
+                if (!isPlayer) {
+                    const rewardValue = getCombatPointsFor(unit.type === 'tank' ? 'tank' : 'rifleman', aiDifficulty);
+                    playerCombatPoints += rewardValue;
+                } else {
+                    const rewardValue = getCombatPointsFor(unit.type === 'tank' ? 'tank' : 'rifleman', aiDifficulty);
+                    enemyCombatPoints += rewardValue;
                 }
 
                 createCinematicExplosion(unit.mesh.position, unit.type === 'tank' ? 1.2 : 0.6, false);
@@ -1645,11 +1784,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 }
                 if (b.hp <= 0) {
                     const isHQ = b.type === 'hq';
-                    createCinematicExplosion(b.position, isHQ ? 3.0 : 1.2, isHQ);
-
-                    if (!isHQ) {
+                    if (!isHQ && b.type !== 'hq') {
+                        const scorerFaction = b.isPlayer ? ECS_FACTIONS.enemy : ECS_FACTIONS.player;
+                        awardCombatPointsForDestruction(scorerFaction, b.type);
                         createBuildingRuin(b.position, b.type);
                     }
+                    createCinematicExplosion(b.position, isHQ ? 3.0 : 1.2, isHQ);
 
                     scene.remove(b.mesh);
                     if (battleSimulation && b.ecsEntityId !== undefined) {
@@ -1677,91 +1817,523 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         }
     }
 
+    function getFactionShieldUntil(faction: 'player' | 'enemy'): number {
+        return faction === ECS_FACTIONS.player ? defensiveShieldUntil : enemyDefensiveShieldUntil;
+    }
+
+    function isShieldActiveForFaction(faction: 'player' | 'enemy', now = gameplayClockMs): boolean {
+        return getFactionShieldUntil(faction) > now;
+    }
+
+    function awardCombatPointsForDestruction(
+        faction: 'player' | 'enemy',
+        kind: 'rifleman' | 'tank' | 'turret' | 'generator' | 'barracks'
+    ) {
+        const points = getCombatPointsFor(kind, aiDifficulty);
+        if (faction === ECS_FACTIONS.player) {
+            playerCombatPoints += points;
+        } else {
+            enemyCombatPoints += points;
+        }
+    }
+
     function applyDamage(target: RuntimeTarget, amount: number) {
         const entity = target.ecsEntityId;
         if (!battleSimulation || entity === undefined) {
             throw new Error('Cannot apply gameplay damage without a registered ECS entity');
         }
-        target.hp = applyDamageSystem(battleSimulation.world, entity, amount).current;
+        let finalAmount = amount;
+        if (target.type === 'hq') {
+            const targetFaction = target.isPlayer ? 'player' : 'enemy';
+            const shieldUntil = getFactionShieldUntil(targetFaction);
+            if (shieldUntil > gameplayClockMs) {
+                finalAmount = applyShieldReduction(
+                    amount,
+                    shieldUntil,
+                    gameplayClockMs,
+                    getRewardDefinitionForDifficulty('defensive_shield', aiDifficulty).reduction
+                );
+            }
+        }
+        target.hp = applyDamageSystem(battleSimulation.world, entity, finalAmount).current;
     }
 
-    function activateTemporaryUnlock(id: string | null) {
-        if (!id) return;
-        if (session.state !== 'PLAYING' || !unlocks.hasTemporary(id)) return;
-        if (id !== 'helicopter_temp' && id !== 'airstrike_temp') return;
+    function getRewardTargetCandidates(faction: 'player' | 'enemy' = ECS_FACTIONS.player) {
+        if (!battleSimulation) return [] as Array<{ runtime: RuntimeTarget; position: Position; entity: Entity }>;
+        const world = battleSimulation.world;
+        const enemyFaction = faction === ECS_FACTIONS.player ? ECS_FACTIONS.enemy : ECS_FACTIONS.player;
+        const candidates: Array<{ runtime: RuntimeTarget; position: Position; entity: Entity }> = [];
+        for (const entity of world.query(
+            ECS_COMPONENTS.targetable,
+            ECS_COMPONENTS.faction,
+            ECS_COMPONENTS.transform,
+            ECS_COMPONENTS.health
+        )) {
+            if (world.getComponent(entity, ECS_COMPONENTS.faction) !== enemyFaction) continue;
+            const health = world.getComponent(entity, ECS_COMPONENTS.health);
+            const position = world.getComponent(entity, ECS_COMPONENTS.transform);
+            const runtime = targetObjects.get(entity);
+            if (health && health.current > 0 && position && runtime && runtime.type !== 'hq') {
+                candidates.push({ runtime, position, entity });
+            }
+        }
+        return candidates;
+    }
 
-        if (id === 'helicopter_temp') {
-            if (!playerHQ?.ecsEntityId || !battleSimulation) return;
-            const world = battleSimulation.world;
-            const playerBase = world.getComponent(playerHQ.ecsEntityId, ECS_COMPONENTS.transform);
-            if (!playerBase) return;
-            const targets: Array<{ runtime: RuntimeTarget; position: Position }> = [];
-            for (const entity of world.query(
-                ECS_COMPONENTS.targetable,
-                ECS_COMPONENTS.faction,
-                ECS_COMPONENTS.transform,
-                ECS_COMPONENTS.health
-            )) {
-                if (world.getComponent(entity, ECS_COMPONENTS.faction) !== ECS_FACTIONS.enemy) continue;
-                const health = world.getComponent(entity, ECS_COMPONENTS.health);
-                const position = world.getComponent(entity, ECS_COMPONENTS.transform);
-                const runtime = targetObjects.get(entity);
-                if (health && health.current > 0 && position && runtime) {
-                    targets.push({ runtime, position });
+    function validateRewardForFaction(faction: 'player' | 'enemy', id: RewardId) {
+        const points = faction === ECS_FACTIONS.player ? playerCombatPoints : enemyCombatPoints;
+        const goldBalance = getFactionGold(faction);
+        const cooldownUntil = faction === ECS_FACTIONS.player ? rewardCooldownUntil : enemyRewardCooldownUntil;
+        const shieldActive = isShieldActiveForFaction(faction);
+        return validateRewardActivation({
+            id,
+            points,
+            gold: goldBalance,
+            difficulty: aiDifficulty,
+            validTargetCount: getRewardTargetCandidates(faction).length,
+            activeShield: shieldActive,
+            cooldownMs: Math.max(0, cooldownUntil - gameplayClockMs),
+            now: gameplayClockMs,
+            expiresAt: cooldownUntil
+        });
+    }
+
+    function spendRewardForFaction(faction: 'player' | 'enemy', id: RewardId): boolean {
+        const validation = validateRewardForFaction(faction, id);
+        if (!validation.accepted) return false;
+        const definition = getRewardDefinitionForDifficulty(id, aiDifficulty);
+
+        if (!spendFactionGold(faction, definition.goldCost)) return false;
+
+        if (faction === ECS_FACTIONS.player) {
+            playerCombatPoints -= definition.pointsCost;
+            rewardCooldownUntil = gameplayClockMs + rewardCooldownMs;
+        } else {
+            enemyCombatPoints -= definition.pointsCost;
+            enemyRewardCooldownUntil = gameplayClockMs + rewardCooldownMs;
+        }
+        return true;
+    }
+
+    type ArtilleryImpact = {
+        point: THREE.Vector3;
+        launchAt: number;
+        projectile: THREE.Mesh | null;
+        complete: boolean;
+    };
+    type ArtilleryEffect = {
+        faction: 'player' | 'enemy';
+        elapsed: number;
+        impacts: ArtilleryImpact[];
+    };
+    type AirStrikeBomb = {
+        mesh: THREE.Mesh;
+        releaseAt: number;
+        x: number;
+        z: number;
+        target: THREE.Vector3;
+        elapsed: number;
+        released: boolean;
+        landed: boolean;
+    };
+    type AirStrikeEffect = {
+        faction: 'player' | 'enemy';
+        mesh: THREE.Group;
+        target: THREE.Vector3;
+        start: THREE.Vector3;
+        end: THREE.Vector3;
+        elapsed: number;
+        duration: number;
+        bombs: AirStrikeBomb[];
+    };
+
+    const artilleryEffects: ArtilleryEffect[] = [];
+    const airStrikeEffects: AirStrikeEffect[] = [];
+    const AIR_STRIKE_FLIGHT_ARC_HEIGHT = 2.8;
+    // The fuselage and tail are laid out along local X, with the nose at +X.
+    const aircraftForwardAxis = new THREE.Vector3(1, 0, 0);
+    const aircraftFlightTangent = new THREE.Vector3();
+
+    function orientAircraftAlongFlightPath(
+        aircraft: THREE.Group,
+        start: THREE.Vector3,
+        end: THREE.Vector3,
+        progress: number
+    ): void {
+        const verticalTangent = progress < 1
+            ? AIR_STRIKE_FLIGHT_ARC_HEIGHT * Math.PI * Math.cos(progress * Math.PI)
+            : 0;
+        aircraftFlightTangent
+            .set(end.x - start.x, verticalTangent, end.z - start.z)
+            .normalize();
+        aircraft.quaternion.setFromUnitVectors(aircraftForwardAxis, aircraftFlightTangent);
+    }
+
+    function disposeVisualTree(root: THREE.Object3D): void {
+        root.traverse((object) => {
+            if (!(object instanceof THREE.Mesh)) return;
+            object.geometry.dispose();
+            const materials = Array.isArray(object.material) ? object.material : [object.material];
+            materials.forEach((material) => material.dispose());
+        });
+    }
+
+    function clearActiveRewardEffects(): void {
+        for (const strike of artilleryEffects) {
+            for (const impact of strike.impacts) {
+                if (!impact.projectile) continue;
+                scene.remove(impact.projectile);
+                disposeVisualTree(impact.projectile);
+            }
+        }
+        artilleryEffects.length = 0;
+        for (const strike of airStrikeEffects) {
+            scene.remove(strike.mesh);
+            disposeVisualTree(strike.mesh);
+            for (const bomb of strike.bombs) {
+                scene.remove(bomb.mesh);
+                disposeVisualTree(bomb.mesh);
+            }
+        }
+        airStrikeEffects.length = 0;
+    }
+
+    function disposeNexusShieldVisuals(): void {
+        if (playerShieldVisual) disposeVisualTree(playerShieldVisual);
+        if (enemyShieldVisual) disposeVisualTree(enemyShieldVisual);
+        playerShieldVisual = null;
+        enemyShieldVisual = null;
+    }
+
+    function triggerArtilleryStrike(
+        faction: 'player' | 'enemy',
+        targetCandidates: Array<{ runtime: RuntimeTarget; position: Position; entity: Entity }>
+    ): boolean {
+        const target = selectArtilleryTarget(targetCandidates.map((candidate) => {
+            const nearbyCount = targetCandidates.filter((other) =>
+                Math.hypot(other.position.x - candidate.position.x, other.position.z - candidate.position.z) <= 14
+            ).length;
+            return {
+                x: candidate.position.x,
+                z: candidate.position.z,
+                value: nearbyCount,
+                health: candidate.runtime.hp ?? 0
+            };
+        }));
+        if (!target) return false;
+        const chosen = targetCandidates.find((candidate) =>
+            candidate.position.x === target.x && candidate.position.z === target.z
+        );
+        if (!chosen) return false;
+
+        const offsets = [[0, 0], [6, 4], [-5, -3]] as const;
+        artilleryEffects.push({
+            faction,
+            elapsed: 0,
+            impacts: offsets.map(([x, z], index) => ({
+                point: new THREE.Vector3(chosen.position.x + x, 0, chosen.position.z + z),
+                launchAt: index * 0.7,
+                projectile: null,
+                complete: false
+            }))
+        });
+        return true;
+    }
+
+    function updateActiveArtillery(delta: number): void {
+        const damage = getRewardDefinitionForDifficulty('artillery_strike', aiDifficulty).damage ?? 120;
+        for (let effectIndex = artilleryEffects.length - 1; effectIndex >= 0; effectIndex--) {
+            const strike = artilleryEffects[effectIndex];
+            strike.elapsed += delta;
+            for (const impact of strike.impacts) {
+                const flightElapsed = strike.elapsed - impact.launchAt;
+                if (flightElapsed < 0 || impact.complete) continue;
+                if (!impact.projectile) {
+                    impact.projectile = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.42, 8, 8),
+                        new THREE.MeshBasicMaterial({ color: 0xffb020 })
+                    );
+                    scene.add(impact.projectile);
                 }
-            }
-            if (targets.length === 0) {
-                showToast('No quedan objetivos enemigos para el apoyo aéreo.');
-                return;
-            }
-            if (!unlocks.consumeTemporary(id)) return;
+                const flightProgress = Math.min(1, flightElapsed / 0.48);
+                impact.projectile.position.set(
+                    impact.point.x,
+                    THREE.MathUtils.lerp(28, 0.5, flightProgress),
+                    impact.point.z
+                );
+                if (flightProgress < 1) continue;
 
-            const target = targets.reduce((closest, candidate) => {
-                const deltaX = candidate.position.x - playerBase.x;
-                const deltaY = candidate.position.y - playerBase.y;
-                const deltaZ = candidate.position.z - playerBase.z;
-                const distance = Math.hypot(deltaX, deltaY, deltaZ);
-                return distance < closest.distance ? { candidate, distance } : closest;
-            }, { candidate: targets[0], distance: Infinity }).candidate;
-            applyDamage(target.runtime, 180);
-            createCinematicExplosion(
-                new THREE.Vector3(target.position.x, target.position.y, target.position.z),
-                1.2,
-                false
-            );
-            showToast('🚁 Apoyo de helicóptero: ataque al objetivo enemigo más cercano.');
-        } else if (id === 'airstrike_temp') {
-            const impact: Position = { x: 0, y: 0, z: -42 };
-            if (!battleSimulation) return;
-            const world = battleSimulation.world;
-            const targets = world.query(
-                ECS_COMPONENTS.targetable,
-                ECS_COMPONENTS.faction,
-                ECS_COMPONENTS.transform,
-                ECS_COMPONENTS.health
-            );
-            let hits = 0;
-            for (const entity of targets) {
-                if (world.getComponent(entity, ECS_COMPONENTS.faction) !== ECS_FACTIONS.enemy) continue;
-                const health = world.getComponent(entity, ECS_COMPONENTS.health);
-                const position = world.getComponent(entity, ECS_COMPONENTS.transform);
-                const target = targetObjects.get(entity);
-                if (!health || health.current <= 0 || !position || !target) continue;
-                if (Math.hypot(
-                    position.x - impact.x,
-                    position.y - impact.y,
-                    position.z - impact.z
-                ) > 18) continue;
-                applyDamage(target, 220);
-                hits++;
+                impact.complete = true;
+                scene.remove(impact.projectile);
+                disposeVisualTree(impact.projectile);
+                impact.projectile = null;
+                const candidates = getRewardTargetCandidates(strike.faction);
+                for (const candidate of candidates) {
+                    if (Math.hypot(candidate.position.x - impact.point.x, candidate.position.z - impact.point.z) <= 12) {
+                        applyDamage(candidate.runtime, damage);
+                    }
+                }
+                createCinematicExplosion(impact.point, 0.85, false);
             }
-            if (!unlocks.consumeTemporary(id)) return;
-            createCinematicExplosion(
-                new THREE.Vector3(impact.x, impact.y, impact.z),
-                2.2,
-                false
+            if (strike.impacts.every((impact) => impact.complete)) artilleryEffects.splice(effectIndex, 1);
+        }
+    }
+
+    function createAttackAircraft(faction: 'player' | 'enemy'): THREE.Group {
+        const aircraft = new THREE.Group();
+        const body = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.48, 0.85, 7.5, 10),
+            new THREE.MeshStandardMaterial({
+                color: faction === 'player' ? 0x67e8f9 : 0xfb7185,
+                metalness: 0.45,
+                roughness: 0.42
+            })
+        );
+        body.rotation.z = -Math.PI / 2;
+        aircraft.add(body);
+        const wings = new THREE.Mesh(
+            new THREE.BoxGeometry(1.7, 0.18, 7),
+            new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65 })
+        );
+        wings.position.x = -0.5;
+        aircraft.add(wings);
+        const tail = new THREE.Mesh(
+            new THREE.BoxGeometry(1.7, 0.15, 2.5),
+            new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 })
+        );
+        tail.position.x = -2.6;
+        aircraft.add(tail);
+        const fin = new THREE.Mesh(
+            new THREE.BoxGeometry(1.4, 1.25, 0.18),
+            new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 })
+        );
+        fin.position.set(-2.8, 0.6, 0);
+        aircraft.add(fin);
+        return aircraft;
+    }
+
+    function triggerAirStrikeForFaction(
+        faction: 'player' | 'enemy',
+        targetCandidates: Array<{ runtime: RuntimeTarget; position: Position; entity: Entity }>
+    ): boolean {
+        const target = selectAirStrikeTarget(targetCandidates.map((candidate) => ({
+            x: candidate.position.x,
+            z: candidate.position.z,
+            value: candidate.runtime.hp ?? 0,
+            health: candidate.runtime.hp ?? 0
+        })));
+        if (!target) return false;
+
+        const startX = faction === ECS_FACTIONS.player ? -88 : 88;
+        const endX = faction === ECS_FACTIONS.player ? 88 : -88;
+        const targetPoint = new THREE.Vector3(target.x, 0, target.z);
+        const aircraft = createAttackAircraft(faction);
+        const start = new THREE.Vector3(startX, 16, target.z);
+        const end = new THREE.Vector3(endX, 16, target.z);
+        aircraft.position.copy(start);
+        orientAircraftAlongFlightPath(aircraft, start, end, 0);
+        scene.add(aircraft);
+
+        const bombOffsets = [
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(5, 0, 3),
+            new THREE.Vector3(-4, 0, -3),
+            new THREE.Vector3(8, 0, -5),
+        ];
+        const bombs = bombOffsets.map((offset, index) => {
+            const mesh = new THREE.Mesh(
+                new THREE.SphereGeometry(0.5, 8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
             );
-            showToast(hits ? `✈️ Ataque aéreo: ${hits} objetivo(s) alcanzado(s).` : '✈️ Ataque aéreo lanzado; no había objetivos en el área.');
+            mesh.visible = false;
+            scene.add(mesh);
+            return {
+                mesh,
+                releaseAt: 0.18 + index * 0.18,
+                x: targetPoint.x + offset.x,
+                z: targetPoint.z + offset.z,
+                target: targetPoint.clone().add(offset),
+                elapsed: 0,
+                released: false,
+                landed: false
+            };
+        });
+        airStrikeEffects.push({
+            faction,
+            mesh: aircraft,
+            target: targetPoint,
+            start,
+            end,
+            elapsed: 0,
+            duration: 5.2,
+            bombs
+        });
+        return true;
+    }
+
+    function updateActiveAirStrikes(delta: number): void {
+        const damage = getRewardDefinitionForDifficulty('air_strike', aiDifficulty).damage ?? 220;
+        for (let index = airStrikeEffects.length - 1; index >= 0; index--) {
+            const strike = airStrikeEffects[index];
+            strike.elapsed += delta;
+            const progress = Math.min(1, strike.elapsed / strike.duration);
+            const x = THREE.MathUtils.lerp(strike.start.x, strike.end.x, progress);
+            strike.mesh.position.set(
+                x,
+                16 + Math.sin(progress * Math.PI) * AIR_STRIKE_FLIGHT_ARC_HEIGHT,
+                strike.target.z
+            );
+            orientAircraftAlongFlightPath(strike.mesh, strike.start, strike.end, progress);
+
+            for (const bomb of strike.bombs) {
+                if (!bomb.released && progress >= bomb.releaseAt) {
+                    bomb.released = true;
+                    bomb.mesh.visible = true;
+                    bomb.x = x;
+                    bomb.z = strike.target.z;
+                }
+                if (!bomb.released || bomb.landed) continue;
+                bomb.elapsed += delta;
+                const fallProgress = Math.min(1, bomb.elapsed / 0.72);
+                bomb.mesh.position.set(
+                    THREE.MathUtils.lerp(bomb.x, bomb.target.x, fallProgress),
+                    THREE.MathUtils.lerp(15.5, 0.6, fallProgress),
+                    THREE.MathUtils.lerp(bomb.z, bomb.target.z, fallProgress)
+                );
+                if (fallProgress < 1) continue;
+
+                bomb.landed = true;
+                const impact = new THREE.Vector3(bomb.target.x, 0, bomb.target.z);
+                createCinematicExplosion(impact, 0.82, false);
+                for (const candidate of getRewardTargetCandidates(strike.faction)) {
+                    if (Math.hypot(candidate.position.x - impact.x, candidate.position.z - impact.z) <= AIR_STRIKE_EFFECTIVE_RADIUS) {
+                        applyDamage(candidate.runtime, damage);
+                    }
+                }
+                bomb.mesh.visible = false;
+            }
+
+            if (progress >= 1 && strike.bombs.every((bomb) => bomb.landed)) {
+                scene.remove(strike.mesh);
+                disposeVisualTree(strike.mesh);
+                for (const bomb of strike.bombs) {
+                    scene.remove(bomb.mesh);
+                    disposeVisualTree(bomb.mesh);
+                }
+                airStrikeEffects.splice(index, 1);
+            }
+        }
+    }
+
+    function getRewardFailureMessage(id: RewardId): string {
+        const validation = validateRewardForFaction(ECS_FACTIONS.player, id);
+        if (validation.reason === 'insufficient-points') return 'Puntos de combate insuficientes.';
+        if (validation.reason === 'insufficient-gold') return 'Oro insuficiente para activar el apoyo.';
+        if (validation.reason === 'no-valid-target') return 'No hay objetivos terrestres enemigos válidos.';
+        if (validation.reason === 'shield-active') return 'El escudo del Nexo ya está activo.';
+        if (validation.reason === 'cooldown') return 'El apoyo táctico aún está en recarga.';
+        return 'No se pudo validar el apoyo táctico.';
+    }
+
+    function activateRewardForFaction(faction: 'player' | 'enemy', id: RewardId): boolean {
+        if (!battleSimulation || session.state !== 'PLAYING') return false;
+        const validation = validateRewardForFaction(faction, id);
+        if (!validation.accepted) {
+            if (faction === ECS_FACTIONS.player) showToast(getRewardFailureMessage(id));
+            updateRewardUI();
+            return false;
+        }
+
+        const candidates = getRewardTargetCandidates(faction);
+        if (id !== 'defensive_shield'
+            && (id === 'artillery_strike'
+                ? !selectArtilleryTarget(candidates.map((candidate) => ({
+                    x: candidate.position.x,
+                    z: candidate.position.z,
+                    value: candidates.filter((other) =>
+                        Math.hypot(other.position.x - candidate.position.x, other.position.z - candidate.position.z) <= 14
+                    ).length,
+                    health: candidate.runtime.hp ?? 0
+                })))
+                : !selectAirStrikeTarget(candidates.map((candidate) => ({
+                    x: candidate.position.x,
+                    z: candidate.position.z,
+                    value: candidate.runtime.hp ?? 0,
+                    health: candidate.runtime.hp ?? 0
+                })))
+            )) {
+            if (faction === ECS_FACTIONS.player) showToast('No hay objetivos terrestres enemigos válidos.');
+            updateRewardUI();
+            return false;
+        }
+        if (!spendRewardForFaction(faction, id)) {
+            if (faction === ECS_FACTIONS.player) showToast(getRewardFailureMessage(id));
+            updateRewardUI();
+            return false;
+        }
+
+        const definition = getRewardDefinitionForDifficulty(id, aiDifficulty);
+        if (id === 'defensive_shield') {
+            const until = gameplayClockMs + definition.durationSeconds * 1000;
+            if (faction === ECS_FACTIONS.player) defensiveShieldUntil = until;
+            else enemyDefensiveShieldUntil = until;
+            (faction === ECS_FACTIONS.player ? playerActiveRewardUntil : enemyActiveRewardUntil)[id] = until;
+            if (faction === ECS_FACTIONS.player) showToast(`Escudo activado: daño al Nexo reducido durante ${definition.durationSeconds} s.`);
+        } else {
+            const started = id === 'artillery_strike'
+                ? triggerArtilleryStrike(faction, candidates)
+                : triggerAirStrikeForFaction(faction, candidates);
+            if (!started) {
+                throw new Error(`Validated reward ${id} could not create its gameplay effect`);
+            }
+            const durationSeconds = id === 'artillery_strike' ? 2.5 : 5.2;
+            (faction === ECS_FACTIONS.player ? playerActiveRewardUntil : enemyActiveRewardUntil)[id] =
+                gameplayClockMs + durationSeconds * 1000;
+            if (faction === ECS_FACTIONS.player) {
+                showToast(id === 'artillery_strike'
+                    ? 'Artillery Strike activado: impactos en camino.'
+                    : 'Air Strike activado: avión cruzando el campo.');
+            }
+        }
+        updateResourceUI();
+        updateRewardUI();
+        return true;
+    }
+
+    function activatePlayerReward(id: RewardId): void {
+        if (session.state === 'PLAYING') activateRewardForFaction(ECS_FACTIONS.player, id);
+    }
+
+    function maybeActivateEnemyReward(): void {
+        if (!battleSimulation || enemyRewardCooldownUntil > gameplayClockMs) return;
+        const enemyHealthRatio = enemyHQ && enemyHQ.maxHp > 0 ? enemyHQ.hp / enemyHQ.maxHp : 1;
+        const shieldThreshold = aiDifficulty === 'easy' ? 0.3 : aiDifficulty === 'normal' ? 0.55 : 0.75;
+        const options: RewardId[] = ['artillery_strike', 'air_strike', 'defensive_shield'];
+        const valid = options.filter((id) => {
+            if (id === 'defensive_shield' && enemyHealthRatio > shieldThreshold) return false;
+            return validateRewardForFaction(ECS_FACTIONS.enemy, id).accepted;
+        });
+        if (!valid.length) return;
+
+        const offensivePreference: RewardId[] = aiDifficulty === 'hard'
+            ? ['air_strike', 'artillery_strike', 'defensive_shield']
+            : aiDifficulty === 'normal'
+                ? ['artillery_strike', 'air_strike', 'defensive_shield']
+                : ['defensive_shield', 'artillery_strike', 'air_strike'];
+        const preferred = offensivePreference.find((id) => valid.includes(id));
+        if (preferred) activateRewardForFaction(ECS_FACTIONS.enemy, preferred);
+    }
+
+    function updateNexusShieldVisuals(): void {
+        if (playerShieldVisual) {
+            playerShieldVisual.visible = isShieldActiveForFaction(ECS_FACTIONS.player);
+            const scale = 1 + Math.sin(gameplayClockMs * 0.004) * 0.035;
+            playerShieldVisual.scale.setScalar(scale);
+        }
+        if (enemyShieldVisual) {
+            enemyShieldVisual.visible = isShieldActiveForFaction(ECS_FACTIONS.enemy);
+            const scale = 1 + Math.sin(gameplayClockMs * 0.004) * 0.035;
+            enemyShieldVisual.scale.setScalar(scale);
         }
     }
 
@@ -1814,12 +2386,20 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             camera.position.y = 30 + Math.sin(time * 0.5) * 5;
             camera.lookAt(0, 0, 0);
         } else if (session.state === 'PLAYING') {
+            gameplayClockMs += delta * 1000;
             controls.update();
             const combatStart = diagnosticsEnabled ? performance.now() : 0;
             updateEnemyAI(delta);
             advanceBattleSimulation(delta, time);
+            updateActiveArtillery(delta);
+            updateActiveAirStrikes(delta);
+            updateNexusShieldVisuals();
             updateEnemyAI(delta);
             updateCombat(delta);
+            if (gameplayClockMs - lastRewardUiUpdateMs >= 250) {
+                lastRewardUiUpdateMs = gameplayClockMs;
+                updateRewardUI();
+            }
             if (diagnosticsEnabled) combatMs = performance.now() - combatStart;
         }
 
@@ -1872,6 +2452,19 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     return values[Math.min(values.length - 1, Math.floor(values.length * ratio))] || 0;
                 };
                 const maximum = (key: string) => samples.reduce((max, sample) => Math.max(max, sample[key]), 0);
+                const simulation = battleSimulation;
+                const playerNexusHealth = simulation?.world
+                    .getComponent(simulation.playerBase, ECS_COMPONENTS.health)?.current ?? null;
+                const rewardScenarioHealth = simulation
+                    ? rewardScenarioBuildings.reduce((total, building) => total + (
+                        building.ecsEntityId === undefined
+                            ? 0
+                            : simulation.world.getComponent(
+                                building.ecsEntityId,
+                                ECS_COMPONENTS.health
+                            )?.current ?? 0
+                    ), 0)
+                    : null;
                 return {
                     sampleCount: samples.length,
                     frameMs: average('frameMs'),
@@ -1904,8 +2497,64 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     soldiers: samples.at(-1)?.soldiers ?? 0,
                     playerSoldiers: samples.at(-1)?.playerSoldiers ?? playerUnits.length,
                     enemySoldiers: samples.at(-1)?.enemySoldiers ?? enemyUnits.length,
+                    playerCombatPoints,
+                    playerGold: getFactionGold(ECS_FACTIONS.player),
+                    playerNexusHealth,
+                    playerShieldRemainingMs: Math.max(0, defensiveShieldUntil - gameplayClockMs),
+                    rewardScenarioHealth,
+                    activeArtilleryStrikes: artilleryEffects.length,
+                    activeAirStrikes: airStrikeEffects.length,
                     memoryBytes: (performance as PerformanceWithMemory).memory?.usedJSHeapSize ?? null
                 };
+            },
+            prepareRewardScenario(mode = 'ready') {
+                if (session.state !== 'PLAYING' || !battleSimulation) {
+                    throw new Error('Start a match before preparing the reward scenario');
+                }
+                enemyAIEnabled = false;
+                clearActiveRewardEffects();
+                rewardCooldownUntil = gameplayClockMs;
+                playerActiveRewardUntil = {};
+                defensiveShieldUntil = 0;
+                if (playerShieldVisual) playerShieldVisual.visible = false;
+                for (const building of enemyBuildings.filter((candidate) => candidate.type !== 'hq')) {
+                    scene.remove(building.mesh);
+                    if (building.ecsEntityId !== undefined) {
+                        battleSimulation.world.removeEntity(building.ecsEntityId);
+                        targetObjects.delete(building.ecsEntityId);
+                    }
+                }
+                enemyBuildings = enemyBuildings.filter((building) => building.type === 'hq');
+                rewardScenarioBuildings = [];
+                if (mode === 'no-target') {
+                    for (const unit of enemyUnits) {
+                        const entity = unit.ecsEntityId;
+                        if (entity === undefined) continue;
+                        battleSimulation.world.removeEntity(entity);
+                        targetObjects.delete(entity);
+                        if (unit.type === 'rifleman') soldierRenderer.remove(entity);
+                        else if (unit.mesh instanceof THREE.Object3D) scene.remove(unit.mesh);
+                    }
+                    enemyUnits = [];
+                }
+                const playerEconomy = battleSimulation.world.getComponent(
+                    battleSimulation.playerBase,
+                    ECS_COMPONENTS.economy
+                );
+                if (!playerEconomy) throw new Error('Player economy is unavailable in the reward scenario');
+                playerEconomy.gold = mode === 'insufficient-gold' ? 0 : 1200;
+                gold = playerEconomy.gold;
+                playerCombatPoints = 100;
+                const previousBuildings = enemyBuildings.length;
+                if (mode !== 'no-target') {
+                    for (const x of [-56, -25, 7, 38]) {
+                        spawnAIBuilding('turret', { x, y: 0, z: -15 });
+                    }
+                    spawnAIBuilding('turret', { x: 0, y: 0, z: 30 });
+                    rewardScenarioBuildings = enemyBuildings.slice(previousBuildings);
+                }
+                updateResourceUI();
+                updateRewardUI();
             },
             async runStressScenario(explosionCount = 30, intervalMs = 200) {
                 if (!Number.isInteger(explosionCount) || explosionCount < 1
@@ -2001,7 +2650,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             toggleDemolishMode,
             selectBuilding: selectBuildingToPlace,
             trainUnit,
-            activateUnlock: activateTemporaryUnlock
+            activateReward: activatePlayerReward
         });
         unlockSubscriptions.push(unlocks.on('unlocked', ({ definition }) => {
             updateUnlockUI();

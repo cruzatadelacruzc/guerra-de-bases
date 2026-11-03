@@ -1,34 +1,29 @@
 [
   {
-    "id": "helicopter_temp",
-    "title": "Helicóptero de apoyo (temporal)",
+    "id": "artillery_strike",
+    "title": "Artillery Strike",
     "type": "temporary",
-    "durationSeconds": 25,
-    "trigger": {
-      "event": "kill_streak",
-      "condition": { "killStreak": 5 }
-    },
-    "meta": { "description": "Una racha de 5 bajas te permite solicitar un ataque de helicóptero. Actívalo antes de 25 segundos." }
+    "durationSeconds": 20,
+    "meta": {
+      "description": "10 CP / 180 Oro. Lanza un bombardeo selectivo contra formaciones enemigas densas."
+    }
   },
   {
-    "id": "veteran_armor",
-    "title": "Blindaje de veterano",
-    "type": "permanent",
-    "trigger": {
-      "event": "achievement",
-      "condition": { "achievement": "destroy_20_units" }
-    },
-    "meta": { "description": "Destruye 20 unidades enemigas. Los tanques que entrenes tendrán +20% de vida y daño." }
+    "id": "air_strike",
+    "title": "Air Strike",
+    "type": "temporary",
+    "durationSeconds": 20,
+    "meta": {
+      "description": "18 CP / 280 Oro. Un ataque de bombardeo aéreo golpea posiciones clave del enemigo."
+    }
   },
   {
-    "id": "airstrike_temp",
-    "title": "Ataque aéreo (temporal)",
+    "id": "defensive_shield",
+    "title": "Defensive Shield",
     "type": "temporary",
-    "durationSeconds": 15,
-    "trigger": {
-      "event": "kill_streak",
-      "condition": { "killStreak": 10 }
-    },
-    "meta": { "description": "Una racha de 10 bajas te permite lanzar un bombardeo. Actívalo antes de 15 segundos." }
+    "durationSeconds": 10,
+    "meta": {
+      "description": "14 CP / 220 Oro. Reduce en un 50% el daño recibido por el Nexo durante 10 segundos."
+    }
   }
 ]

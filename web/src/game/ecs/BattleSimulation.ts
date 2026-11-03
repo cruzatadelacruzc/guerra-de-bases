@@ -54,16 +54,21 @@ export class BattleSimulation {
   #generators: Entity[] = [];
   #factories: Entity[] = [];
   #projectiles: Entity[] = [];
+  readonly #modifyDamage: (target: Entity, damage: number) => number;
   #weaponEvents: WeaponFireEvent[] = [];
   #productionEvents: ProductionCompletedEvent[] = [];
   #projectileImpacts: ProjectileImpact[] = [];
   #generatedIncome: ResourceIncome = { player: 0, enemy: 0 };
 
-  constructor(options: { enemyBaseIncome?: number } = {}) {
+  constructor(options: {
+    enemyBaseIncome?: number;
+    modifyDamage?: (target: Entity, damage: number) => number;
+  } = {}) {
     const battle = createInitialBattle(options.enemyBaseIncome);
     this.world = battle.world;
     this.playerBase = battle.playerBase;
     this.enemyBase = battle.enemyBase;
+    this.#modifyDamage = options.modifyDamage ?? ((_target, damage) => damage);
   }
 
   advance(frameDeltaSeconds: number): void {
@@ -183,6 +188,12 @@ export class BattleSimulation {
     });
     this.#generatedIncome.player += income.player;
     this.#generatedIncome.enemy += income.enemy;
-    runProjectileSystem(this.world, deltaSeconds, this.#projectileImpacts, this.#projectiles);
+    runProjectileSystem(
+      this.world,
+      deltaSeconds,
+      this.#projectileImpacts,
+      this.#projectiles,
+      this.#modifyDamage
+    );
   }
 }
