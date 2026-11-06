@@ -17,7 +17,14 @@ body {
 #app {
   position: relative;
   width: 100%;
-  min-height: 100vh;
+  /* Finding F: `height`, not `min-height`, for the vh fallback. The used
+     height of two `height` declarations is simply "last one the browser
+     understands wins," but `min-height` + `height` becomes
+     max(min-height, height) - on a mobile browser where the address bar is
+     visible, the large-viewport `100vh` is taller than the visible-viewport
+     `100dvh`, so a `min-height: 100vh` floor would win and push content
+     under the browser chrome. */
+  height: 100vh;
   height: 100dvh;
   overflow: hidden;
   isolation: isolate;
@@ -1965,7 +1972,11 @@ select {
   inset: 0;
   z-index: 100;
   width: 100vw;
-  min-height: 100vh;
+  /* Finding F: see #app's comment - `height`, not `min-height`, for the vh
+     fallback, so a mobile browser's visible-viewport `100dvh` isn't floored
+     by the taller large-viewport `100vh` and pushed under the browser
+     chrome. */
+  height: 100vh;
   height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
@@ -2388,7 +2399,10 @@ select {
   --result-color: #ff405d;
   --result-glow: rgba(255, 40, 81, 0.35);
   overflow: hidden;
-  padding: 0;
+  /* Finding D: no `padding` here - it used to be `padding: 0;`, which won
+     the cascade (same specificity, later source order) over the two
+     correctly media-scoped safe-area-aware padding rules above, making the
+     safe-area inset padding dead. Let those rules' padding apply instead. */
   background:
     radial-gradient(ellipse at 50% 38%, rgba(255, 23, 68, 0.15), transparent 44%),
     rgba(2, 7, 17, 0.96);
@@ -3610,6 +3624,27 @@ select {
   }
 }
 
+/* Finding E: this pair used to sit after the `@media (min-width: 768px)`
+   block (and its nested max-height:600px/500px variants) below, which meant
+   it - an unconditional rule - won the cascade over all three of them at
+   equal specificity, purely by coming later in source order. Moved here, as
+   the mobile-first base, so those media blocks correctly override it at
+   wider/shorter viewports as originally intended. */
+#game-over-modal .game-over-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5cqw;
+  padding-top: 1.8cqh;
+}
+
+#game-over-modal .game-over-actions button {
+  min-width: 0;
+  min-height: 5.6cqh;
+  gap: 1.4cqw;
+  padding: 0.8cqh 1.2cqw;
+  font-size: max(0.6rem, 2.25cqw);
+  white-space: nowrap;
+}
+
 @media (min-width: 768px) {
   #game-over-modal::after {
     position: absolute;
@@ -3967,25 +4002,15 @@ select {
     padding-top: 0.4rem;
   }
 
+  /* Finding E: was 1.75rem (28px), below AGENTS.md's ~44px touch-target
+     guideline. 2.5rem (40px) is as close to the guideline as this
+     breakpoint's available height allows while still fitting all four stat
+     rows and both buttons without reintroducing the original overlap bug -
+     confirmed via playwright-cli at 844x390 and 915x412. */
   #game-over-modal .game-over-actions button {
-    min-height: 1.75rem;
+    min-height: 2.5rem;
     padding: 0.3rem 0.5rem;
   }
-}
-
-#game-over-modal .game-over-actions {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.5cqw;
-  padding-top: 1.8cqh;
-}
-
-#game-over-modal .game-over-actions button {
-  min-width: 0;
-  min-height: 5.6cqh;
-  gap: 1.4cqw;
-  padding: 0.8cqh 1.2cqw;
-  font-size: max(0.6rem, 2.25cqw);
-  white-space: nowrap;
 }
 
 #game-over-modal .game-over-actions button span {
@@ -4014,8 +4039,15 @@ select {
 }
 
 @media (max-height: 520px) {
+  /* This rule has no min-width condition, so height<=500px always matches
+     it too (500 <= 520) - meaning it was already winning the cascade (equal
+     specificity, later source order) over the min-width:768 + max-height:500
+     block above on every viewport where that block's own condition could
+     ever be met, even before the Finding E fix. Bumped to match that
+     block's touch-target-guideline value so the fix actually takes effect
+     at the real rendered output, not just in dead source. */
   #game-over-modal .game-over-actions button {
-    min-height: 2rem;
+    min-height: 2.5rem;
   }
 }
 
