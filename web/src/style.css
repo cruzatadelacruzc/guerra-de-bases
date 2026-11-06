@@ -14,6 +14,15 @@ body {
   min-height: 100%;
 }
 
+#app {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  isolation: isolate;
+}
+
 body {
   margin: 0;
   overflow: hidden;
@@ -1952,6 +1961,12 @@ select {
 }
 
 #game-over-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100vw;
+  min-height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
   background:
@@ -3811,6 +3826,18 @@ select {
 
   #game-over-modal .game-over-body {
     gap: 1.5rem;
+    /* At short landscape heights the hero + report column can need more
+       vertical space than the flex-allocated row provides. `flex: 1 1 auto`
+       plus `min-height: 0` (set in the base min-width:768px rule) already
+       gives this flex child a definite, shrinkable height; scope the
+       overflow to this element (instead of leaving it on the ancestor
+       `.game-over-card`) so the excess content scrolls internally and the
+       `.game-over-actions` button row below it stays pinned and never gets
+       overlapped. */
+    align-items: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   #game-over-modal .game-over-emblem-wrap {
@@ -3852,6 +3879,97 @@ select {
 
   #game-over-modal .game-over-actions {
     padding-top: 0.75rem;
+  }
+}
+
+/* Even shorter landscape heights (e.g. a phone rotated to landscape, ~390-
+   412px tall) still don't fit the 600px breakpoint's sizing: the hero +
+   report row overflows the space left after the header/location/actions
+   chrome. The scoped `overflow-y: auto` above is a safety net, but the goal
+   here is for all four stat rows and both action buttons to be visible
+   without needing to scroll, so compress further rather than relying on it. */
+@media (min-width: 768px) and (max-height: 500px) {
+  #game-over-modal .game-over-card,
+  #game-over-modal .game-over-card.is-victory {
+    padding: 0.6rem 1.25rem;
+  }
+
+  #game-over-modal .game-over-header {
+    padding-bottom: 0.35rem;
+  }
+
+  #game-over-modal .game-over-location {
+    padding: 0.3rem 0 0.4rem;
+  }
+
+  #game-over-modal .game-over-body {
+    gap: 1rem;
+  }
+
+  #game-over-modal .game-over-emblem-wrap {
+    width: 3.5rem;
+    height: 3.5rem;
+    margin-bottom: 0.3rem;
+  }
+
+  /* The badge is anchored to the emblem's top-right corner and doesn't
+     shrink with it automatically; shrink it to match so it doesn't spill
+     past the card's left edge and get clipped by the card's overflow:hidden. */
+  #game-over-modal .game-over-badge {
+    right: -0.3rem;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.56rem;
+  }
+
+  #game-over-modal .game-over-hero h2 {
+    font-size: 1.1rem;
+  }
+
+  #game-over-modal .game-over-hero p {
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+
+  #game-over-modal .game-over-report {
+    padding: 0.5rem 0.65rem;
+  }
+
+  #game-over-modal .game-over-report > header {
+    padding-bottom: 0.3rem;
+  }
+
+  #game-over-modal .game-over-metrics {
+    gap: 0;
+    padding-top: 0.2rem;
+  }
+
+  #game-over-modal .game-over-stat,
+  #game-over-modal .game-over-damage .game-over-stat {
+    min-height: 1.5rem;
+    font-size: 0.72rem;
+  }
+
+  #game-over-modal .game-over-stat b {
+    font-size: 0.75rem;
+  }
+
+  #game-over-modal .game-over-damage {
+    padding-top: 0.15rem;
+  }
+
+  #game-over-modal .game-over-progress {
+    height: 0.3rem;
+  }
+
+  #game-over-modal .game-over-actions {
+    gap: 0.4rem;
+    padding-top: 0.4rem;
+  }
+
+  #game-over-modal .game-over-actions button {
+    min-height: 1.75rem;
+    padding: 0.3rem 0.5rem;
   }
 }
 
