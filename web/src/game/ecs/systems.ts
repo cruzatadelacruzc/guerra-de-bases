@@ -147,11 +147,49 @@ export function runMovementSystem(
     // production hot path (BattleSimulation) always passes a persistent,
     // allocation-free array. When omitted, fall back to a one-off query.
     const colliders = obstacles ?? world.query(COMPONENTS.collider, COMPONENTS.transform, COMPONENTS.health);
-    const blocked = findBlockingCollider(world, entity, transform, nextX, nextZ, colliders);
-    transform.x = blocked?.x ?? nextX;
-    transform.z = blocked?.z ?? nextZ;
+    const hit = findBlockingCollider(world, entity, transform, nextX, nextZ, colliders);
+    if (hit) {
+      // Swept-circle collision response: stop at the obstacle's surface, then
+      // slide the unconsumed portion of this tick's movement along the
+      // obstacle's tangent at the hit point (a single bounce, no re-check) so
+      // a mover isn't permanently frozen against an obstacle that isn't its
+      // target. See Finding A in the final fix brief for the stuck-soldier bug.
+      const consumed = Math.min(travelDistance, Math.hypot(hit.x - transform.x, hit.z - transform.z));
+      const remaining = Math.max(0, travelDistance - consumed);
+      let slideX = hit.x;
+      let slideZ = hit.z;
+      if (remaining > 0) {
+        const normalX = hit.x - hit.obstacleX;
+        const normalZ = hit.z - hit.obstacleZ;
+        const normalLength = Math.hypot(normalX, normalZ);
+        if (normalLength > 0) {
+          const unitNormalX = normalX / normalLength;
+          const unitNormalZ = normalZ / normalLength;
+          let tangentX = -unitNormalZ;
+          let tangentZ = unitNormalX;
+          const moveDirX = deltaX / distance;
+          const moveDirZ = deltaZ / distance;
+          if (tangentX * moveDirX + tangentZ * moveDirZ < 0) {
+            tangentX = -tangentX;
+            tangentZ = -tangentZ;
+          }
+          slideX = hit.x + tangentX * remaining;
+          slideZ = hit.z + tangentZ * remaining;
+        }
+      }
+      transform.x = slideX;
+      transform.z = slideZ;
+    } else {
+      transform.x = nextX;
+      transform.z = nextZ;
+    }
   }
   return Math.max(0, distance - travelDistance);
+}
+
+interface ColliderHit extends Position {
+  obstacleX: number;
+  obstacleZ: number;
 }
 
 function findBlockingCollider(
@@ -161,13 +199,13 @@ function findBlockingCollider(
   nextX: number,
   nextZ: number,
   obstacles: readonly Entity[]
-): Position | undefined {
+): ColliderHit | undefined {
   const deltaX = nextX - start.x;
   const deltaZ = nextZ - start.z;
   const lengthSquared = deltaX * deltaX + deltaZ * deltaZ;
   if (lengthSquared === 0) return undefined;
 
-  let earliest: Position | undefined;
+  let earliest: ColliderHit | undefined;
   let earliestT = Number.POSITIVE_INFINITY;
   for (const obstacle of obstacles) {
     if (obstacle === movingEntity) continue;
@@ -189,7 +227,13 @@ function findBlockingCollider(
     if (entry < 0 || entry > 1 || entry >= earliestT) continue;
     const safeT = Math.max(0, entry - 0.001);
     earliestT = entry;
-    earliest = { x: start.x + deltaX * safeT, y: start.y, z: start.z + deltaZ * safeT };
+    earliest = {
+      x: start.x + deltaX * safeT,
+      y: start.y,
+      z: start.z + deltaZ * safeT,
+      obstacleX: position.x,
+      obstacleZ: position.z
+    };
   }
   return earliest;
 }

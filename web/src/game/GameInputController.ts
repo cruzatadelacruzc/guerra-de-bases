@@ -1,6 +1,25 @@
+/**
+ * Standard tap-vs-drag disambiguation: a `pointerup` is only treated as a tap
+ * (and allowed to commit a gameplay action) when it lands within
+ * `toleranceCssPixels` of the matching `pointerdown`. Anything further is
+ * treated as a drag (e.g. a one-finger camera-orbit gesture) and must not
+ * commit. Exported as a pure function so the threshold math is unit
+ * testable without needing a real pointer/canvas/rendering setup.
+ */
+export function exceedsTapTolerance(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  toleranceCssPixels: number
+): boolean {
+  return Math.hypot(endX - startX, endY - startY) > toleranceCssPixels;
+}
+
 export interface GameInputActions {
   onPointerMove(event: PointerEvent): void;
   onPointerDown(event: PointerEvent): void;
+  onPointerUp(event: PointerEvent): void;
   onPointerCancel(): void;
   onEscape(): void;
   onCancelPlacement(event: Event): boolean;
@@ -31,6 +50,10 @@ export class GameInputController {
     this.#surface.addEventListener('pointerdown', (event) => {
       if (event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
       this.#actions.onPointerDown(event);
+    }, options);
+    this.#surface.addEventListener('pointerup', (event) => {
+      if (event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      this.#actions.onPointerUp(event);
     }, options);
     this.#surface.addEventListener('pointercancel', () => {
       this.#actions.onPointerCancel();

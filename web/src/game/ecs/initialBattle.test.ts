@@ -561,6 +561,46 @@ test('a soldier stops at the nearer of two colliders in its path', () => {
   assert.ok(farStructure > 0 && nearStructure > 0);
 });
 
+test('a soldier blocked by an off-target structure slides around it over several ticks instead of freezing forever', () => {
+  // Regression test for the Critical "permanently stuck soldier" bug: a
+  // structure that is NOT the soldier's target, sitting directly in its
+  // straight-line path, used to stop the soldier dead on the first blocked
+  // tick and then re-block it at the same point on every subsequent tick
+  // (entry ~= 0 forever) because there was no sliding response. A single
+  // `runMovementSystem` call cannot distinguish "stopped, and stuck forever"
+  // from "stopped, and able to continue next tick" - both look identical
+  // after one call - so this test drives many small ticks (several seconds
+  // of simulated time), mirroring the geometry of the
+  // "structures register colliders..." test above.
+  const world = new World();
+  const soldier = createSoldier(world, FACTIONS.player, { x: 0, y: 0, z: 0 }, 10, 0);
+  createStructure(world, FACTIONS.enemy, { x: 0, y: 0, z: -4 }, 100, 'turret');
+  const target = { x: 0, y: 0, z: -10 };
+  const obstacleFarEdgeZ = -4 - (1.8 + 0.5); // collider radius + blocking margin
+
+  const tickSeconds = 0.1;
+  const totalTicks = 30; // 3 simulated seconds
+  let firstBlockedZ: number | undefined;
+  for (let tick = 0; tick < totalTicks; tick++) {
+    runMovementSystem(world, soldier, target, tickSeconds);
+    const z = world.getComponent(soldier, COMPONENTS.transform)?.z;
+    if (firstBlockedZ === undefined && z !== undefined && z > obstacleFarEdgeZ && z < -1.5) {
+      firstBlockedZ = z;
+    }
+  }
+
+  const finalPosition = world.getComponent(soldier, COMPONENTS.transform);
+  assert.ok(firstBlockedZ !== undefined, 'the soldier should have been blocked by the structure at some point');
+  assert.ok(
+    finalPosition !== undefined && finalPosition.z < obstacleFarEdgeZ,
+    `soldier should have slid past the obstacle's far edge (z < ${obstacleFarEdgeZ}), got z=${finalPosition?.z}`
+  );
+  assert.ok(
+    finalPosition !== undefined && finalPosition.z < (firstBlockedZ as number) - 1,
+    'soldier should have made net progress past where it first got blocked, not frozen there'
+  );
+});
+
 test('damage is clamped at zero and rejects invalid values', () => {
   const battle = createInitialBattle();
 

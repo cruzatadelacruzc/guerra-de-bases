@@ -19,7 +19,7 @@ import type {
 } from './game/ecs/systems.ts';
 import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
-import { GameInputController } from './game/GameInputController.ts';
+import { exceedsTapTolerance, GameInputController } from './game/GameInputController.ts';
 import { GameSession } from './game/GameSession.ts';
 import {
     AIR_STRIKE_EFFECTIVE_RADIUS,
@@ -368,7 +368,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         inputController = new GameInputController(renderCoordinator.canvas, {
             onPointerMove,
             onPointerDown,
-            onPointerCancel: () => {},
+            onPointerUp,
+            onPointerCancel,
             onEscape: cancelPlacement,
             onCancelPlacement: () => {
                 if (selectedBuildType || isDemolishMode) {
@@ -382,6 +383,13 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             onNativeBack: () => {
                 if (session.state === 'PLAYING' || session.state === 'PAUSED') {
                     togglePause();
+                    return true;
+                }
+                if (session.state === 'MATCH_ENDING') {
+                    // Swallow the back press so the app doesn't exit mid-sequence
+                    // (the session isn't pausable here - togglePause() would be a
+                    // no-op anyway). The end sequence keeps running to completion
+                    // on its own; see completeMatchEnd().
                     return true;
                 }
                 if (session.state === 'GAMEOVER') {
@@ -1004,6 +1012,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         projectilePool.clear();
         combatEffects.clear();
         battleSimulation?.world.clear();
+        cameraShake = 0;
         playerBuildings = [];
         enemyBuildings = [];
         rewardScenarioBuildings = [];
@@ -1217,8 +1226,36 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
     }
 
+    // Tap-vs-drag disambiguation for Finding G: `pointerdown` fires the
+    // instant a finger/mouse touches the canvas, before any movement, and
+    // OrbitControls listens for pointer events on the same canvas to drive
+    // camera orbiting. Committing immediately on `pointerdown` meant a
+    // one-finger orbit/pan gesture that merely started while a build type was
+    // selected (or demolish mode was active) would place or sell a building
+    // at the drag's starting point before the gesture finished. Instead, a
+    // `pointerdown` only records where the gesture started; the actual
+    // commit happens on `pointerup`, gated by this movement tolerance, using
+    // a fresh raycast from the pointerup position.
+    const TAP_MOVEMENT_TOLERANCE_PX = 10;
+    let pendingGesture: { pointerId: number; startX: number; startY: number } | null = null;
+
     function onPointerDown(event: PointerEvent) {
         if (session.state !== 'PLAYING') return;
+        pendingGesture = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };
+    }
+
+    function onPointerCancel() {
+        pendingGesture = null;
+    }
+
+    function onPointerUp(event: PointerEvent) {
+        const gesture = pendingGesture;
+        pendingGesture = null;
+        if (session.state !== 'PLAYING' || !gesture || gesture.pointerId !== event.pointerId) return;
+
+        if (exceedsTapTolerance(gesture.startX, gesture.startY, event.clientX, event.clientY, TAP_MOVEMENT_TOLERANCE_PX)) {
+            return;
+        }
 
         updatePointerPosition(event);
         const committedPosition = getPlacementPosition();
@@ -1591,8 +1628,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
                 simulation.world.removeEntity(entity);
                 targetObjects.delete(entity);
-                if (unit.type === 'rifleman') soldierRenderer.remove(entity);
-                else if (unit.mesh instanceof THREE.Object3D) scene.remove(unit.mesh);
+                if (unit.type === 'rifleman') {
+                    soldierRenderer.remove(entity);
+                } else if (unit.mesh instanceof THREE.Object3D) {
+                    scene.remove(unit.mesh);
+                    disposeObjectResources(unit.mesh);
+                }
                 units.splice(i, 1);
                 continue;
             }
@@ -2352,6 +2393,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function updateMatchEnding(delta: number): void {
         hqExplodeTimer += delta;
+        // Decay camera shake during the end sequence too (duplicated from
+        // updateCombat, which stops running once MATCH_ENDING begins) so the
+        // explosion's shake settles smoothly instead of staying frozen for the
+        // whole 4-5 second sequence; see the `combatEffects.update(delta)`
+        // duplication just below for the same pattern already in this file.
+        if (cameraShake > 0) cameraShake = Math.max(0, cameraShake - delta * 4.0);
         combatEffects.update(delta);
         if (hqExplodeTimer >= 4.0) completeMatchEnd();
     }
@@ -2549,8 +2596,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                         if (entity === undefined) continue;
                         battleSimulation.world.removeEntity(entity);
                         targetObjects.delete(entity);
-                        if (unit.type === 'rifleman') soldierRenderer.remove(entity);
-                        else if (unit.mesh instanceof THREE.Object3D) scene.remove(unit.mesh);
+                        if (unit.type === 'rifleman') {
+                            soldierRenderer.remove(entity);
+                        } else if (unit.mesh instanceof THREE.Object3D) {
+                            scene.remove(unit.mesh);
+                            disposeObjectResources(unit.mesh);
+                        }
                     }
                     enemyUnits = [];
                 }
