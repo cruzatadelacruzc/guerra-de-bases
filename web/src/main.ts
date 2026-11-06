@@ -24,7 +24,7 @@ if (Capacitor.isNativePlatform()) {
   });
 
   App.addListener('appStateChange', ({ isActive }) => {
-    if (!isActive) window.dispatchEvent(new Event('native-app-inactive'));
+    window.dispatchEvent(new Event(isActive ? 'native-app-active' : 'native-app-inactive'));
   });
 }
 

@@ -80,6 +80,7 @@ export class GameUI implements GameUiPort {
   }
 
   enterGameplay(): void {
+    this.#element<HTMLElement>('canvas-container').classList.remove('hidden');
     this.#element<HTMLElement>('main-menu').classList.add('opacity-0', 'pointer-events-none');
     this.#hud?.setPauseVisible(false);
     this.#hud?.setGameOverVisible(false);
@@ -94,6 +95,7 @@ export class GameUI implements GameUiPort {
     this.#hud?.setPauseVisible(false);
     this.#hud?.setGameOverVisible(false);
     this.#hud?.setGameVisible(false);
+    this.#element<HTMLElement>('canvas-container').classList.remove('hidden');
     const mainMenu = this.#element<HTMLElement>('main-menu');
     mainMenu.classList.remove('hidden', 'pointer-events-none');
     window.setTimeout(() => mainMenu.classList.remove('opacity-0'), 50);
@@ -145,6 +147,8 @@ export class GameUI implements GameUiPort {
   }
 
   showGameOver(summary: GameOverSummary): void {
+    this.#hud?.setGameVisible(false);
+    this.#element<HTMLElement>('canvas-container').classList.add('hidden');
     this.#hud?.showGameOver(summary);
   }
 

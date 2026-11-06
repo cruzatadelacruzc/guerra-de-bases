@@ -110,6 +110,7 @@ export function createStructure(
   world.addComponent(entity, COMPONENTS.faction, faction);
   world.addComponent(entity, COMPONENTS.transform, { ...position });
   world.addComponent(entity, COMPONENTS.health, { current: health, max: health });
+  world.addComponent(entity, COMPONENTS.collider, { radius: 1.8 });
   if (kind === 'generator') {
     world.addComponent(entity, COMPONENTS.resourceGenerator, {
       incomePerSecond: 12

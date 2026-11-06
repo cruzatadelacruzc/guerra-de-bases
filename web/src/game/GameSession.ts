@@ -1,4 +1,4 @@
-export type GameSessionState = 'MENU' | 'PLAYING' | 'PAUSED' | 'GAMEOVER';
+export type GameSessionState = 'MENU' | 'PLAYING' | 'PAUSED' | 'MATCH_ENDING' | 'GAMEOVER';
 
 export class GameSession {
   #state: GameSessionState = 'MENU';
@@ -20,6 +20,12 @@ export class GameSession {
   resume(): boolean {
     if (this.#state !== 'PAUSED') return false;
     this.#state = 'PLAYING';
+    return true;
+  }
+
+  beginEnding(): boolean {
+    if (this.#state !== 'PLAYING') return false;
+    this.#state = 'MATCH_ENDING';
     return true;
   }
 

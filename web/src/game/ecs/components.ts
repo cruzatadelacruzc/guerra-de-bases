@@ -23,6 +23,10 @@ export interface Building {
   kind: BuildingKind;
 }
 
+export interface Collider {
+  radius: number;
+}
+
 export interface ResourceGenerator {
   incomePerSecond: number;
 }
@@ -75,6 +79,7 @@ export interface Targeting {
 export interface ComponentData {
   base: true;
   building: Building;
+  collider: Collider;
   economy: Economy;
   factory: true;
   faction: Faction;
@@ -97,6 +102,7 @@ export type ComponentName = keyof ComponentData;
 export const COMPONENTS: { readonly [Name in ComponentName]: Name } = Object.freeze({
   base: 'base',
   building: 'building',
+  collider: 'collider',
   economy: 'economy',
   factory: 'factory',
   faction: 'faction',

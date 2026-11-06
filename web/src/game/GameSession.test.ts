@@ -19,3 +19,17 @@ test('game session accepts only valid pause and resume transitions', () => {
   session.returnToMenu();
   assert.equal(session.state, 'MENU');
 });
+
+test('match ending is idempotent and prevents further gameplay transitions', () => {
+  const session = new GameSession();
+  session.start();
+
+  assert.equal(session.beginEnding(), true);
+  assert.equal(session.beginEnding(), false);
+  assert.equal(session.state, 'MATCH_ENDING');
+  assert.equal(session.pause(), false);
+  assert.equal(session.resume(), false);
+
+  session.finish();
+  assert.equal(session.state, 'GAMEOVER');
+});

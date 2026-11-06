@@ -8,6 +8,7 @@ function createComponentStores(): ComponentStores {
   return {
     base: new Map(),
     building: new Map(),
+    collider: new Map(),
     economy: new Map(),
     factory: new Map(),
     faction: new Map(),

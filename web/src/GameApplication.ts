@@ -147,6 +147,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let hqExplodingSequence = false;
     let hqExplodeTimer = 0;
     let pendingVictoryState = false;
+    let matchEndTimeout: number | undefined;
 
     // Kill streaks and simple progression counters (used by UnlockManager)
     let playerKillStreak = 0;
@@ -364,9 +365,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         projectilePool = renderCoordinator.projectiles;
         createTerrain();
 
-        inputController = new GameInputController({
+        inputController = new GameInputController(renderCoordinator.canvas, {
             onPointerMove,
-            onPointerClick,
+            onPointerDown,
+            onPointerCancel: () => {},
             onEscape: cancelPlacement,
             onCancelPlacement: () => {
                 if (selectedBuildType || isDemolishMode) {
@@ -391,6 +393,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             onApplicationInactive: () => {
                 if (session.state === 'PLAYING') togglePause();
                 frameLoop?.resetDelta();
+            },
+            onApplicationActive: () => {
+                frameLoop?.resetDelta();
+                if (session.state === 'MATCH_ENDING') completeMatchEnd();
             }
         });
         inputController.attach();
@@ -816,33 +822,16 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         pendingVictoryState = false;
 
         // Clear Menu Preview Units
-        menuUnits.forEach(u => scene.remove(u));
+        menuUnits.forEach((unit) => {
+            scene.remove(unit);
+            disposeObjectResources(unit);
+        });
         menuUnits = [];
 
-        // Clear Scene Objects & Previous Battlefield Ruins / Corpses / Fire
-        clearBattlefieldRemains();
-        clearActiveRewardEffects();
-        disposeNexusShieldVisuals();
-
-        [...playerBuildings, ...enemyBuildings].forEach(b => scene.remove(b.mesh));
-        [...playerUnits, ...enemyUnits].forEach(u => {
-            if (u.type !== 'rifleman' && u.mesh instanceof THREE.Object3D) scene.remove(u.mesh);
-        });
-        soldierRenderer.clear();
-        projectilePool.clear();
-        combatEffects.clear();
-
-        playerBuildings = [];
-        enemyBuildings = [];
-        rewardScenarioBuildings = [];
-        playerUnits = [];
-        enemyUnits = [];
-        battleSimulation = null;
-        targetObjects.clear();
-        projectiles = [];
-        projectileVisuals.clear();
+        teardownMatch();
 
         session.start();
+        frameLoop?.start();
         frameLoop?.resetDelta();
 
         ui.enterGameplay();
@@ -981,42 +970,54 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     }
 
     function exitToMainMenu() {
-        clearBattlefieldRemains();
-        clearActiveRewardEffects();
-        disposeNexusShieldVisuals();
-
-        [...playerBuildings, ...enemyBuildings].forEach(b => scene.remove(b.mesh));
-        [...playerUnits, ...enemyUnits].forEach(u => {
-            if (u.mesh instanceof THREE.Object3D) scene.remove(u.mesh);
-        });
-        projectiles.forEach(p => scene.remove(p.mesh));
-        projectilePool.clear();
-        combatEffects.clear();
-
-        playerBuildings = [];
-        enemyBuildings = [];
-        rewardScenarioBuildings = [];
-        playerUnits = [];
-        enemyUnits = [];
-        projectiles = [];
-        projectileVisuals.clear();
-        soldierRenderer.clear();
-        targetObjects.clear();
-        battleSimulation = null;
-
-        if (placementGhost) {
-            scene.remove(placementGhost);
-            placementGhost = null;
-        }
-        selectedBuildType = null;
+        teardownMatch();
 
         session.returnToMenu();
+        frameLoop?.start();
         frameLoop?.resetDelta();
 
         ui.enterMainMenu();
         ui.setPlacementActive(false);
 
         setupMenuCinematic();
+    }
+
+    function teardownMatch(): void {
+        if (matchEndTimeout !== undefined) {
+            window.clearTimeout(matchEndTimeout);
+            matchEndTimeout = undefined;
+        }
+        clearBattlefieldRemains();
+        clearActiveRewardEffects();
+        disposeNexusShieldVisuals();
+        for (const building of [...playerBuildings, ...enemyBuildings]) {
+            scene.remove(building.mesh);
+            disposeObjectResources(building.mesh);
+        }
+        for (const unit of [...playerUnits, ...enemyUnits]) {
+            if (unit.type === 'rifleman') soldierRenderer.remove(unit.ecsEntityId);
+            else if (unit.mesh instanceof THREE.Object3D) {
+                scene.remove(unit.mesh);
+                disposeObjectResources(unit.mesh);
+            }
+        }
+        projectilePool.clear();
+        combatEffects.clear();
+        battleSimulation?.world.clear();
+        playerBuildings = [];
+        enemyBuildings = [];
+        rewardScenarioBuildings = [];
+        playerUnits = [];
+        enemyUnits = [];
+        playerHQ = null;
+        enemyHQ = null;
+        projectiles = [];
+        projectileVisuals.clear();
+        targetObjects.clear();
+        battleSimulation = null;
+        cancelPlacement();
+        isDemolishMode = false;
+        updateDemolishUI();
     }
 
     function updateResourceUI() {
@@ -1195,19 +1196,19 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         updatePlacementGhost();
     }
 
+    function getPlacementPosition(): THREE.Vector3 | undefined {
+        if (!terrainFloor) return undefined;
+        raycaster.setFromCamera(mouse, camera);
+        const point = raycaster.intersectObject(terrainFloor)[0]?.point;
+        if (!point || point.z <= 5 || point.z >= 65 || Math.abs(point.x) >= 48) return undefined;
+        return new THREE.Vector3(Math.round(point.x), 0, Math.round(point.z));
+    }
+
     function updatePlacementGhost() {
-        if (selectedBuildType && placementGhost && terrainFloor) {
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObject(terrainFloor);
-            if (intersects.length > 0) {
-                const point = intersects[0].point;
-                if (point.z > 5 && point.z < 65 && Math.abs(point.x) < 48) {
-                    placementGhost.position.set(Math.round(point.x), 0, Math.round(point.z));
-                } else {
-                    placementGhost.position.set(0, -100, 0);
-                }
-            }
-        }
+        if (!selectedBuildType || !placementGhost) return;
+        const position = getPlacementPosition();
+        if (position) placementGhost.position.copy(position);
+        else placementGhost.position.set(0, -100, 0);
     }
 
     function updatePointerPosition(event: MouseEvent) {
@@ -1216,11 +1217,11 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         mouse.y = -((event.clientY - bounds.top) / bounds.height) * 2 + 1;
     }
 
-    function onPointerClick(event: MouseEvent) {
+    function onPointerDown(event: PointerEvent) {
         if (session.state !== 'PLAYING') return;
-        if (event.target !== renderer.domElement) return;
 
         updatePointerPosition(event);
+        const committedPosition = getPlacementPosition();
         updatePlacementGhost();
 
         // Demolish Click
@@ -1245,6 +1246,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
                     SFX.playBuild();
                     scene.remove(b.mesh);
+                    disposeObjectResources(b.mesh);
                     if (battleSimulation && b.ecsEntityId !== undefined) {
                         battleSimulation.world.removeEntity(b.ecsEntityId);
                         targetObjects.delete(b.ecsEntityId);
@@ -1259,8 +1261,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         }
 
         // Building Placement Click
-        if (selectedBuildType && placementGhost && placementGhost.position.y >= 0) {
-            const pos = placementGhost.position;
+        if (selectedBuildType && committedPosition) {
+            const type = selectedBuildType;
+            const pos = committedPosition;
 
             const tooClose = playerBuildings.some(b => b.position.distanceTo(pos) < 3.8);
             if (tooClose) {
@@ -1268,17 +1271,17 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 return;
             }
 
-            const cost = getBuildingCost(selectedBuildType);
+            const cost = getBuildingCost(type);
 
             if (spendFactionGold(ECS_FACTIONS.player, cost)) {
                 SFX.playBuild();
                 stats.buildingsConstructed++;
                 unlocks.recordEvent('building_constructed', {
                     buildingsPlaced: stats.buildingsConstructed,
-                    buildingType: selectedBuildType
+                    buildingType: type
                 });
 
-                const realMesh = instantiateBuildingMesh(selectedBuildType, true);
+                const realMesh = instantiateBuildingMesh(type, true);
                 realMesh.position.copy(pos);
 
                 const newB = {
@@ -1286,9 +1289,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     hp: 380,
                     maxHp: 380,
                     position: pos.clone(),
-                    type: selectedBuildType,
+                    type,
                     isPlayer: true,
-                    healthBar: create3DHealthBar(true, selectedBuildType === 'turret' ? 2.8 : 2.5, 2.2)
+                    healthBar: create3DHealthBar(true, type === 'turret' ? 2.8 : 2.5, 2.2)
                 };
                 realMesh.add(newB.healthBar.group);
 
@@ -1296,7 +1299,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 registerStructureTarget(newB);
                 playerBuildings.push(newB);
 
-                showToast(`¡${selectedBuildType.toUpperCase()} CONSTRUIDO!`);
+                showToast(`¡${type.toUpperCase()} CONSTRUIDO!`);
             } else {
                 showToast("¡Recursos insuficientes!");
             }
@@ -1725,15 +1728,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             cameraShake = Math.max(0, cameraShake - delta * 4.0);
         }
 
-        // Display Victory / Defeat card strictly AFTER nuclear detonation sequence completes
-        if (hqExplodingSequence) {
-            hqExplodeTimer += delta;
-            if (hqExplodeTimer >= 4.0) {
-                hqExplodingSequence = false;
-                endGame(pendingVictoryState);
-            }
-        }
-
         updateResourceUI();
 
         if (playerHQ && enemyHQ) {
@@ -1792,6 +1786,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     createCinematicExplosion(b.position, isHQ ? 3.0 : 1.2, isHQ);
 
                     scene.remove(b.mesh);
+                    disposeObjectResources(b.mesh);
                     if (battleSimulation && b.ecsEntityId !== undefined) {
                         battleSimulation.world.removeEntity(b.ecsEntityId);
                         targetObjects.delete(b.ecsEntityId);
@@ -1806,13 +1801,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         // HQ Nuclear Explosion Trigger
         if (!hqExplodingSequence) {
             if (playerHQ && playerHQ.hp <= 0) {
-                hqExplodingSequence = true;
-                hqExplodeTimer = 0;
-                pendingVictoryState = false;
+                beginMatchEnding(false);
             } else if (enemyHQ && enemyHQ.hp <= 0) {
-                hqExplodingSequence = true;
-                hqExplodeTimer = 0;
-                pendingVictoryState = true;
+                beginMatchEnding(true);
             }
         }
     }
@@ -2350,6 +2341,27 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ui.setPermanentUnlockCount(unlocks.unlocked.size);
     }
 
+    function beginMatchEnding(isVictory: boolean): void {
+        if (!session.beginEnding()) return;
+        hqExplodingSequence = true;
+        hqExplodeTimer = 0;
+        pendingVictoryState = isVictory;
+        cancelPlacement();
+        matchEndTimeout = window.setTimeout(() => completeMatchEnd(), 5000);
+    }
+
+    function updateMatchEnding(delta: number): void {
+        hqExplodeTimer += delta;
+        combatEffects.update(delta);
+        if (hqExplodeTimer >= 4.0) completeMatchEnd();
+    }
+
+    function completeMatchEnd(): void {
+        if (session.state !== 'MATCH_ENDING') return;
+        hqExplodingSequence = false;
+        endGame(pendingVictoryState);
+    }
+
     function endGame(isVictory: boolean) {
         session.finish();
         unlocks.recordEvent('match_end', {
@@ -2366,14 +2378,17 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             ? Math.round((1 - Math.max(0, Math.min(enemyHQ.maxHp, enemyHQ.hp)) / enemyHQ.maxHp) * 100)
             : 0;
 
-        ui.showGameOver({
+        const summary = {
             victory: isVictory,
             soldiersTrained: stats.soldiersTrained,
             losses: playerUnitsLost,
             buildingsConstructed: stats.buildingsConstructed,
             duration: `${mins}:${secs}`,
             enemyBaseDamagePercent: enemyHQDamage
-        });
+        };
+        teardownMatch();
+        ui.showGameOver(summary);
+        frameLoop?.stop();
     }
 
     function animate({ deltaSeconds: delta, elapsedSeconds: time }: FrameTiming) {
@@ -2401,6 +2416,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 updateRewardUI();
             }
             if (diagnosticsEnabled) combatMs = performance.now() - combatStart;
+        } else if (session.state === 'MATCH_ENDING') {
+            updateMatchEnding(delta);
         }
 
         const renderStart = diagnosticsEnabled ? performance.now() : 0;

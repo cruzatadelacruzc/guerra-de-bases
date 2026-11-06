@@ -1,17 +1,21 @@
 export interface GameInputActions {
   onPointerMove(event: PointerEvent): void;
-  onPointerClick(event: MouseEvent): void;
+  onPointerDown(event: PointerEvent): void;
+  onPointerCancel(): void;
   onEscape(): void;
   onCancelPlacement(event: Event): boolean;
   onNativeBack(): boolean;
   onApplicationInactive(): void;
+  onApplicationActive(): void;
 }
 
 export class GameInputController {
+  readonly #surface: HTMLCanvasElement;
   readonly #actions: GameInputActions;
   #controller: AbortController | undefined;
 
-  constructor(actions: GameInputActions) {
+  constructor(surface: HTMLCanvasElement, actions: GameInputActions) {
+    this.#surface = surface;
     this.#actions = actions;
   }
 
@@ -21,11 +25,15 @@ export class GameInputController {
     const options = { signal: controller.signal };
     this.#controller = controller;
 
-    window.addEventListener('pointermove', (event) => {
+    this.#surface.addEventListener('pointermove', (event) => {
       this.#actions.onPointerMove(event);
     }, options);
-    window.addEventListener('click', (event) => {
-      this.#actions.onPointerClick(event);
+    this.#surface.addEventListener('pointerdown', (event) => {
+      if (event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      this.#actions.onPointerDown(event);
+    }, options);
+    this.#surface.addEventListener('pointercancel', () => {
+      this.#actions.onPointerCancel();
     }, options);
     window.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') this.#actions.onEscape();
@@ -39,8 +47,12 @@ export class GameInputController {
     window.addEventListener('native-app-inactive', () => {
       this.#actions.onApplicationInactive();
     }, options);
+    window.addEventListener('native-app-active', () => {
+      this.#actions.onApplicationActive();
+    }, options);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') this.#actions.onApplicationInactive();
+      else if (document.visibilityState === 'visible') this.#actions.onApplicationActive();
     }, options);
   }
 

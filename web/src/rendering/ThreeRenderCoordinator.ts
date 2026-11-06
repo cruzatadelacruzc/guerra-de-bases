@@ -13,9 +13,11 @@ export class ThreeRenderCoordinator {
   readonly soldiers: InstancedSoldierRenderer;
   readonly effects: CombatEffects;
   readonly projectiles: ProjectilePool;
+  readonly #container: HTMLElement;
   #disposed = false;
 
   constructor(container: HTMLElement) {
+    this.#container = container;
     this.scene = new THREE.Scene();
     this.soldiers = new InstancedSoldierRenderer(this.scene);
     this.effects = new CombatEffects(this.scene);
@@ -25,7 +27,7 @@ export class ThreeRenderCoordinator {
 
     this.camera = new THREE.PerspectiveCamera(
       45,
-      window.innerWidth / window.innerHeight,
+      this.#viewportWidth / this.#viewportHeight,
       0.1,
       1000
     );
@@ -36,9 +38,9 @@ export class ThreeRenderCoordinator {
       antialias: !isTouchDevice,
       powerPreference: 'high-performance',
     });
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(this.#viewportWidth, this.#viewportHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2));
-    this.renderer.shadowMap.enabled = !isTouchDevice || window.innerWidth >= 900;
+    this.renderer.shadowMap.enabled = !isTouchDevice || this.#viewportWidth >= 900;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
 
@@ -98,12 +100,20 @@ export class ThreeRenderCoordinator {
   }
 
   #handleResize = (): void => {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.aspect = this.#viewportWidth / this.#viewportHeight;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setSize(this.#viewportWidth, this.#viewportHeight);
     const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2));
-    this.renderer.shadowMap.enabled = !isTouchDevice || window.innerWidth >= 900;
+    this.renderer.shadowMap.enabled = !isTouchDevice || this.#viewportWidth >= 900;
     this.directionalLight.castShadow = this.renderer.shadowMap.enabled;
   };
+
+  get #viewportWidth(): number {
+    return Math.max(1, this.#container.getBoundingClientRect().width || window.innerWidth);
+  }
+
+  get #viewportHeight(): number {
+    return Math.max(1, this.#container.getBoundingClientRect().height || window.innerHeight);
+  }
 }
