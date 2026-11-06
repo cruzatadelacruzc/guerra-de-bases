@@ -39,6 +39,11 @@ const WEAPON_QUERY = [
   COMPONENTS.transform,
   COMPONENTS.health
 ] satisfies readonly ComponentName[];
+const COLLIDER_QUERY = [
+  COMPONENTS.collider,
+  COMPONENTS.transform,
+  COMPONENTS.health
+] satisfies readonly ComponentName[];
 
 export class BattleSimulation {
   readonly world: World;
@@ -54,6 +59,7 @@ export class BattleSimulation {
   #generators: Entity[] = [];
   #factories: Entity[] = [];
   #projectiles: Entity[] = [];
+  #obstacles: Entity[] = [];
   readonly #modifyDamage: (target: Entity, damage: number) => number;
   #weaponEvents: WeaponFireEvent[] = [];
   #productionEvents: ProductionCompletedEvent[] = [];
@@ -116,6 +122,7 @@ export class BattleSimulation {
     this.world.queryInto(this.#soldiers, SOLDIER_QUERY);
     this.world.queryInto(this.#candidates, TARGET_QUERY);
     this.world.queryInto(this.#weaponOwners, WEAPON_QUERY);
+    this.world.queryInto(this.#obstacles, COLLIDER_QUERY);
     this.#playerTargets.length = 0;
     this.#enemyTargets.length = 0;
     for (const entity of this.#candidates) {
@@ -168,7 +175,9 @@ export class BattleSimulation {
       const targetPosition = this.world.getComponent(target, COMPONENTS.transform);
       if (!targetPosition) continue;
       const health = this.world.getComponent(soldier, COMPONENTS.health);
-      if (health && health.current > 0) runMovementSystem(this.world, soldier, targetPosition, deltaSeconds);
+      if (health && health.current > 0) {
+        runMovementSystem(this.world, soldier, targetPosition, deltaSeconds, this.#obstacles);
+      }
     }
 
     for (const weaponOwner of this.#weaponOwners) {

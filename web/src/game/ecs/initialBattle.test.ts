@@ -515,6 +515,52 @@ test('movement honors weapon range and never overshoots the engagement distance'
   assert.equal(world.getComponent(soldier, COMPONENTS.transform)?.z, -8);
 });
 
+test('structures register colliders and soldiers do not move through their footprint', () => {
+  const world = new World();
+  const soldier = createSoldier(world, FACTIONS.player, { x: 0, y: 0, z: 0 }, 10, 0);
+  const structure = createStructure(world, FACTIONS.enemy, { x: 0, y: 0, z: -4 }, 100, 'turret');
+
+  assert.deepEqual(world.getComponent(structure, COMPONENTS.collider), { radius: 1.8 });
+
+  runMovementSystem(world, soldier, { x: 0, y: 0, z: -10 }, 1);
+  assert.ok((world.getComponent(soldier, COMPONENTS.transform)?.z ?? -10) > -2);
+});
+
+test('a soldier passing outside a structure collider radius is not blocked', () => {
+  const world = new World();
+  const soldier = createSoldier(world, FACTIONS.player, { x: 0, y: 0, z: 0 }, 10, 0);
+  const structure = createStructure(world, FACTIONS.enemy, { x: 3, y: 0, z: -4 }, 100, 'turret');
+
+  assert.deepEqual(world.getComponent(structure, COMPONENTS.collider), { radius: 1.8 });
+
+  runMovementSystem(world, soldier, { x: 0, y: 0, z: -10 }, 1);
+  assert.equal(world.getComponent(soldier, COMPONENTS.transform)?.z, -10);
+});
+
+test('a destroyed structure no longer blocks soldier movement', () => {
+  const world = new World();
+  const soldier = createSoldier(world, FACTIONS.player, { x: 0, y: 0, z: 0 }, 10, 0);
+  const structure = createStructure(world, FACTIONS.enemy, { x: 0, y: 0, z: -4 }, 100, 'turret');
+
+  assert.deepEqual(applyDamageSystem(world, structure, 100), { current: 0, destroyed: true });
+
+  runMovementSystem(world, soldier, { x: 0, y: 0, z: -10 }, 1);
+  assert.equal(world.getComponent(soldier, COMPONENTS.transform)?.z, -10);
+});
+
+test('a soldier stops at the nearer of two colliders in its path', () => {
+  const world = new World();
+  const soldier = createSoldier(world, FACTIONS.player, { x: 0, y: 0, z: 0 }, 10, 0);
+  const farStructure = createStructure(world, FACTIONS.enemy, { x: 0, y: 0, z: -8 }, 100, 'turret');
+  const nearStructure = createStructure(world, FACTIONS.enemy, { x: 0, y: 0, z: -4 }, 100, 'turret');
+
+  runMovementSystem(world, soldier, { x: 0, y: 0, z: -10 }, 1);
+  const finalZ = world.getComponent(soldier, COMPONENTS.transform)?.z ?? -10;
+  assert.ok(finalZ > -2, 'soldier should stop at the nearer structure, not pass through it');
+  assert.ok(finalZ < -1, 'soldier should actually be blocked, not stay at its starting position');
+  assert.ok(farStructure > 0 && nearStructure > 0);
+});
+
 test('damage is clamped at zero and rejects invalid values', () => {
   const battle = createInitialBattle();
 

@@ -121,7 +121,8 @@ export function runMovementSystem(
   world: World,
   entity: Entity,
   target: Position,
-  deltaSeconds: number
+  deltaSeconds: number,
+  obstacles?: readonly Entity[]
 ): number {
   if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) {
     throw new RangeError('Movement delta must be a finite, non-negative number');
@@ -140,10 +141,57 @@ export function runMovementSystem(
   const travelDistance = Math.min(distanceToTravel, movement.speed * deltaSeconds);
 
   if (distance > 0 && travelDistance > 0) {
-    transform.x += (deltaX / distance) * travelDistance;
-    transform.z += (deltaZ / distance) * travelDistance;
+    const nextX = transform.x + (deltaX / distance) * travelDistance;
+    const nextZ = transform.z + (deltaZ / distance) * travelDistance;
+    // `obstacles` is optional so non-hot-path callers (tests) can omit it; the
+    // production hot path (BattleSimulation) always passes a persistent,
+    // allocation-free array. When omitted, fall back to a one-off query.
+    const colliders = obstacles ?? world.query(COMPONENTS.collider, COMPONENTS.transform, COMPONENTS.health);
+    const blocked = findBlockingCollider(world, entity, transform, nextX, nextZ, colliders);
+    transform.x = blocked?.x ?? nextX;
+    transform.z = blocked?.z ?? nextZ;
   }
   return Math.max(0, distance - travelDistance);
+}
+
+function findBlockingCollider(
+  world: World,
+  movingEntity: Entity,
+  start: Position,
+  nextX: number,
+  nextZ: number,
+  obstacles: readonly Entity[]
+): Position | undefined {
+  const deltaX = nextX - start.x;
+  const deltaZ = nextZ - start.z;
+  const lengthSquared = deltaX * deltaX + deltaZ * deltaZ;
+  if (lengthSquared === 0) return undefined;
+
+  let earliest: Position | undefined;
+  let earliestT = Number.POSITIVE_INFINITY;
+  for (const obstacle of obstacles) {
+    if (obstacle === movingEntity) continue;
+    const health = world.getComponent(obstacle, COMPONENTS.health);
+    const collider = world.getComponent(obstacle, COMPONENTS.collider);
+    const position = world.getComponent(obstacle, COMPONENTS.transform);
+    if (!health || health.current <= 0 || !collider || !position) continue;
+
+    const relativeX = start.x - position.x;
+    const relativeZ = start.z - position.z;
+    const radius = collider.radius + 0.5;
+    const a = lengthSquared;
+    const b = 2 * (relativeX * deltaX + relativeZ * deltaZ);
+    const c = relativeX * relativeX + relativeZ * relativeZ - radius * radius;
+    const discriminant = b * b - 4 * a * c;
+    if (discriminant < 0) continue;
+
+    const entry = (-b - Math.sqrt(discriminant)) / (2 * a);
+    if (entry < 0 || entry > 1 || entry >= earliestT) continue;
+    const safeT = Math.max(0, entry - 0.001);
+    earliestT = entry;
+    earliest = { x: start.x + deltaX * safeT, y: start.y, z: start.z + deltaZ * safeT };
+  }
+  return earliest;
 }
 
 export function applyDamageSystem(world: World, entity: Entity, amount: number): DamageResult {
