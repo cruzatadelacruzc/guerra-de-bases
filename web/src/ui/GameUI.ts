@@ -113,8 +113,7 @@ export class GameUI implements GameUiPort {
     production: readonly BarracksProductionView[]
   ): void {
     this.#element<HTMLElement>('res-gold').innerText = String(Math.floor(gold));
-    this.#element<HTMLElement>('enemy-gold-text').innerText =
-      `ORO ENEMIGO: ${Math.floor(enemyGold)}`;
+    this.#element<HTMLElement>('enemy-gold-text').innerText = String(Math.floor(enemyGold));
     this.#buildMenu?.updateResources(gold, barracksCount, availableFactories, production);
   }
 

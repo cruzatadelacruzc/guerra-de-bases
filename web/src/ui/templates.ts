@@ -62,17 +62,13 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
         <div class="game-status-rail pointer-events-auto">
             <section class="game-faction-status game-faction-player cyber-panel" aria-label="Estado del Nexo aliado">
                 <div class="game-faction-heading">
-                    <span class="game-faction-name">NEXO <b>ALIADO</b></span>
+                    <span class="game-faction-name"><span class="game-faction-prefix">NEXO </span><b>ALIADO</b></span>
                     <span id="player-hq-hp-text" class="game-hp-value">1200 / 1200 HP</span>
                 </div>
                 <div class="game-health-track"><div id="player-hq-bar" class="game-health-fill w-full"></div></div>
-                <div class="game-resource-line">
-                    <span>ORO DISPONIBLE</span>
-                    <span id="res-gold" class="game-resource-value">200</span>
-                </div>
-                <div class="game-resource-line game-resource-line--cp">
-                    <span>CP DISPONIBLES</span>
-                    <span id="res-combat-points" class="game-resource-value">0 CP</span>
+                <div class="game-faction-meta">
+                    <span class="game-meta-gold">ORO <b id="res-gold">200</b></span>
+                    <span class="game-meta-cp"><b id="res-combat-points">0 CP</b></span>
                 </div>
             </section>
 
@@ -85,13 +81,13 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
 
             <section class="game-faction-status game-faction-enemy cyber-panel-red" aria-label="Estado del Nexo enemigo">
                 <div class="game-faction-heading">
-                    <span class="game-faction-name">NEXO <b>HOSTIL</b></span>
+                    <span class="game-faction-name"><span class="game-faction-prefix">NEXO </span><b>HOSTIL</b></span>
                     <span id="enemy-hq-hp-text" class="game-hp-value">1200 / 1200 HP</span>
                 </div>
                 <div class="game-health-track"><div id="enemy-hq-bar" class="game-health-fill w-full"></div></div>
-                <div class="game-enemy-meta">
-                    <span id="enemy-gold-text">ORO ENEMIGO: 200</span>
-                    <span id="ai-strat-tag">ESTADO IA: CONSTRUYENDO</span>
+                <div class="game-faction-meta">
+                    <span class="game-meta-gold">ORO <b id="enemy-gold-text">200</b></span>
+                    <span class="game-meta-status">IA: <span id="ai-strat-tag">CONSTRUYENDO</span></span>
                 </div>
             </section>
         </div>

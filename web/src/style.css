@@ -169,18 +169,6 @@ select {
     line-height: 1rem;
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:last-child,
-  #game-hud > div:first-child > .cyber-panel-red > div:last-child {
-    flex-wrap: wrap;
-    gap: 0.15rem;
-  }
-
-  #enemy-gold-text,
-  #ai-strat-tag {
-    font-size: 0.55rem;
-    line-height: 0.85rem;
-  }
-
   #game-hud > div:nth-child(2) {
     position: absolute;
     top: max(0.55rem, env(safe-area-inset-top));
@@ -1250,7 +1238,7 @@ select {
 
   #game-hud > div:first-child > .cyber-panel > div:first-child span,
   #game-hud > div:first-child > .cyber-panel-red > div:first-child span {
-    font-size: 0.52rem;
+    font-size: 0.56rem;
     line-height: 0.8rem;
   }
 
@@ -1258,20 +1246,6 @@ select {
   #game-hud > div:first-child > .cyber-panel-red > div:last-child {
     gap: 0.1rem;
     margin-top: 0;
-  }
-
-  #res-gold {
-    font-size: 0.85rem;
-  }
-
-  #enemy-gold-text,
-  #ai-strat-tag {
-    max-width: 100%;
-    overflow: hidden;
-    font-size: 0.48rem;
-    line-height: 0.7rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   #game-hud > div:first-child > div:nth-child(2) {
@@ -1453,8 +1427,7 @@ select {
 }
 
 .game-faction-heading,
-.game-resource-line,
-.game-enemy-meta {
+.game-faction-meta {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1467,7 +1440,7 @@ select {
   overflow: hidden;
   color: #67e8f9;
   font-family: 'Orbitron', sans-serif;
-  font-size: clamp(0.55rem, 0.75vw, 0.68rem);
+  font-size: clamp(0.6rem, 0.75vw, 0.68rem);
   font-weight: 700;
   letter-spacing: 0.11em;
   text-overflow: ellipsis;
@@ -1480,8 +1453,7 @@ select {
 }
 
 .game-hp-value,
-.game-resource-line,
-.game-enemy-meta {
+.game-faction-meta {
   color: #94a3b8;
   font-family: 'Rajdhani', sans-serif;
   font-size: 0.7rem;
@@ -1523,36 +1495,37 @@ select {
   box-shadow: 0 0 0.7rem rgba(244, 63, 94, 0.7);
 }
 
-.game-resource-line {
-  color: #a8b5c5;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 0.55rem;
-  letter-spacing: 0.08em;
-}
-
-.game-resource-value {
-  color: #facc15;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 0.9rem;
-  font-weight: 900;
-}
-
-.game-resource-line--cp .game-resource-value {
-  color: #67e8f9;
-}
-
-.game-enemy-meta {
+/* One line under the health bar in both panels, so they are the same height. */
+.game-faction-meta {
   gap: 0.7rem;
   font-size: 0.62rem;
 }
 
-#enemy-gold-text {
-  overflow: hidden;
-  color: #facc15;
-  text-overflow: ellipsis;
+.game-meta-gold,
+.game-meta-cp {
+  flex-shrink: 0;
 }
 
-#ai-strat-tag {
+.game-meta-gold {
+  color: #facc15;
+}
+
+/* The figures stand out from their labels. */
+.game-meta-gold b,
+.game-meta-cp b {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.game-meta-cp b {
+  color: #67e8f9;
+}
+
+/* When space runs out only the AI status is cut short; the figures always show. */
+.game-meta-status {
+  min-width: 0;
   overflow: hidden;
   color: #fda4af;
   text-overflow: ellipsis;
@@ -1821,25 +1794,22 @@ select {
 
   .game-faction-name,
   .game-faction-name b {
-    font-size: clamp(0.48rem, 2.3vw, 0.62rem);
+    font-size: clamp(0.56rem, 2.3vw, 0.62rem);
     letter-spacing: 0.06em;
   }
 
   .game-hp-value {
-    font-size: clamp(0.48rem, 2vw, 0.58rem);
+    font-size: clamp(0.56rem, 2vw, 0.6rem);
   }
 
-  .game-resource-line {
-    font-size: 0.48rem;
+  .game-faction-meta {
+    gap: 0.3rem;
+    font-size: clamp(0.56rem, 2.4vw, 0.62rem);
   }
 
-  .game-resource-value {
-    font-size: 0.8rem;
-  }
-
-  .game-enemy-meta {
-    gap: 0.25rem;
-    font-size: 0.48rem;
+  .game-meta-gold b,
+  .game-meta-cp b {
+    font-size: 0.72rem;
   }
 
   .game-pause-button {
@@ -1933,6 +1903,13 @@ select {
 
   .game-toast-anchor {
     top: 54%;
+  }
+}
+
+/* Narrow phones: "ALIADO" / "HOSTIL" alone, so the title and HP fit without being cut. */
+@media (max-width: 479px) {
+  .game-faction-prefix {
+    display: none;
   }
 }
 
