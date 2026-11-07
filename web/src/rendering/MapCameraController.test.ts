@@ -22,6 +22,7 @@ import {
   viewDirection,
   zoomTowardPoint,
   type ActionFrame,
+  type CameraShot,
   type FitDistanceOptions,
   type MapOrbitControls,
   type PointVisitor,
@@ -498,6 +499,123 @@ test('the right mouse button orbits and the left one grabs the map', () => {
     dispatchPointer(surface, 'pointermove', { id: 9, type: 'mouse', button: 0, x: 360, y: 240 });
     assert.ok(groundUnder(camera, 360, 240).distanceTo(grabbed) < 0.01, 'left drag should grab the map');
     dispatchPointer(surface, 'pointerup', { id: 9, type: 'mouse', button: 0, x: 360, y: 240, time: 1000 });
+  } finally {
+    rig.dispose();
+  }
+});
+
+function advance(rig: MapCameraController, seconds: number): void {
+  for (let elapsed = 0; elapsed < seconds; elapsed += 1 / 60) rig.update(1 / 60);
+}
+
+const CINEMATIC: readonly CameraShot[] = [
+  { x: 0, z: 0, durationSeconds: 0.5, holdSeconds: 0.5, distance: 40 },
+  { x: 20, z: -20, durationSeconds: 1, holdSeconds: 0.5 },
+];
+
+test('playShots glides through each shot with eased motion, then gives auto mode back', () => {
+  const { camera, controls, rig } = createRig();
+  const changes: boolean[] = [];
+  try {
+    rig.reset();
+    rig.onAutoZoomChange = (enabled) => changes.push(enabled);
+    const start = controls.target.clone();
+
+    rig.playShots(CINEMATIC);
+    assert.equal(rig.isPlayingShots, true);
+    assert.equal(rig.autoZoomEnabled, false, 'auto mode is paused during the sequence');
+
+    // Ease-in: the first frame barely moves.
+    rig.update(1 / 60);
+    assert.ok(controls.target.distanceTo(start) < 0.1);
+
+    advance(rig, 0.55);
+    assert.ok(Math.hypot(controls.target.x, controls.target.z) < 0.5, 'reaches the first shot');
+    assert.ok(Math.abs(camera.position.distanceTo(controls.target) - 40) < 0.5, 'and its zoom distance');
+
+    // Holds still before the next glide.
+    const held = controls.target.clone();
+    advance(rig, 0.4);
+    assert.ok(controls.target.distanceTo(held) < 1e-6);
+
+    advance(rig, 1.2);
+    assert.ok(Math.hypot(controls.target.x - 20, controls.target.z + 20) < 0.5, 'reaches the second shot');
+    assert.equal(rig.isPlayingShots, true, 'still holding on the last shot');
+
+    advance(rig, 0.6);
+    assert.equal(rig.isPlayingShots, false);
+    assert.equal(rig.autoZoomEnabled, true);
+    assert.deepEqual(changes, [false, true]);
+  } finally {
+    rig.dispose();
+  }
+});
+
+test('a sequence started with auto mode off leaves it off', () => {
+  const { rig } = createRig();
+  try {
+    rig.reset();
+    rig.setAutoZoomEnabled(false);
+    rig.playShots(CINEMATIC);
+    advance(rig, 3);
+    assert.equal(rig.isPlayingShots, false);
+    assert.equal(rig.autoZoomEnabled, false);
+  } finally {
+    rig.dispose();
+  }
+});
+
+test('touching the map, the auto toggle or a reset cut a sequence short', () => {
+  const { controls, surface, rig } = createRig();
+  try {
+    rig.reset();
+    rig.playShots(CINEMATIC);
+    advance(rig, 0.2);
+    dispatchPointer(surface, 'pointerdown', { id: 1, x: 400, y: 200, time: 0 });
+    assert.equal(rig.isPlayingShots, false);
+    assert.equal(rig.autoZoomEnabled, true, 'a tap gives auto mode back as it was');
+    const stopped = controls.target.clone();
+    dispatchPointer(surface, 'pointerup', { id: 1, x: 400, y: 200, time: 50 });
+    rig.setAutoZoomEnabled(false);
+    rig.update(1 / 60);
+    assert.ok(controls.target.distanceTo(stopped) < 1e-6, 'the camera stays where it was touched');
+
+    rig.playShots(CINEMATIC);
+    rig.setAutoZoomEnabled(true);
+    assert.equal(rig.isPlayingShots, false);
+
+    rig.playShots(CINEMATIC);
+    rig.reset();
+    assert.equal(rig.isPlayingShots, false);
+  } finally {
+    rig.dispose();
+  }
+});
+
+test('a sequence may centre a target near the map edge, then the view eases back over the map', () => {
+  const { camera, controls, rig } = createRig(393, 852);
+  try {
+    rig.reset();
+    const edge = { x: 0, z: MAP_FOCUS_BOUNDS.minZ + 5 };
+    // A plain double-tap glide stays inside the usual view limits.
+    rig.focusOn(new THREE.Vector3(edge.x, 0, edge.z));
+    advance(rig, 0.8);
+    const clampedZ = controls.target.z;
+
+    rig.playShots([{ ...edge, durationSeconds: 0.5, holdSeconds: 1 }]);
+    advance(rig, 0.8);
+    assert.ok(controls.target.z < clampedZ - 5,
+      `focus ${controls.target.z} should get much closer to the edge target than ${clampedZ}`);
+
+    advance(rig, 1);
+    assert.equal(rig.isPlayingShots, false);
+    // Right after the sequence the view is still past the edge and has not jumped back...
+    const justAfter = controls.target.z;
+    rig.update(1 / 60);
+    assert.ok(Math.abs(controls.target.z - justAfter) < 2, 'the view eases back instead of snapping');
+    // ...and a moment later it is over the map again.
+    advance(rig, 3);
+    assertViewInsideMap(camera, allowedBoundsOf(camera, controls.target));
   } finally {
     rig.dispose();
   }
