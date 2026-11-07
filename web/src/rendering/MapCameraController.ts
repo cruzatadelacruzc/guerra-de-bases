@@ -128,6 +128,12 @@ const INERTIA_MAX_IDLE_MS = 80;
 /** Time constant of the glide's slowdown. */
 const INERTIA_DECAY_SECONDS = 0.35;
 const INERTIA_STOP_SPEED = 0.5;
+/**
+ * Scripted shots may look this far past the map edge, so a target near the
+ * edge can be centred; afterwards the view eases back over the map.
+ */
+const SHOT_EXTRA_VIEW_SLACK = 30;
+const SHOT_SLACK_RELAX_SECONDS = 0.4;
 
 /**
  * Screen points (NDC) that must land on the map: the near edge corners, the
@@ -346,8 +352,32 @@ export function focusDistanceFor(currentDistance: number): number {
   return currentDistance > FOCUS_TOGGLE_THRESHOLD ? FOCUS_NEAR_DISTANCE : FOCUS_FAR_DISTANCE;
 }
 
+/**
+ * One leg of a scripted camera move (e.g. a reward cinematic): glide the focus
+ * to (x, z) over `durationSeconds`, optionally to a new zoom distance, then stay
+ * there for `holdSeconds` before the next shot.
+ */
+export interface CameraShot {
+  readonly x: number;
+  readonly z: number;
+  readonly durationSeconds: number;
+  readonly holdSeconds: number;
+  /** Camera-to-focus distance at the end of the glide; keeps the current one when omitted. */
+  readonly distance?: number;
+}
+
+/** Ease-out for quick taps, ease-in-out for scripted shots that start and end at rest. */
+type FocusEasing = 'out' | 'in-out';
+
+function easeFocus(t: number, easing: FocusEasing): number {
+  if (easing === 'out') return 1 - (1 - t) ** 3;
+  return t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+}
+
 interface FocusAnimation {
   elapsed: number;
+  duration: number;
+  easing: FocusEasing;
   readonly startTarget: THREE.Vector3;
   readonly endTarget: THREE.Vector3;
   readonly direction: THREE.Vector3;
@@ -397,7 +427,8 @@ function angleDelta(to: number, from: number): number {
  * - two fingers pinch-zoom toward the fingers, twist to rotate and pan with
  *   their midpoint, or slide vertically together to tilt;
  * - right mouse drag rotates and tilts, the wheel zooms toward the cursor;
- * - `focusOn` glides the focus to a ground point (double tap).
+ * - `focusOn` glides the focus to a ground point (double tap);
+ * - `playShots` runs a scripted sequence of glides that any touch interrupts.
  * The view follows the screen orientation, tilts down as it zooms out and is
  * kept over the map. Auto mode follows the fighting with focus and zoom.
  */
@@ -442,6 +473,8 @@ export class MapCameraController {
   readonly #direction = new THREE.Vector3();
   readonly #focus: FocusAnimation = {
     elapsed: 0,
+    duration: FOCUS_DURATION_SECONDS,
+    easing: 'out',
     startTarget: new THREE.Vector3(),
     endTarget: new THREE.Vector3(),
     direction: new THREE.Vector3(),
@@ -452,6 +485,13 @@ export class MapCameraController {
   readonly #autoFocusTarget = new THREE.Vector3();
   readonly #viewBounds: FocusBounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
   #focusActive = false;
+  readonly #shots: CameraShot[] = [];
+  /** Index of the shot being played, or -1 when no sequence is running. */
+  #shotIndex = -1;
+  #shotHoldSeconds = 0;
+  #shotsRestoreAuto = false;
+  /** Extra room past the map edge while (and shortly after) a sequence plays. */
+  #extraViewSlack = 0;
   #dragging = false;
   #baseAzimuth = Number.NaN;
   #layoutAspect = Number.NaN;
@@ -487,6 +527,10 @@ export class MapCameraController {
     return this.#focusActive;
   }
 
+  get isPlayingShots(): boolean {
+    return this.#shotIndex >= 0;
+  }
+
   get autoZoomEnabled(): boolean {
     return this.#autoZoom;
   }
@@ -502,6 +546,8 @@ export class MapCameraController {
   }
 
   setAutoZoomEnabled(enabled: boolean): void {
+    // Turning auto on (e.g. the toggle button) takes over from a running sequence.
+    if (enabled) this.#stopShots(false);
     const changed = this.#autoZoom !== enabled;
     this.#autoZoom = enabled;
     if (enabled) {
@@ -517,13 +563,20 @@ export class MapCameraController {
     this.#syncLayout();
     this.#advanceInertia(deltaSeconds);
     if (this.#focusActive) this.#advanceFocus(deltaSeconds);
+    else if (this.#shotIndex >= 0) this.#advanceShotHold(deltaSeconds);
     else if (this.#autoZoom && this.#touches.size < 2) this.#advanceAuto(deltaSeconds);
+    if (this.#shotIndex < 0 && this.#extraViewSlack > 0) {
+      this.#extraViewSlack *= Math.exp(-deltaSeconds / SHOT_SLACK_RELAX_SECONDS);
+      if (this.#extraViewSlack < 0.01) this.#extraViewSlack = 0;
+    }
     this.#applyElevation();
     this.#controls.update();
     this.#clampView();
   }
 
   reset(): void {
+    this.#stopShots(false);
+    this.#extraViewSlack = 0;
     this.#focusActive = false;
     this.#touches.clear();
     this.#dragging = false;
@@ -551,29 +604,31 @@ export class MapCameraController {
   }
 
   focusOn(point: THREE.Vector3): void {
+    this.#stopShots(false);
     this.setAutoZoomEnabled(false);
-    const focus = this.#focus;
-    const target = this.#controls.target;
-    focus.elapsed = 0;
-    focus.startTarget.copy(target);
-    focus.endTarget.set(
-      THREE.MathUtils.clamp(point.x, MAP_FOCUS_BOUNDS.minX, MAP_FOCUS_BOUNDS.maxX),
-      0,
-      THREE.MathUtils.clamp(point.z, MAP_FOCUS_BOUNDS.minZ, MAP_FOCUS_BOUNDS.maxZ)
-    );
-    focus.direction.subVectors(this.#camera.position, target);
-    focus.startDistance = focus.direction.length();
-    if (focus.startDistance <= 0) return;
-    focus.direction.divideScalar(focus.startDistance);
-    focus.endDistance = THREE.MathUtils.clamp(
-      focusDistanceFor(focus.startDistance),
-      this.#controls.minDistance,
-      this.#controls.maxDistance
-    );
-    this.#focusActive = true;
+    const currentDistance = this.#camera.position.distanceTo(this.#controls.target);
+    this.#glideTo(point.x, point.z, focusDistanceFor(currentDistance), FOCUS_DURATION_SECONDS, 'out');
+  }
+
+  /**
+   * Plays the shots in order, easing in and out of each glide. Auto mode is
+   * paused meanwhile and comes back afterwards if it was on. Touching the map
+   * or zooming ends the sequence at once and hands control back.
+   */
+  playShots(shots: readonly CameraShot[]): void {
+    const restoreAuto = this.#shotIndex >= 0 ? this.#shotsRestoreAuto : this.#autoZoom;
+    this.#stopShots(false);
+    if (shots.length === 0) return;
+    this.#inertia.set(0, 0);
+    this.#shots.push(...shots);
+    this.#shotsRestoreAuto = restoreAuto;
+    this.#extraViewSlack = SHOT_EXTRA_VIEW_SLACK;
+    this.setAutoZoomEnabled(false);
+    this.#startShot(0);
   }
 
   dispose(): void {
+    this.#stopShots(false);
     this.#listeners.abort();
     this.#touches.clear();
     this.#dragging = false;
@@ -631,14 +686,70 @@ export class MapCameraController {
     const distance = this.#offset.length();
     if (distance <= 0) return;
     const elevation = Math.asin(THREE.MathUtils.clamp(this.#offset.y / distance, -1, 1));
-    clampViewToBounds(this.#camera, this.#controls.target, viewBoundsForElevation(elevation, this.#viewBounds));
+    const bounds = viewBoundsForElevation(elevation, this.#viewBounds);
+    if (this.#extraViewSlack > 0) {
+      bounds.minX -= this.#extraViewSlack;
+      bounds.maxX += this.#extraViewSlack;
+      bounds.minZ -= this.#extraViewSlack;
+      bounds.maxZ += this.#extraViewSlack;
+    }
+    clampViewToBounds(this.#camera, this.#controls.target, bounds);
+  }
+
+  #glideTo(x: number, z: number, distance: number | undefined, durationSeconds: number, easing: FocusEasing): void {
+    const focus = this.#focus;
+    const target = this.#controls.target;
+    focus.elapsed = 0;
+    focus.duration = durationSeconds;
+    focus.easing = easing;
+    focus.startTarget.copy(target);
+    focus.endTarget.set(
+      THREE.MathUtils.clamp(x, MAP_FOCUS_BOUNDS.minX, MAP_FOCUS_BOUNDS.maxX),
+      0,
+      THREE.MathUtils.clamp(z, MAP_FOCUS_BOUNDS.minZ, MAP_FOCUS_BOUNDS.maxZ)
+    );
+    focus.direction.subVectors(this.#camera.position, target);
+    focus.startDistance = focus.direction.length();
+    if (focus.startDistance <= 0) return;
+    focus.direction.divideScalar(focus.startDistance);
+    focus.endDistance = THREE.MathUtils.clamp(
+      distance ?? focus.startDistance,
+      this.#controls.minDistance,
+      this.#controls.maxDistance
+    );
+    this.#focusActive = true;
+  }
+
+  #startShot(index: number): void {
+    const shot = this.#shots[index];
+    this.#shotIndex = index;
+    this.#shotHoldSeconds = shot.holdSeconds;
+    this.#glideTo(shot.x, shot.z, shot.distance, shot.durationSeconds, 'in-out');
+  }
+
+  /** Runs once the current shot's glide has finished. */
+  #advanceShotHold(deltaSeconds: number): void {
+    this.#shotHoldSeconds -= deltaSeconds;
+    if (this.#shotHoldSeconds > 0) return;
+    const next = this.#shotIndex + 1;
+    if (next < this.#shots.length) this.#startShot(next);
+    else this.#stopShots(true);
+  }
+
+  /** Ends a running sequence; `restoreAuto` turns auto mode back on if the sequence paused it. */
+  #stopShots(restoreAuto: boolean): void {
+    if (this.#shotIndex < 0) return;
+    this.#shotIndex = -1;
+    this.#shots.length = 0;
+    this.#focusActive = false;
+    if (restoreAuto && this.#shotsRestoreAuto) this.setAutoZoomEnabled(true);
   }
 
   #advanceFocus(deltaSeconds: number): void {
     const focus = this.#focus;
-    focus.elapsed = Math.min(FOCUS_DURATION_SECONDS, focus.elapsed + deltaSeconds);
-    const t = focus.elapsed / FOCUS_DURATION_SECONDS;
-    const eased = 1 - (1 - t) ** 3;
+    focus.elapsed = Math.min(focus.duration, focus.elapsed + deltaSeconds);
+    const t = focus.duration > 0 ? focus.elapsed / focus.duration : 1;
+    const eased = easeFocus(t, focus.easing);
     const distance = THREE.MathUtils.lerp(focus.startDistance, focus.endDistance, eased);
     this.#controls.target.lerpVectors(focus.startTarget, focus.endTarget, eased);
     this.#camera.position.copy(focus.direction).multiplyScalar(distance).add(this.#controls.target);
@@ -887,7 +998,10 @@ export class MapCameraController {
   }
 
   #onPointerDown = (event: PointerEvent): void => {
-    // Any direct manipulation takes over from a double-tap glide or a released fling.
+    // Any direct manipulation takes over from a double-tap glide, a scripted
+    // sequence or a released fling. A cut-short sequence gives auto mode back
+    // as it found it; dragging then turns it off as usual.
+    this.#stopShots(true);
     this.#focusActive = false;
     this.#inertia.set(0, 0);
     if (event.pointerType === 'touch') {
@@ -936,6 +1050,7 @@ export class MapCameraController {
   #onWheel = (event: WheelEvent): void => {
     if (!this.#controls.enabled) return;
     event.preventDefault();
+    this.#stopShots(true);
     this.#focusActive = false;
     if (event.deltaY === 0) return;
     this.setAutoZoomEnabled(false);

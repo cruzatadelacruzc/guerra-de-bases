@@ -223,7 +223,8 @@ export class GameUI implements GameUiPort {
       event.stopPropagation();
       const rewardId = button.dataset.rewardId;
       if (rewardId === 'artillery_strike' || rewardId === 'air_strike' || rewardId === 'defensive_shield') {
-        actions?.activateReward(rewardId);
+        // Close the drawer so the strike (and its camera move) can be seen.
+        if (actions?.activateReward(rewardId)) this.#controls?.setExpanded(false);
       }
       return;
     }

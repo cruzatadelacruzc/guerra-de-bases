@@ -48,7 +48,8 @@ export interface GameActions {
   toggleDemolishMode(): void;
   selectBuilding(type: BuildingType): void;
   trainUnit(type: UnitType): void;
-  activateReward(id: RewardId): void;
+  /** Returns whether the reward was accepted and its effect started. */
+  activateReward(id: RewardId): boolean;
   toggleAutoZoom(): void;
 }
 
