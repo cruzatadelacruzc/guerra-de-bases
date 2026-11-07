@@ -5,3 +5,7 @@ android/build/
 android/app/build/
 android/local.properties
 android/captures/
+
+# Playwright browser-testing logs and snapshots
+.playwright-mcp/
+.playwright-cli/
