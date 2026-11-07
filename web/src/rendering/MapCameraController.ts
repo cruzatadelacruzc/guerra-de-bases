@@ -54,6 +54,8 @@ export type MapOrbitControls = Pick<
   | 'maxPolarAngle'
   | 'minAzimuthAngle'
   | 'maxAzimuthAngle'
+  | 'enableRotate'
+  | 'enablePan'
 >;
 
 export const FOCUS_NEAR_DISTANCE = 35;
@@ -68,9 +70,9 @@ export const PORTRAIT_AZIMUTH = 0;
  * wide screen with the player's side (+z) on the left and the enemy on the right.
  */
 export const LANDSCAPE_AZIMUTH = Math.PI / 2;
-/** How far one-finger rotation may turn away from the base orientation. */
+/** How far two-finger twisting (or a right-button drag) may turn away from the base orientation. */
 export const AZIMUTH_RANGE = THREE.MathUtils.degToRad(45);
-/** How far one-finger dragging may tilt the camera above or below the zoom's default tilt. */
+/** How far a two-finger vertical slide may tilt the camera above or below the zoom's default tilt. */
 export const TILT_RANGE = THREE.MathUtils.degToRad(12);
 const MIN_ELEVATION = THREE.MathUtils.degToRad(30);
 const MAX_ELEVATION = THREE.MathUtils.degToRad(82);
@@ -107,10 +109,25 @@ const AUTO_SMOOTHING_SECONDS = 2;
 const AUTO_DEADBAND = 0.06;
 /** With no fighting for this long, auto returns to the player's base view. */
 const AUTO_HOME_DELAY_SECONDS = 4;
-/** A pinch counts as a manual zoom once the finger spread changes by this fraction. */
-const PINCH_MANUAL_THRESHOLD = 0.04;
-/** A two-finger drag counts as a manual pan once its midpoint moves this far. */
-const PAN_MANUAL_THRESHOLD_PX = 12;
+/**
+ * A drag starts once the pointer moves this far; shorter presses stay taps
+ * (matches TAP_MOVEMENT_TOLERANCE_PX in GameApplication, which builds/sells on tap).
+ */
+export const PAN_START_THRESHOLD_PX = 10;
+/** Two fingers start a pinch/rotate once their spread or angle changes this much. */
+const PINCH_START_FRACTION = 0.04;
+const TWIST_START_RADIANS = THREE.MathUtils.degToRad(6);
+/** Two fingers sliding together vertically this far (keeping spread and angle) tilt instead. */
+const TILT_START_PX = 12;
+const TILT_MAX_SPREAD_CHANGE = 0.06;
+const TILT_MAX_TWIST_RADIANS = THREE.MathUtils.degToRad(8);
+/** A released drag keeps gliding if it was moving at least this fast (world units/s)... */
+const INERTIA_MIN_SPEED = 4;
+/** ...and was still moving this recently before release. */
+const INERTIA_MAX_IDLE_MS = 80;
+/** Time constant of the glide's slowdown. */
+const INERTIA_DECAY_SECONDS = 0.35;
+const INERTIA_STOP_SPEED = 0.5;
 
 /**
  * Screen points (NDC) that must land on the map: the near edge corners, the
@@ -338,13 +355,51 @@ interface FocusAnimation {
   endDistance: number;
 }
 
+interface DragGesture {
+  pointerId: number;
+  /** Left button / one finger grabs the map; the right button orbits. */
+  kind: 'pan' | 'orbit';
+  active: boolean;
+  startX: number;
+  startY: number;
+  lastX: number;
+  lastY: number;
+  lastTime: number;
+  /** Ground point grabbed at pointerdown; panning keeps it under the pointer. */
+  readonly grab: THREE.Vector3;
+}
+
+interface TwoFingerGesture {
+  mode: 'undecided' | 'transform' | 'tilt';
+  startSpread: number;
+  startAngle: number;
+  startMidX: number;
+  startMidY: number;
+  lastSpread: number;
+  lastAngle: number;
+  lastMidX: number;
+  lastMidY: number;
+}
+
+/** Signed smallest difference between two angles, in (-PI, PI]. */
+function angleDelta(to: number, from: number): number {
+  let delta = to - from;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta <= -Math.PI) delta += Math.PI * 2;
+  return delta;
+}
+
 /**
- * Touch-first camera on top of OrbitControls (three r128 has no zoomToCursor):
- * one finger turns the view within a small range, two fingers pan
- * (OrbitControls) and pinch-zoom toward the fingers (here), the wheel zooms
- * toward the cursor and `focusOn` glides the focus to a ground point. The view
- * follows the screen orientation, tilts down as it zooms out and is kept over
- * the map. Auto mode follows the fighting, framing it with focus and zoom.
+ * Touch-first map camera driving OrbitControls' limits (three r128 has no
+ * zoomToCursor or grab panning):
+ * - one finger / left mouse drag grabs the map (the grabbed ground point stays
+ *   under the pointer) and glides on with inertia when released while moving;
+ * - two fingers pinch-zoom toward the fingers, twist to rotate and pan with
+ *   their midpoint, or slide vertically together to tilt;
+ * - right mouse drag rotates and tilts, the wheel zooms toward the cursor;
+ * - `focusOn` glides the focus to a ground point (double tap).
+ * The view follows the screen orientation, tilts down as it zooms out and is
+ * kept over the map. Auto mode follows the fighting with focus and zoom.
  */
 export class MapCameraController {
   readonly #camera: THREE.PerspectiveCamera;
@@ -352,6 +407,33 @@ export class MapCameraController {
   readonly #surface: HTMLElement;
   readonly #listeners = new AbortController();
   readonly #touches = new Map<number, { x: number; y: number }>();
+  readonly #drag: DragGesture = {
+    pointerId: -1,
+    kind: 'pan',
+    active: false,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+    lastTime: 0,
+    grab: new THREE.Vector3(),
+  };
+  readonly #twoFinger: TwoFingerGesture = {
+    mode: 'undecided',
+    startSpread: 0,
+    startAngle: 0,
+    startMidX: 0,
+    startMidY: 0,
+    lastSpread: 0,
+    lastAngle: 0,
+    lastMidX: 0,
+    lastMidY: 0,
+  };
+  readonly #velocity = new THREE.Vector2();
+  readonly #inertia = new THREE.Vector2();
+  readonly #groundA = new THREE.Vector3();
+  readonly #groundB = new THREE.Vector3();
+  readonly #spherical = new THREE.Spherical();
   readonly #raycaster = new THREE.Raycaster();
   readonly #groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   readonly #ndc = new THREE.Vector2();
@@ -370,10 +452,7 @@ export class MapCameraController {
   readonly #autoFocusTarget = new THREE.Vector3();
   readonly #viewBounds: FocusBounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
   #focusActive = false;
-  #pinchDistance = 0;
-  #pinchStartDistance = 0;
-  #pinchStartMidX = 0;
-  #pinchStartMidY = 0;
+  #dragging = false;
   #baseAzimuth = Number.NaN;
   #layoutAspect = Number.NaN;
   #homeView: StartView = START_VIEW_PORTRAIT;
@@ -390,7 +469,10 @@ export class MapCameraController {
     this.#camera = camera;
     this.#controls = controls;
     this.#surface = surface;
+    // Every gesture is handled here; OrbitControls only applies limits in update().
     controls.enableZoom = false;
+    controls.enableRotate = false;
+    controls.enablePan = false;
     controls.screenSpacePanning = false;
 
     const options = { signal: this.#listeners.signal };
@@ -433,6 +515,7 @@ export class MapCameraController {
 
   update(deltaSeconds: number): void {
     this.#syncLayout();
+    this.#advanceInertia(deltaSeconds);
     if (this.#focusActive) this.#advanceFocus(deltaSeconds);
     else if (this.#autoZoom && this.#touches.size < 2) this.#advanceAuto(deltaSeconds);
     this.#applyElevation();
@@ -443,6 +526,8 @@ export class MapCameraController {
   reset(): void {
     this.#focusActive = false;
     this.#touches.clear();
+    this.#dragging = false;
+    this.#inertia.set(0, 0);
     this.#layoutAspect = Number.NaN;
     this.#syncLayout();
     const view = this.#homeView;
@@ -491,6 +576,8 @@ export class MapCameraController {
   dispose(): void {
     this.#listeners.abort();
     this.#touches.clear();
+    this.#dragging = false;
+    this.#inertia.set(0, 0);
     this.#focusActive = false;
   }
 
@@ -634,59 +721,216 @@ export class MapCameraController {
     );
   }
 
-  #pinchMetrics(): { distance: number; midX: number; midY: number } | undefined {
-    if (this.#touches.size !== 2) return undefined;
-    const [a, b] = this.#touches.values();
-    return {
-      distance: Math.hypot(b.x - a.x, b.y - a.y),
-      midX: (a.x + b.x) / 2,
-      midY: (a.y + b.y) / 2,
-    };
+  /** Moves camera and focus together across the ground. */
+  #translate(dx: number, dz: number): void {
+    const target = this.#controls.target;
+    target.x += dx;
+    target.z += dz;
+    this.#camera.position.x += dx;
+    this.#camera.position.z += dz;
   }
 
-  #resetPinchStart(): void {
-    const pinch = this.#pinchMetrics();
-    this.#pinchDistance = pinch?.distance ?? 0;
-    this.#pinchStartDistance = this.#pinchDistance;
-    this.#pinchStartMidX = pinch?.midX ?? 0;
-    this.#pinchStartMidY = pinch?.midY ?? 0;
+  /** Moves the view so the ground point under (fromX, fromY) ends up under (toX, toY). */
+  #dragGround(fromX: number, fromY: number, toX: number, toY: number): void {
+    this.#camera.updateMatrixWorld();
+    if (!this.#groundPointAt(fromX, fromY, this.#groundA)) return;
+    if (!this.#groundPointAt(toX, toY, this.#groundB)) return;
+    this.#translate(this.#groundA.x - this.#groundB.x, this.#groundA.z - this.#groundB.z);
+  }
+
+  /** Orbits the camera around the focus; the controls' limits are applied right away. */
+  #orbitBy(deltaAzimuth: number, deltaPolar: number): void {
+    const target = this.#controls.target;
+    this.#offset.subVectors(this.#camera.position, target);
+    this.#spherical.setFromVector3(this.#offset);
+    this.#spherical.theta = THREE.MathUtils.clamp(
+      this.#spherical.theta + deltaAzimuth,
+      this.#controls.minAzimuthAngle,
+      this.#controls.maxAzimuthAngle
+    );
+    this.#spherical.phi = THREE.MathUtils.clamp(
+      this.#spherical.phi + deltaPolar,
+      this.#controls.minPolarAngle,
+      this.#controls.maxPolarAngle
+    );
+    this.#offset.setFromSpherical(this.#spherical);
+    this.#camera.position.copy(target).add(this.#offset);
+  }
+
+  /** Same feel as OrbitControls: a drag across the full screen height turns a full circle. */
+  #orbitByPixels(dx: number, dy: number): void {
+    const height = Math.max(1, this.#surface.getBoundingClientRect().height);
+    this.#orbitBy((-2 * Math.PI * dx) / height, (-2 * Math.PI * dy) / height);
+  }
+
+  #advanceInertia(deltaSeconds: number): void {
+    if (this.#inertia.x === 0 && this.#inertia.y === 0) return;
+    this.#translate(this.#inertia.x * deltaSeconds, this.#inertia.y * deltaSeconds);
+    this.#inertia.multiplyScalar(Math.exp(-deltaSeconds / INERTIA_DECAY_SECONDS));
+    if (this.#inertia.length() < INERTIA_STOP_SPEED) this.#inertia.set(0, 0);
+  }
+
+  #startDrag(pointerId: number, kind: DragGesture['kind'], x: number, y: number, time: number): void {
+    const drag = this.#drag;
+    drag.pointerId = pointerId;
+    drag.kind = kind;
+    drag.active = false;
+    drag.startX = x;
+    drag.startY = y;
+    drag.lastX = x;
+    drag.lastY = y;
+    drag.lastTime = time;
+    this.#velocity.set(0, 0);
+    this.#camera.updateMatrixWorld();
+    // Grabbing off the ground (should not happen above the map) falls back to plain dragging.
+    if (!this.#groundPointAt(x, y, drag.grab)) drag.grab.set(Number.NaN, 0, Number.NaN);
+    this.#dragging = true;
+  }
+
+  #moveDrag(x: number, y: number, time: number): void {
+    const drag = this.#drag;
+    if (!drag.active) {
+      if (Math.hypot(x - drag.startX, y - drag.startY) <= PAN_START_THRESHOLD_PX) return;
+      drag.active = true;
+      if (drag.kind === 'pan') this.setAutoZoomEnabled(false);
+    }
+    if (drag.kind === 'orbit') {
+      this.#orbitByPixels(x - drag.lastX, y - drag.lastY);
+    } else {
+      const beforeX = this.#controls.target.x;
+      const beforeZ = this.#controls.target.z;
+      this.#camera.updateMatrixWorld();
+      if (Number.isFinite(drag.grab.x) && this.#groundPointAt(x, y, this.#groundB)) {
+        this.#translate(drag.grab.x - this.#groundB.x, drag.grab.z - this.#groundB.z);
+      } else {
+        this.#dragGround(drag.lastX, drag.lastY, x, y);
+      }
+      const seconds = (time - drag.lastTime) / 1000;
+      if (seconds > 0) {
+        const vx = (this.#controls.target.x - beforeX) / seconds;
+        const vz = (this.#controls.target.z - beforeZ) / seconds;
+        this.#velocity.set(this.#velocity.x * 0.6 + vx * 0.4, this.#velocity.y * 0.6 + vz * 0.4);
+      }
+    }
+    drag.lastX = x;
+    drag.lastY = y;
+    drag.lastTime = time;
+  }
+
+  #endDrag(time: number): void {
+    const drag = this.#drag;
+    if (this.#dragging && drag.active && drag.kind === 'pan'
+      && time - drag.lastTime <= INERTIA_MAX_IDLE_MS && this.#velocity.length() >= INERTIA_MIN_SPEED) {
+      this.#inertia.copy(this.#velocity);
+    }
+    this.#dragging = false;
+    drag.pointerId = -1;
+  }
+
+  #startTwoFinger(): void {
+    const [a, b] = this.#touches.values();
+    const gesture = this.#twoFinger;
+    gesture.mode = 'undecided';
+    gesture.startSpread = gesture.lastSpread = Math.hypot(b.x - a.x, b.y - a.y);
+    gesture.startAngle = gesture.lastAngle = Math.atan2(b.y - a.y, b.x - a.x);
+    gesture.startMidX = gesture.lastMidX = (a.x + b.x) / 2;
+    gesture.startMidY = gesture.lastMidY = (a.y + b.y) / 2;
+  }
+
+  #moveTwoFinger(): void {
+    const [a, b] = this.#touches.values();
+    const gesture = this.#twoFinger;
+    const spread = Math.hypot(b.x - a.x, b.y - a.y);
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const midX = (a.x + b.x) / 2;
+    const midY = (a.y + b.y) / 2;
+    if (spread <= 0 || gesture.startSpread <= 0) return;
+
+    if (gesture.mode === 'undecided') {
+      const spreadChange = Math.abs(spread / gesture.startSpread - 1);
+      const twist = Math.abs(angleDelta(angle, gesture.startAngle));
+      const moveX = midX - gesture.startMidX;
+      const moveY = midY - gesture.startMidY;
+      if (Math.abs(moveY) > TILT_START_PX && spreadChange < TILT_MAX_SPREAD_CHANGE
+        && twist < TILT_MAX_TWIST_RADIANS && Math.abs(moveY) > 2 * Math.abs(moveX)) {
+        gesture.mode = 'tilt';
+      } else if (spreadChange > PINCH_START_FRACTION || twist > TWIST_START_RADIANS
+        || Math.hypot(moveX, moveY) > PAN_START_THRESHOLD_PX) {
+        gesture.mode = 'transform';
+        this.setAutoZoomEnabled(false);
+      } else {
+        return;
+      }
+    }
+
+    if (gesture.mode === 'tilt') {
+      this.#orbitByPixels(0, midY - gesture.lastMidY);
+    } else {
+      this.#dragGround(gesture.lastMidX, gesture.lastMidY, midX, midY);
+      if (gesture.lastSpread > 0) this.#zoomAt(midX, midY, gesture.lastSpread / spread);
+      // Twisting the fingers clockwise on screen turns the map clockwise with them.
+      this.#orbitBy(angleDelta(angle, gesture.lastAngle), 0);
+    }
+    gesture.lastSpread = spread;
+    gesture.lastAngle = angle;
+    gesture.lastMidX = midX;
+    gesture.lastMidY = midY;
+  }
+
+  #capture(event: PointerEvent): void {
+    const surface = this.#surface as Partial<Pick<HTMLElement, 'setPointerCapture'>>;
+    try {
+      surface.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Capture is best-effort (the pointer may already be gone).
+    }
   }
 
   #onPointerDown = (event: PointerEvent): void => {
-    // Any direct manipulation takes over from a running double-tap glide.
+    // Any direct manipulation takes over from a double-tap glide or a released fling.
     this.#focusActive = false;
-    if (event.pointerType !== 'touch') return;
-    this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    this.#resetPinchStart();
+    this.#inertia.set(0, 0);
+    if (event.pointerType === 'touch') {
+      this.#touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (this.#touches.size === 1) {
+        this.#startDrag(event.pointerId, 'pan', event.clientX, event.clientY, event.timeStamp);
+      } else if (this.#touches.size === 2) {
+        this.#dragging = false;
+        this.#startTwoFinger();
+      }
+      this.#capture(event);
+      return;
+    }
+    if (event.button === 0 || event.button === 2) {
+      this.#startDrag(event.pointerId, event.button === 0 ? 'pan' : 'orbit', event.clientX, event.clientY, event.timeStamp);
+      this.#capture(event);
+    }
   };
 
   #onPointerMove = (event: PointerEvent): void => {
-    // OrbitControls pans with the right mouse button; that takes the focus from auto mode.
-    if (event.pointerType === 'mouse' && (event.buttons & 2) !== 0 && this.#autoZoom) {
-      this.setAutoZoomEnabled(false);
-    }
     const touch = this.#touches.get(event.pointerId);
-    if (!touch) return;
-    touch.x = event.clientX;
-    touch.y = event.clientY;
-    const pinch = this.#pinchMetrics();
-    if (!pinch || pinch.distance <= 0) return;
-    if (this.#autoZoom && this.#pinchStartDistance > 0) {
-      // A two-finger pan wobbles the spread slightly; only a real pinch or drag is manual.
-      const pinched = Math.abs(pinch.distance / this.#pinchStartDistance - 1) > PINCH_MANUAL_THRESHOLD;
-      const dragged = Math.hypot(pinch.midX - this.#pinchStartMidX, pinch.midY - this.#pinchStartMidY)
-        > PAN_MANUAL_THRESHOLD_PX;
-      if (pinched || dragged) this.setAutoZoomEnabled(false);
+    if (touch) {
+      touch.x = event.clientX;
+      touch.y = event.clientY;
+      if (this.#touches.size === 2) {
+        this.#moveTwoFinger();
+        return;
+      }
     }
-    if (this.#pinchDistance > 0 && !this.#autoZoom) {
-      this.#zoomAt(pinch.midX, pinch.midY, this.#pinchDistance / pinch.distance);
+    if (this.#dragging && event.pointerId === this.#drag.pointerId) {
+      this.#moveDrag(event.clientX, event.clientY, event.timeStamp);
     }
-    this.#pinchDistance = pinch.distance;
   };
 
   #onPointerEnd = (event: PointerEvent): void => {
-    if (!this.#touches.delete(event.pointerId)) return;
-    this.#resetPinchStart();
+    const wasTouch = this.#touches.delete(event.pointerId);
+    if (this.#dragging && event.pointerId === this.#drag.pointerId) this.#endDrag(event.timeStamp);
+    // Lifting one of two fingers keeps panning with the one that stays down.
+    if (wasTouch && this.#touches.size === 1) {
+      const [[id, remaining]] = this.#touches;
+      this.#startDrag(id, 'pan', remaining.x, remaining.y, event.timeStamp);
+      this.#drag.active = true;
+    }
   };
 
   #onWheel = (event: WheelEvent): void => {

@@ -27,6 +27,7 @@ import {
   type PointVisitor,
   type FocusBounds,
   type ViewBox,
+  PAN_START_THRESHOLD_PX,
   VIEW_SLACK_LOW_ANGLE,
   VIEW_SLACK_TOP_DOWN,
   viewBoundsForElevation,
@@ -51,6 +52,8 @@ function createControls(camera: THREE.PerspectiveCamera): MapOrbitControls {
     target: new THREE.Vector3(),
     enabled: true,
     enableZoom: true,
+    enableRotate: true,
+    enablePan: true,
     screenSpacePanning: true,
     minDistance: 15,
     maxDistance: 130,
@@ -332,6 +335,169 @@ test('manual zoom, pan and double tap turn auto mode off; reset and the toggle t
     rig.reset();
     assert.equal(rig.autoZoomEnabled, true);
     assert.deepEqual(changes, [true, false, true, false, true, false, true]);
+  } finally {
+    rig.dispose();
+  }
+});
+
+interface PointerInit {
+  id: number;
+  x: number;
+  y: number;
+  type?: 'touch' | 'mouse';
+  button?: number;
+  time?: number;
+}
+
+function dispatchPointer(surface: HTMLElement, eventType: string, init: PointerInit): void {
+  const event = new Event(eventType);
+  Object.defineProperties(event, {
+    pointerId: { value: init.id },
+    pointerType: { value: init.type ?? 'touch' },
+    clientX: { value: init.x },
+    clientY: { value: init.y },
+    button: { value: init.button ?? 0 },
+    buttons: { value: 1 },
+    timeStamp: { value: init.time ?? 0 },
+  });
+  surface.dispatchEvent(event);
+}
+
+/** Slides camera and focus together so the focus sits at (x, z), keeping the view angle. */
+function moveViewTo(camera: THREE.PerspectiveCamera, controls: MapOrbitControls, x: number, z: number): void {
+  const shift = new THREE.Vector3(x - controls.target.x, 0, z - controls.target.z);
+  controls.target.add(shift);
+  camera.position.add(shift);
+}
+
+function groundUnder(camera: THREE.PerspectiveCamera, x: number, y: number, width = 852, height = 393): THREE.Vector3 {
+  camera.updateMatrixWorld();
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2((x / width) * 2 - 1, -(y / height) * 2 + 1), camera);
+  const hit = new THREE.Vector3();
+  assert.ok(raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit));
+  return hit;
+}
+
+test('dragging one finger keeps the grabbed ground point under the finger', () => {
+  const { camera, controls, surface, rig } = createRig();
+  try {
+    rig.reset();
+    // Start from the middle of the map so the bounds don't interfere.
+    moveViewTo(camera, controls, 0, 0);
+    rig.update(1 / 60);
+    const grabbed = groundUnder(camera, 400, 200);
+    const before = controls.target.clone();
+
+    dispatchPointer(surface, 'pointerdown', { id: 1, x: 400, y: 200, time: 0 });
+    dispatchPointer(surface, 'pointermove', { id: 1, x: 400 + PAN_START_THRESHOLD_PX - 2, y: 200, time: 16 });
+    assertVectorClose(controls.target, before, 1e-9);
+
+    dispatchPointer(surface, 'pointermove', { id: 1, x: 470, y: 230, time: 32 });
+    assert.ok(groundUnder(camera, 470, 230).distanceTo(grabbed) < 0.01, 'grabbed point should follow the finger');
+    assert.ok(controls.target.distanceTo(before) > 1);
+    assert.equal(rig.autoZoomEnabled, false, 'grabbing the map takes over from auto mode');
+    dispatchPointer(surface, 'pointerup', { id: 1, x: 470, y: 230, time: 400 });
+  } finally {
+    rig.dispose();
+  }
+});
+
+test('a fast release keeps the map gliding, then it stops; touching again stops it at once', () => {
+  const { camera, controls, surface, rig } = createRig();
+  try {
+    rig.reset();
+    moveViewTo(camera, controls, 0, 0);
+    rig.update(1 / 60);
+    dispatchPointer(surface, 'pointerdown', { id: 1, x: 300, y: 200, time: 0 });
+    for (let i = 1; i <= 5; i++) dispatchPointer(surface, 'pointermove', { id: 1, x: 300 + i * 30, y: 200, time: i * 16 });
+    dispatchPointer(surface, 'pointerup', { id: 1, x: 450, y: 200, time: 5 * 16 + 10 });
+
+    const released = controls.target.clone();
+    rig.update(1 / 60);
+    const gliding = controls.target.clone();
+    assert.ok(gliding.distanceTo(released) > 0.01, 'the map should keep moving after release');
+
+    dispatchPointer(surface, 'pointerdown', { id: 2, x: 300, y: 200, time: 200 });
+    const stopped = controls.target.clone();
+    rig.update(1 / 60);
+    assert.ok(controls.target.distanceTo(stopped) < 0.01, 'touching again stops the glide');
+    dispatchPointer(surface, 'pointerup', { id: 2, x: 300, y: 200, time: 210 });
+
+    // A slow release does not glide.
+    dispatchPointer(surface, 'pointerdown', { id: 3, x: 300, y: 200, time: 1000 });
+    dispatchPointer(surface, 'pointermove', { id: 3, x: 340, y: 200, time: 1016 });
+    dispatchPointer(surface, 'pointerup', { id: 3, x: 340, y: 200, time: 1600 });
+    const rest = controls.target.clone();
+    rig.update(1 / 60);
+    assert.ok(controls.target.distanceTo(rest) < 0.01);
+  } finally {
+    rig.dispose();
+  }
+});
+
+test('two fingers twist to rotate and slide vertically to tilt', () => {
+  const { camera, controls, surface, rig } = createRig();
+  try {
+    rig.reset();
+    rig.update(1 / 60);
+    const azimuthOf = () => Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
+    const polarOf = () => {
+      const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+      return Math.acos(offset.y / offset.length());
+    };
+
+    // Twist: fingers rotate around their midpoint without moving it or changing spread.
+    const azimuthBefore = azimuthOf();
+    dispatchPointer(surface, 'pointerdown', { id: 1, x: 350, y: 200 });
+    dispatchPointer(surface, 'pointerdown', { id: 2, x: 450, y: 200 });
+    const turn = THREE.MathUtils.degToRad(20);
+    dispatchPointer(surface, 'pointermove', { id: 1, x: 400 - 50 * Math.cos(turn), y: 200 - 50 * Math.sin(turn) });
+    dispatchPointer(surface, 'pointermove', { id: 2, x: 400 + 50 * Math.cos(turn), y: 200 + 50 * Math.sin(turn) });
+    const azimuthAfter = azimuthOf();
+    assert.ok(Math.abs(azimuthAfter - azimuthBefore) > THREE.MathUtils.degToRad(5), 'twisting should rotate the view');
+    assert.ok(azimuthAfter <= controls.maxAzimuthAngle + 1e-9 && azimuthAfter >= controls.minAzimuthAngle - 1e-9);
+    dispatchPointer(surface, 'pointerup', { id: 1, x: 0, y: 0 });
+    dispatchPointer(surface, 'pointerup', { id: 2, x: 0, y: 0 });
+
+    // Tilt: both fingers slide up together.
+    const polarBefore = polarOf();
+    dispatchPointer(surface, 'pointerdown', { id: 3, x: 350, y: 250 });
+    dispatchPointer(surface, 'pointerdown', { id: 4, x: 450, y: 250 });
+    for (let i = 1; i <= 4; i++) {
+      dispatchPointer(surface, 'pointermove', { id: 3, x: 350, y: 250 - i * 10 });
+      dispatchPointer(surface, 'pointermove', { id: 4, x: 450, y: 250 - i * 10 });
+    }
+    assert.ok(polarOf() > polarBefore + 0.01, 'sliding up should tilt toward the horizon');
+    assert.ok(polarOf() <= controls.maxPolarAngle + 1e-9);
+    dispatchPointer(surface, 'pointerup', { id: 3, x: 0, y: 0 });
+    dispatchPointer(surface, 'pointerup', { id: 4, x: 0, y: 0 });
+  } finally {
+    rig.dispose();
+  }
+});
+
+test('the right mouse button orbits and the left one grabs the map', () => {
+  const { camera, controls, surface, rig } = createRig();
+  try {
+    rig.reset();
+    moveViewTo(camera, controls, 0, 0);
+    rig.update(1 / 60);
+    const azimuthOf = () => Math.atan2(camera.position.x - controls.target.x, camera.position.z - controls.target.z);
+
+    const azimuthBefore = azimuthOf();
+    const focusBefore = controls.target.clone();
+    dispatchPointer(surface, 'pointerdown', { id: 9, type: 'mouse', button: 2, x: 400, y: 200 });
+    dispatchPointer(surface, 'pointermove', { id: 9, type: 'mouse', button: 2, x: 460, y: 200 });
+    dispatchPointer(surface, 'pointerup', { id: 9, type: 'mouse', button: 2, x: 460, y: 200 });
+    assert.ok(Math.abs(azimuthOf() - azimuthBefore) > 0.05, 'right drag should rotate');
+    assertVectorClose(controls.target, focusBefore, 1e-9);
+
+    const grabbed = groundUnder(camera, 400, 200);
+    dispatchPointer(surface, 'pointerdown', { id: 9, type: 'mouse', button: 0, x: 400, y: 200 });
+    dispatchPointer(surface, 'pointermove', { id: 9, type: 'mouse', button: 0, x: 360, y: 240 });
+    assert.ok(groundUnder(camera, 360, 240).distanceTo(grabbed) < 0.01, 'left drag should grab the map');
+    dispatchPointer(surface, 'pointerup', { id: 9, type: 'mouse', button: 0, x: 360, y: 240, time: 1000 });
   } finally {
     rig.dispose();
   }
