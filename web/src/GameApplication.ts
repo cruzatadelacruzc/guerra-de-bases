@@ -1555,7 +1555,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             const hasReachedTurretTarget = enemyTurrets.length >= aiTargetTurrets;
             const isFullySatisfied = hasReachedGenTarget && hasReachedBarracksTarget && hasReachedTurretTarget;
 
-            ui.setAiStatus(isFullySatisfied ? "ESTADO IA: BATALLÓN ACTIVO" : "ESTADO IA: CONSTRUYENDO");
+            ui.setAiStatus(isFullySatisfied ? "BATALLÓN ACTIVO" : "CONSTRUYENDO");
 
             // AI places random structures until satisfied
             if (!hasReachedGenTarget
