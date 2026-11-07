@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the web app background (#050811) so any area outside the WebView blends in. -->
+    <color name="gameBackground">#050811</color>
+</resources>

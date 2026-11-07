@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Guerra de Bases</string>
+    <string name="title_activity_main">Guerra de Bases</string>
+    <string name="package_name">com.guerradebases.frontline</string>
+    <string name="custom_url_scheme">com.guerradebases.frontline</string>
+</resources>
