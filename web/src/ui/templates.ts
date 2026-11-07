@@ -1,6 +1,5 @@
 export const canvasTemplate = `<!-- 3D Canvas Container -->
-    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
-    <div class="scanline-effect z-10"></div>`;
+    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>`;
 
 export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 transition-opacity duration-500 md:p-8">
         <main class="menu-shell">
@@ -77,9 +76,12 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
                 </div>
             </section>
 
-            <button id="btn-pause-game" class="cyber-button game-pause-button pointer-events-auto" aria-label="Pausar partida">
-                <span aria-hidden="true">Ⅱ</span><span class="game-pause-label">PAUSA</span>
-            </button>
+            <div class="game-center-controls">
+                <button id="btn-pause-game" class="cyber-button game-pause-button pointer-events-auto" aria-label="Pausar partida">
+                    <span aria-hidden="true">Ⅱ</span><span class="game-pause-label">PAUSA</span>
+                </button>
+                <button id="btn-auto-zoom" class="cyber-button game-auto-zoom pointer-events-auto" type="button" aria-pressed="true" aria-label="Zoom automático activado">AUTO</button>
+            </div>
 
             <section class="game-faction-status game-faction-enemy cyber-panel-red" aria-label="Estado del Nexo enemigo">
                 <div class="game-faction-heading">
@@ -203,11 +205,6 @@ export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolut
                 </div>
                 <div class="game-over-connectivity">ESTADO: <b id="game-over-state">OPERACIÓN FINALIZADA</b></div>
             </header>
-
-            <div class="game-over-location">
-                <span>SUB-RED COMANDO TÁCTICO</span>
-                <span>SECTOR 07 / INFORME LOCAL</span>
-            </div>
 
             <main class="game-over-body">
                 <section class="game-over-hero">

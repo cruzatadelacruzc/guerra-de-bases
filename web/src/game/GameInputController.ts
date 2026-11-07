@@ -16,6 +16,30 @@ export function exceedsTapTolerance(
   return Math.hypot(endX - startX, endY - startY) > toleranceCssPixels;
 }
 
+export interface TapSample {
+  timeMs: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * A tap counts as the second half of a double tap when it lands within
+ * `maxIntervalMs` and `maxDistanceCssPixels` of the previous tap. Pure for the
+ * same reason as `exceedsTapTolerance`: the thresholds are unit testable
+ * without real pointer events.
+ */
+export function isDoubleTap(
+  previous: TapSample | null,
+  current: TapSample,
+  maxIntervalMs: number,
+  maxDistanceCssPixels: number
+): boolean {
+  if (!previous) return false;
+  const interval = current.timeMs - previous.timeMs;
+  if (interval < 0 || interval > maxIntervalMs) return false;
+  return Math.hypot(current.x - previous.x, current.y - previous.y) <= maxDistanceCssPixels;
+}
+
 export interface GameInputActions {
   onPointerMove(event: PointerEvent): void;
   onPointerDown(event: PointerEvent): void;
@@ -48,7 +72,13 @@ export class GameInputController {
       this.#actions.onPointerMove(event);
     }, options);
     this.#surface.addEventListener('pointerdown', (event) => {
-      if (event.isPrimary === false || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      // A second finger turns the gesture into a pinch/pan: the primary
+      // finger's pointerup must not be treated as a tap even if it barely moved.
+      if (event.isPrimary === false) {
+        this.#actions.onPointerCancel();
+        return;
+      }
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
       this.#actions.onPointerDown(event);
     }, options);
     this.#surface.addEventListener('pointerup', (event) => {

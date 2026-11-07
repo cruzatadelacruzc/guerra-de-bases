@@ -67,14 +67,18 @@ const TURRET_WEAPON: Omit<Weapon, 'cooldownRemaining'> = Object.freeze({
   originHeight: 1.8
 });
 
+/** Nexus positions, mirrored across z = 0, 15 units in from the 150-deep terrain's ends. */
+export const PLAYER_BASE_POSITION: Readonly<Position> = { x: 0, y: 0, z: 60 };
+export const ENEMY_BASE_POSITION: Readonly<Position> = { x: 0, y: 0, z: -60 };
+
 export function createInitialBattle(enemyBaseIncome = 11): {
   world: World;
   playerBase: Entity;
   enemyBase: Entity;
 } {
   const world = new World();
-  const playerBase = createBase(world, FACTIONS.player, { x: 0, y: 0, z: 45 }, 5);
-  const enemyBase = createBase(world, FACTIONS.enemy, { x: 0, y: 0, z: -45 }, enemyBaseIncome);
+  const playerBase = createBase(world, FACTIONS.player, { ...PLAYER_BASE_POSITION }, 5);
+  const enemyBase = createBase(world, FACTIONS.enemy, { ...ENEMY_BASE_POSITION }, enemyBaseIncome);
   return { world, playerBase, enemyBase };
 }
 

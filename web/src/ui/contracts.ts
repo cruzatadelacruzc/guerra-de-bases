@@ -49,6 +49,7 @@ export interface GameActions {
   selectBuilding(type: BuildingType): void;
   trainUnit(type: UnitType): void;
   activateReward(id: RewardId): void;
+  toggleAutoZoom(): void;
 }
 
 export interface RewardCardState {
@@ -91,4 +92,5 @@ export interface GameUiPort {
   updateRewardState(state: RewardUiState): void;
   showGameOver(summary: GameOverSummary): void;
   setPermanentUnlockCount(count: number): void;
+  setAutoZoom(enabled: boolean): void;
 }

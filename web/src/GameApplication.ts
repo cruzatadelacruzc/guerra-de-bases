@@ -2,9 +2,12 @@ import * as THREE from 'three';
 import { COMPONENTS as ECS_COMPONENTS, FACTIONS as ECS_FACTIONS } from './game/ecs/components.ts';
 import type { Entity, Position } from './game/ecs/components.ts';
 import { BattleSimulation } from './game/ecs/BattleSimulation.ts';
+import { visitCombatPositions } from './game/ecs/combatFocus.ts';
 import {
     createSoldierFactory,
-    createStructure
+    createStructure,
+    ENEMY_BASE_POSITION,
+    PLAYER_BASE_POSITION
 } from './game/ecs/initialBattle.ts';
 import {
     applyDamageSystem,
@@ -19,7 +22,7 @@ import type {
 } from './game/ecs/systems.ts';
 import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
-import { exceedsTapTolerance, GameInputController } from './game/GameInputController.ts';
+import { exceedsTapTolerance, GameInputController, isDoubleTap, type TapSample } from './game/GameInputController.ts';
 import { GameSession } from './game/GameSession.ts';
 import {
     AIR_STRIKE_EFFECTIVE_RADIUS,
@@ -42,7 +45,8 @@ import type {
     UnitType,
     UnlockView
 } from './ui/contracts.ts';
-import type { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { MapCameraController } from './rendering/MapCameraController.ts';
+import { createTerrainGrid } from './rendering/TerrainGrid.ts';
 import type { SoldierVisualHandle } from './rendering/InstancedSoldierRenderer.ts';
 
 interface HealthBar {
@@ -244,7 +248,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let scene: THREE.Scene;
     let camera: THREE.PerspectiveCamera;
     let renderer: THREE.WebGLRenderer;
-    let controls: OrbitControls;
+    let cameraController: MapCameraController;
     let soldierRenderer: ThreeRenderCoordinator['soldiers'];
     let combatEffects: ThreeRenderCoordinator['effects'];
     let projectilePool: ThreeRenderCoordinator['projectiles'];
@@ -359,7 +363,14 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         scene = renderCoordinator.scene;
         camera = renderCoordinator.camera;
         renderer = renderCoordinator.renderer;
-        controls = renderCoordinator.controls;
+        cameraController = renderCoordinator.cameraController;
+        // Auto mode follows the fighting; the camera only receives plain coordinates.
+        const combatEntities: Entity[] = [];
+        cameraController.setAutoZoomSource((visit) => {
+            const world = battleSimulation?.world;
+            if (world) visitCombatPositions(world, combatEntities, visit);
+        });
+        cameraController.onAutoZoomChange = (enabled) => ui.setAutoZoom(enabled);
         soldierRenderer = renderCoordinator.soldiers;
         combatEffects = renderCoordinator.effects;
         projectilePool = renderCoordinator.projectiles;
@@ -424,7 +435,18 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         terrainFloor.receiveShadow = true;
         scene.add(terrainFloor);
 
-        const gridHelper = new THREE.GridHelper(110, 22, 0x00f0ff, 0x1e293b);
+        // Plain unlit ground around the map so its edges don't float in a void;
+        // it sits below the terrain (which hides it inside the map) and the far
+        // fog blends it into the background before its own edge is seen.
+        const outerGround = new THREE.Mesh(
+            new THREE.PlaneGeometry(2000, 2000),
+            new THREE.MeshBasicMaterial({ color: 0x0c1222 })
+        );
+        outerGround.rotation.x = -Math.PI / 2;
+        outerGround.position.y = -0.1;
+        scene.add(outerGround);
+
+        const gridHelper = createTerrainGrid(110, 150, 5, 0x00f0ff, 0x1e293b);
         gridHelper.position.y = 0.05;
         scene.add(gridHelper);
 
@@ -847,8 +869,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             updateUnlockUI();
         }, 700);
 
-        controls.target.set(0, 0, 0);
-        camera.position.set(0, 50, 50);
+        cameraController.reset();
 
         // BOTH sides start CLEAN with ONLY the Nexus and 200 Gold
         gold = 200;
@@ -899,7 +920,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             mesh: createHQMesh(0x00f0ff),
             hp: 1200,
             maxHp: 1200,
-            position: new THREE.Vector3(0, 0, 45),
+            position: new THREE.Vector3(PLAYER_BASE_POSITION.x, PLAYER_BASE_POSITION.y, PLAYER_BASE_POSITION.z),
             type: 'hq',
             isPlayer: true
         };
@@ -917,7 +938,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             mesh: createHQMesh(0xff3344),
             hp: 1200,
             maxHp: 1200,
-            position: new THREE.Vector3(0, 0, -45),
+            position: new THREE.Vector3(ENEMY_BASE_POSITION.x, ENEMY_BASE_POSITION.y, ENEMY_BASE_POSITION.z),
             type: 'hq',
             isPlayer: false
         };
@@ -1205,11 +1226,20 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         updatePlacementGhost();
     }
 
+    // Player build zone: own half of the 110 x 150 terrain, from just behind
+    // the center line up to 2 units short of the side and back edges.
+    const BUILD_ZONE_MIN_Z = 5;
+    const BUILD_ZONE_MAX_Z = 73;
+    const BUILD_ZONE_MAX_ABS_X = 53;
+
     function getPlacementPosition(): THREE.Vector3 | undefined {
         if (!terrainFloor) return undefined;
         raycaster.setFromCamera(mouse, camera);
         const point = raycaster.intersectObject(terrainFloor)[0]?.point;
-        if (!point || point.z <= 5 || point.z >= 65 || Math.abs(point.x) >= 48) return undefined;
+        if (!point
+            || point.z <= BUILD_ZONE_MIN_Z
+            || point.z >= BUILD_ZONE_MAX_Z
+            || Math.abs(point.x) >= BUILD_ZONE_MAX_ABS_X) return undefined;
         return new THREE.Vector3(Math.round(point.x), 0, Math.round(point.z));
     }
 
@@ -1237,7 +1267,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     // commit happens on `pointerup`, gated by this movement tolerance, using
     // a fresh raycast from the pointerup position.
     const TAP_MOVEMENT_TOLERANCE_PX = 10;
+    const DOUBLE_TAP_INTERVAL_MS = 300;
+    const DOUBLE_TAP_DISTANCE_PX = 30;
     let pendingGesture: { pointerId: number; startX: number; startY: number } | null = null;
+    // Previous plain tap (no build type selected, not demolishing), used to
+    // detect a double tap that glides the camera focus to that point.
+    let lastFocusTap: TapSample | null = null;
 
     function onPointerDown(event: PointerEvent) {
         if (session.state !== 'PLAYING') return;
@@ -1254,7 +1289,22 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         if (session.state !== 'PLAYING' || !gesture || gesture.pointerId !== event.pointerId) return;
 
         if (exceedsTapTolerance(gesture.startX, gesture.startY, event.clientX, event.clientY, TAP_MOVEMENT_TOLERANCE_PX)) {
+            lastFocusTap = null;
             return;
+        }
+
+        // Double tap only refocuses the camera outside build/demolish modes so
+        // a single tap there still commits instantly.
+        if (!selectedBuildType && !isDemolishMode) {
+            const tap: TapSample = { timeMs: event.timeStamp, x: event.clientX, y: event.clientY };
+            if (isDoubleTap(lastFocusTap, tap, DOUBLE_TAP_INTERVAL_MS, DOUBLE_TAP_DISTANCE_PX)) {
+                lastFocusTap = null;
+                cameraController.focusOnScreenPoint(event.clientX, event.clientY);
+                return;
+            }
+            lastFocusTap = tap;
+        } else {
+            lastFocusTap = null;
         }
 
         updatePointerPosition(event);
@@ -1502,19 +1552,19 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 && getFactionGold(ECS_FACTIONS.enemy) >= 100 && Math.random() < 0.6) {
                 spendFactionGold(ECS_FACTIONS.enemy, 100);
                 const rx = (Math.random() - 0.5) * 44;
-                const rz = -28 - Math.random() * 22;
+                const rz = -38 - Math.random() * 32;
                 spawnAIBuilding('generator', { x: rx, y: 0, z: rz });
             } else if (!hasReachedBarracksTarget
                 && getFactionGold(ECS_FACTIONS.enemy) >= 150 && Math.random() < 0.65) {
                 spendFactionGold(ECS_FACTIONS.enemy, 150);
                 const rx = (Math.random() - 0.5) * 40;
-                const rz = -20 - Math.random() * 20;
+                const rz = -25 - Math.random() * 30;
                 spawnAIBuilding('barracks', { x: rx, y: 0, z: rz });
             } else if (!hasReachedTurretTarget
                 && getFactionGold(ECS_FACTIONS.enemy) >= 125 && Math.random() < 0.7) {
                 spendFactionGold(ECS_FACTIONS.enemy, 125);
                 const rx = (Math.random() - 0.5) * 42;
-                const rz = -12 - Math.random() * 18;
+                const rz = -12 - Math.random() * 20;
                 spawnAIBuilding('turret', { x: rx, y: 0, z: rz });
             }
 
@@ -2449,7 +2499,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             camera.lookAt(0, 0, 0);
         } else if (session.state === 'PLAYING') {
             gameplayClockMs += delta * 1000;
-            controls.update();
+            cameraController.update(delta);
             const combatStart = diagnosticsEnabled ? performance.now() : 0;
             updateEnemyAI(delta);
             advanceBattleSimulation(delta, time);
@@ -2652,12 +2702,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     const playerFactory = createSoldierFactory(
                         simulation.world,
                         ECS_FACTIONS.player,
-                        { x, y: 0, z: 45 }
+                        { x, y: 0, z: PLAYER_BASE_POSITION.z }
                     );
                     const enemyFactory = createSoldierFactory(
                         simulation.world,
                         ECS_FACTIONS.enemy,
-                        { x, y: 0, z: -45 }
+                        { x, y: 0, z: ENEMY_BASE_POSITION.z }
                     );
                     testFactories.push(playerFactory, enemyFactory);
                     const playerOrder = requestUnitProduction(
@@ -2718,7 +2768,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             toggleDemolishMode,
             selectBuilding: selectBuildingToPlace,
             trainUnit,
-            activateReward: activatePlayerReward
+            activateReward: activatePlayerReward,
+            toggleAutoZoom: () => {
+                const enabled = !cameraController.autoZoomEnabled;
+                cameraController.setAutoZoomEnabled(enabled);
+                if (enabled) showToast('Zoom automático activado');
+            }
         });
         unlockSubscriptions.push(unlocks.on('unlocked', ({ definition }) => {
             updateUnlockUI();

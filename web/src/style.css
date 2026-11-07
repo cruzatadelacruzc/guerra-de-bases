@@ -107,23 +107,6 @@ select {
   display: block;
 }
 
-@keyframes scanline {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(1000%); }
-}
-
-.scanline-effect {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  background: rgba(0, 240, 255, 0.3);
-  opacity: 0.3;
-  animation: scanline 8s linear infinite;
-  pointer-events: none;
-}
-
 @media (pointer: coarse) {
   .cyber-button {
     min-height: 44px;
@@ -1413,7 +1396,18 @@ select {
   min-width: 0;
 }
 
-#game-hud > .game-status-rail > #btn-pause-game {
+#game-hud > .game-status-rail > .game-center-controls > #btn-pause-game {
+  position: static;
+  top: auto;
+  left: auto;
+  transform: none;
+}
+
+/* The legacy mobile rule `#game-hud > div:first-child > div:nth-child(2)`
+   absolutely positions whatever div sits second in the rail; the
+   pause + AUTO column must stay in the rail's grid flow. Same specificity,
+   later in source, so this wins. */
+#game-hud > div.game-status-rail > div.game-center-controls {
   position: static;
   top: auto;
   left: auto;
@@ -1587,6 +1581,39 @@ select {
   font-size: 1rem;
 }
 
+/* Pause + AUTO zoom stacked in the status rail's middle column. */
+.game-center-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.game-auto-zoom {
+  min-width: 2.75rem;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.45rem;
+  border-color: rgba(100, 116, 139, 0.45);
+  background: rgba(3, 12, 21, 0.85);
+  color: #64748b;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.game-auto-zoom:hover:not(:disabled) {
+  background: rgba(3, 12, 21, 0.85);
+  transform: none;
+}
+
+.game-auto-zoom[aria-pressed="true"] {
+  border-color: rgba(34, 211, 238, 0.7);
+  color: #67e8f9;
+  box-shadow: 0 0 0.6rem rgba(34, 211, 238, 0.25);
+}
+
 .game-toast-anchor {
   position: absolute;
   top: 50%;
@@ -1640,6 +1667,10 @@ select {
 }
 
 .game-controls-label {
+  /* The copy column aligns items to flex-start, so without this cap the label
+     keeps its max-content width and runs under the toggle icon instead of
+     ellipsizing. */
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   font-family: 'Orbitron', sans-serif;
@@ -1821,7 +1852,7 @@ select {
     font-size: 0.44rem;
   }
 
-  #game-hud > .game-status-rail > #btn-pause-game {
+  #game-hud > .game-status-rail > .game-center-controls > #btn-pause-game {
     min-height: 2.75rem;
     padding: 0.2rem;
   }
@@ -2497,23 +2528,6 @@ select {
   font-size: 0.62rem;
 }
 
-.game-over-location {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.65rem 0 0.85rem;
-  color: #00b9d4;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 0.52rem;
-  letter-spacing: 0.11em;
-}
-
-.game-over-location span:last-child {
-  color: #8999ad;
-  text-align: right;
-}
-
 .game-over-body {
   display: flex;
   flex: 1 1 auto;
@@ -2914,11 +2928,6 @@ select {
     padding-bottom: 0.45rem;
   }
 
-  .game-over-location {
-    padding: 0.45rem 0 0.55rem;
-    font-size: 0.48rem;
-  }
-
   .game-over-body {
     justify-content: center;
     gap: 0.4rem;
@@ -2980,10 +2989,6 @@ select {
   .game-over-header {
     min-height: 1.8rem;
     padding-bottom: 0.3rem;
-  }
-
-  .game-over-location {
-    padding: 0.3rem 0 0.4rem;
   }
 
   .game-over-body {
@@ -3067,7 +3072,6 @@ select {
   }
 
   .game-over-header,
-  .game-over-location,
   .game-over-actions {
     grid-column: 1 / -1;
   }
@@ -3075,10 +3079,6 @@ select {
   .game-over-header {
     min-height: 1.75rem;
     padding-bottom: 0.25rem;
-  }
-
-  .game-over-location {
-    padding: 0.25rem 0 0.35rem;
   }
 
   .game-over-body {
@@ -3245,24 +3245,6 @@ select {
 #game-over-modal .game-over-connectivity b {
   margin-top: 0.3cqh;
   font-size: 1.9cqw;
-}
-
-#game-over-modal .game-over-location {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: space-between;
-  gap: 1cqw;
-  padding: 1.6cqh 0 2.1cqh;
-  font-size: 1.65cqw;
-  line-height: 1.35;
-}
-
-#game-over-modal .game-over-location > span {
-  flex: 1 1 50%;
-}
-
-#game-over-modal .game-over-location > span:last-child {
-  text-align: right;
 }
 
 #game-over-modal .game-over-body {
@@ -3526,10 +3508,6 @@ select {
     padding-bottom: 0.45rem;
   }
 
-  #game-over-modal .game-over-location {
-    padding: 0.45rem 0 0.65rem;
-  }
-
   #game-over-modal .game-over-emblem-wrap {
     width: clamp(4.25rem, 18cqw, 5rem);
     height: clamp(4.25rem, 18cqw, 5rem);
@@ -3576,10 +3554,6 @@ select {
 
   #game-over-modal .game-over-connectivity b {
     font-size: clamp(0.62rem, 1.9cqw, 0.8rem);
-  }
-
-  #game-over-modal .game-over-location {
-    font-size: clamp(0.6rem, 1.65cqw, 0.75rem);
   }
 
   #game-over-modal .game-over-badge {
@@ -3645,11 +3619,16 @@ select {
   white-space: nowrap;
 }
 
-@media (min-width: 768px) {
+/* Short landscape phones narrower than 768px (e.g. 740x360, 667x375) also
+   use this two-column layout: the stacked portrait layout cannot fit their
+   height and its buttons ended up on top of the report. */
+@media (min-width: 768px), (orientation: landscape) and (max-height: 600px) {
   #game-over-modal::after {
     position: absolute;
     z-index: 2;
-    inset: 0;
+    /* Keep the frame out of the display cutout / system bar areas. */
+    inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     border: 1px solid rgba(255, 40, 81, 0.58);
     box-shadow:
       inset 0 0 22px rgba(255, 23, 68, 0.12),
@@ -3701,12 +3680,6 @@ select {
   #game-over-modal .game-over-connectivity b {
     margin-top: 0.2rem;
     font-size: clamp(0.8rem, 1vw, 1rem);
-  }
-
-  #game-over-modal .game-over-location {
-    gap: 1rem;
-    padding: 1rem 0 1.5rem;
-    font-size: clamp(0.72rem, 0.85vw, 0.9rem);
   }
 
   #game-over-modal .game-over-body {
@@ -3845,171 +3818,138 @@ select {
   }
 }
 
-@media (min-width: 768px) and (max-height: 600px) {
+/* Short landscape heights (phones rotated to landscape, ~360-412px tall):
+   everything - header, hero, report and buttons - scales with
+   the card height (cqh; the card is a size container) so the whole report
+   fits on screen without an inner scroll area. Text that would otherwise
+   wrap to a second line is kept on one line. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #game-over-modal {
+    padding: max(0.45rem, env(safe-area-inset-top)) max(0.65rem, env(safe-area-inset-right))
+      max(0.45rem, env(safe-area-inset-bottom)) max(0.65rem, env(safe-area-inset-left));
+  }
+
   #game-over-modal .game-over-card,
   #game-over-modal .game-over-card.is-victory {
-    padding: 1rem 2rem;
+    padding: clamp(0.4rem, 2.6svh, 1rem) clamp(0.75rem, 3vw, 2rem);
   }
 
   #game-over-modal .game-over-header {
-    padding-bottom: 0.6rem;
-  }
-
-  #game-over-modal .game-over-location {
-    padding: 0.55rem 0 0.8rem;
-  }
-
-  #game-over-modal .game-over-body {
-    gap: 1.5rem;
-    /* At short landscape heights the hero + report column can need more
-       vertical space than the flex-allocated row provides. `flex: 1 1 auto`
-       plus `min-height: 0` (set in the base min-width:768px rule) already
-       gives this flex child a definite, shrinkable height; scope the
-       overflow to this element (instead of leaving it on the ancestor
-       `.game-over-card`) so the excess content scrolls internally and the
-       `.game-over-actions` button row below it stays pinned and never gets
-       overlapped. */
-    align-items: start;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  #game-over-modal .game-over-emblem-wrap {
-    width: clamp(4rem, 13vh, 5rem);
-    height: clamp(4rem, 13vh, 5rem);
-    margin-bottom: 0.5rem;
-  }
-
-  #game-over-modal .game-over-hero h2 {
-    font-size: clamp(1.4rem, 2.8vw, 2rem);
-  }
-
-  #game-over-modal .game-over-hero p {
-    margin-top: 0.4rem;
-    font-size: 0.85rem;
-  }
-
-  #game-over-modal .game-over-report {
-    padding: 0.75rem;
-  }
-
-  #game-over-modal .game-over-report > header {
-    padding-bottom: 0.5rem;
-  }
-
-  #game-over-modal .game-over-metrics {
-    gap: 0;
-    padding-top: 0.3rem;
-  }
-
-  #game-over-modal .game-over-stat,
-  #game-over-modal .game-over-damage .game-over-stat {
-    min-height: 2rem;
-  }
-
-  #game-over-modal .game-over-damage {
-    padding-top: 0.2rem;
-  }
-
-  #game-over-modal .game-over-actions {
-    padding-top: 0.75rem;
-  }
-}
-
-/* Even shorter landscape heights (e.g. a phone rotated to landscape, ~390-
-   412px tall) still don't fit the 600px breakpoint's sizing: the hero +
-   report row overflows the space left after the header/location/actions
-   chrome. The scoped `overflow-y: auto` above is a safety net, but the goal
-   here is for all four stat rows and both action buttons to be visible
-   without needing to scroll, so compress further rather than relying on it. */
-@media (min-width: 768px) and (max-height: 500px) {
-  #game-over-modal .game-over-card,
-  #game-over-modal .game-over-card.is-victory {
-    padding: 0.6rem 1.25rem;
-  }
-
-  #game-over-modal .game-over-header {
-    padding-bottom: 0.35rem;
-  }
-
-  #game-over-modal .game-over-location {
-    padding: 0.3rem 0 0.4rem;
-  }
-
-  #game-over-modal .game-over-body {
     gap: 1rem;
+    padding-bottom: 1.6cqh;
+  }
+
+  #game-over-modal .game-over-status {
+    font-size: clamp(0.6rem, 3.6cqh, 0.95rem);
+    white-space: nowrap;
+  }
+
+  #game-over-modal .game-over-connectivity {
+    font-size: clamp(0.56rem, 3.3cqh, 0.85rem);
+    white-space: nowrap;
+  }
+
+  #game-over-modal .game-over-connectivity b {
+    display: inline;
+    margin: 0 0 0 0.35em;
+    font-size: clamp(0.6rem, 3.6cqh, 0.95rem);
+  }
+
+  #game-over-modal .game-over-body {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: clamp(1rem, 4cqw, 3rem);
+    align-items: center;
   }
 
   #game-over-modal .game-over-emblem-wrap {
-    width: 3.5rem;
-    height: 3.5rem;
-    margin-bottom: 0.3rem;
+    width: clamp(2.5rem, 17cqh, 5.5rem);
+    height: clamp(2.5rem, 17cqh, 5.5rem);
+    margin-bottom: 2cqh;
   }
 
-  /* The badge is anchored to the emblem's top-right corner and doesn't
-     shrink with it automatically; shrink it to match so it doesn't spill
-     past the card's left edge and get clipped by the card's overflow:hidden. */
+  /* The badge is anchored to the emblem's top-right corner; shrink it with
+     the emblem so it doesn't spill past the card's left edge. */
   #game-over-modal .game-over-badge {
     right: -0.3rem;
-    padding: 0.25rem 0.4rem;
-    font-size: 0.56rem;
+    padding: 0.2rem 0.4rem;
+    font-size: clamp(0.5rem, 2.8cqh, 0.72rem);
   }
 
   #game-over-modal .game-over-hero h2 {
-    font-size: 1.1rem;
+    font-size: clamp(0.95rem, min(7.5cqh, 3.2cqw), 2.2rem);
   }
 
   #game-over-modal .game-over-hero p {
-    margin-top: 0.25rem;
-    font-size: 0.72rem;
-    line-height: 1.3;
+    margin-top: 1.2cqh;
+    font-size: clamp(0.65rem, 3.8cqh, 1rem);
+    line-height: 1.35;
   }
 
   #game-over-modal .game-over-report {
-    padding: 0.5rem 0.65rem;
+    padding: 1.8cqh clamp(0.6rem, 1.6cqw, 1.2rem);
   }
 
   #game-over-modal .game-over-report > header {
-    padding-bottom: 0.3rem;
+    padding-bottom: 1.2cqh;
+    font-size: clamp(0.54rem, 3cqh, 0.85rem);
+    white-space: nowrap;
+  }
+
+  /* The decorative "Registro local" label gives way first on narrow screens. */
+  #game-over-modal .game-over-report > header > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  #game-over-modal .game-over-report-title > span {
+    font-size: clamp(0.7rem, 4cqh, 1rem);
   }
 
   #game-over-modal .game-over-metrics {
     gap: 0;
-    padding-top: 0.2rem;
+    padding-top: 1cqh;
   }
 
   #game-over-modal .game-over-stat,
   #game-over-modal .game-over-damage .game-over-stat {
-    min-height: 1.5rem;
-    font-size: 0.72rem;
+    gap: 0.6rem;
+    min-height: clamp(1.3rem, 7.2cqh, 2.6rem);
+    font-size: clamp(0.66rem, 3.9cqh, 0.95rem);
   }
 
   #game-over-modal .game-over-stat b {
-    font-size: 0.75rem;
+    font-size: clamp(0.7rem, 4.1cqh, 1rem);
+  }
+
+  #game-over-modal .game-over-stat small {
+    font-size: clamp(0.58rem, 3.3cqh, 0.78rem);
   }
 
   #game-over-modal .game-over-damage {
-    padding-top: 0.15rem;
+    padding-top: 0.6cqh;
   }
 
   #game-over-modal .game-over-progress {
-    height: 0.3rem;
+    height: clamp(0.2rem, 1cqh, 0.35rem);
   }
 
   #game-over-modal .game-over-actions {
-    gap: 0.4rem;
-    padding-top: 0.4rem;
+    gap: 0.6rem;
+    padding-top: 2.2cqh;
   }
 
-  /* Finding E: was 1.75rem (28px), below AGENTS.md's ~44px touch-target
-     guideline. 2.5rem (40px) is as close to the guideline as this
-     breakpoint's available height allows while still fitting all four stat
-     rows and both buttons without reintroducing the original overlap bug -
-     confirmed via playwright-cli at 844x390 and 915x412. */
+  /* 2.5rem (40px) floor: as close to AGENTS.md's ~44px touch-target
+     guideline as the shortest supported landscape heights allow. */
   #game-over-modal .game-over-actions button {
-    min-height: 2.5rem;
-    padding: 0.3rem 0.5rem;
+    min-height: clamp(2.5rem, 12cqh, 3rem);
+    padding: 0.3rem 0.6rem;
+    font-size: clamp(0.68rem, 3.8cqh, 0.9rem);
+  }
+
+  #game-over-modal .game-over-actions small {
+    margin-top: 0.8cqh;
+    font-size: clamp(0.5rem, 2.8cqh, 0.7rem);
   }
 }
 
@@ -4235,8 +4175,21 @@ select {
 }
 
 .tactical-rewards-balance b {
+  display: inline-block;
   color: #67e8f9;
   font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Orbitron digits have different widths, so reserve room for typical values;
+   otherwise every gold tick resizes the balance and shifts the panel heading. */
+#reward-combat-points {
+  min-width: 2ch;
+}
+
+#reward-gold-balance {
+  min-width: 4ch;
 }
 
 .tactical-reward-cards {
@@ -4416,8 +4369,10 @@ select {
     padding: 0.5rem;
   }
 
+  /* Wide enough for "ABRIR CENTRO DE MANDO · APOYO n CP" next to the icon on
+     ~360px phones; narrower screens fall back to the label's ellipsis. */
   .game-controls-toggle {
-    width: min(100%, 17rem);
+    width: min(100%, 21rem);
   }
 
   #tactical-rewards-panel .tactical-reward-cards {

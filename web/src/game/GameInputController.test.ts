@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { exceedsTapTolerance, GameInputController } from './GameInputController.ts';
+import { exceedsTapTolerance, GameInputController, isDoubleTap } from './GameInputController.ts';
 
 test('input listeners attach once, detach cleanly, and can be reattached', () => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -129,4 +129,55 @@ test('exceedsTapTolerance distinguishes a stationary tap from a drag-like gestur
 
   // Exactly at the tolerance boundary is not considered a drag.
   assert.equal(exceedsTapTolerance(0, 0, 10, 0, 10), false);
+});
+
+test('isDoubleTap requires a previous tap close in time and space', () => {
+  const first = { timeMs: 1000, x: 100, y: 100 };
+  assert.equal(isDoubleTap(null, first, 300, 30), false);
+  assert.equal(isDoubleTap(first, { timeMs: 1250, x: 110, y: 115 }, 300, 30), true);
+  assert.equal(isDoubleTap(first, { timeMs: 1300, x: 100, y: 100 }, 300, 30), true);
+  assert.equal(isDoubleTap(first, { timeMs: 1301, x: 100, y: 100 }, 300, 30), false);
+  assert.equal(isDoubleTap(first, { timeMs: 1100, x: 140, y: 100 }, 300, 30), false);
+  assert.equal(isDoubleTap(first, { timeMs: 900, x: 100, y: 100 }, 300, 30), false);
+});
+
+test('a second finger cancels the pending tap instead of starting a new one', () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const canvasTarget = new EventTarget();
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: new EventTarget() as unknown as Window });
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: new EventTarget() as unknown as Document });
+
+  let downs = 0;
+  let cancels = 0;
+  const controller = new GameInputController(canvasTarget as unknown as HTMLCanvasElement, {
+    onPointerMove: () => {},
+    onPointerDown: () => { downs++; },
+    onPointerUp: () => {},
+    onPointerCancel: () => { cancels++; },
+    onEscape: () => {},
+    onCancelPlacement: () => false,
+    onNativeBack: () => false,
+    onApplicationInactive: () => {},
+    onApplicationActive: () => {},
+  });
+
+  try {
+    controller.attach();
+    const pointerDown = (isPrimary: boolean) => {
+      const event = new Event('pointerdown');
+      Object.defineProperties(event, { isPrimary: { value: isPrimary }, pointerType: { value: 'touch' } });
+      canvasTarget.dispatchEvent(event);
+    };
+    pointerDown(true);
+    pointerDown(false);
+    assert.equal(downs, 1);
+    assert.equal(cancels, 1);
+  } finally {
+    controller.detach();
+    if (previousWindow) Object.defineProperty(globalThis, 'window', previousWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
+    if (previousDocument) Object.defineProperty(globalThis, 'document', previousDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  }
 });

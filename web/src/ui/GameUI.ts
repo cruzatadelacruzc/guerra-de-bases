@@ -133,8 +133,17 @@ export class GameUI implements GameUiPort {
     this.#buildMenu?.setDemolishMode(active);
   }
 
+  setAutoZoom(enabled: boolean): void {
+    const button = this.#element<HTMLButtonElement>('btn-auto-zoom');
+    button.setAttribute('aria-pressed', String(enabled));
+    button.setAttribute('aria-label', enabled ? 'Zoom automático activado' : 'Zoom automático desactivado');
+  }
+
   setPlacementActive(active: boolean): void {
     this.#buildMenu?.setPlacementActive(active);
+    // The open drawer covers the bottom of the screen, where the player's own
+    // base sits; fold it so the player can tap next to their Nexus.
+    if (active) this.#controls?.setExpanded(false);
   }
 
   setUnlocks(unlocks: readonly UnlockView[]): void {
@@ -184,6 +193,11 @@ export class GameUI implements GameUiPort {
       event.stopPropagation();
       this.#controls?.setExpanded(false);
       actions?.pauseGame();
+      return;
+    }
+    if (id === 'btn-auto-zoom') {
+      event.stopPropagation();
+      actions?.toggleAutoZoom();
       return;
     }
     if (id === 'btn-resume-game') {

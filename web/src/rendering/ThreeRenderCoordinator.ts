@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { CombatEffects } from './CombatEffects.ts';
 import { InstancedSoldierRenderer } from './InstancedSoldierRenderer.ts';
+import { MapCameraController } from './MapCameraController.ts';
 import { ProjectilePool } from './ProjectilePool.ts';
 
 export class ThreeRenderCoordinator {
@@ -9,6 +10,7 @@ export class ThreeRenderCoordinator {
   readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
   readonly controls: OrbitControls;
+  readonly cameraController: MapCameraController;
   readonly directionalLight: THREE.DirectionalLight;
   readonly soldiers: InstancedSoldierRenderer;
   readonly effects: CombatEffects;
@@ -23,7 +25,11 @@ export class ThreeRenderCoordinator {
     this.effects = new CombatEffects(this.scene);
     this.projectiles = new ProjectilePool(this.scene);
     this.scene.background = new THREE.Color(0x050811);
-    this.scene.fog = new THREE.FogExp2(0x050811, 0.011);
+    // Linear fog only fades the ground surrounding the map into the
+    // background at the horizon. It starts at 280: the farthest map point is
+    // ~268 from the camera (max zoom 130, focus at one end, looking at the
+    // opposite corner), so the playable map itself is never darkened.
+    this.scene.fog = new THREE.Fog(0x050811, 280, 650);
 
     this.camera = new THREE.PerspectiveCamera(
       45,
@@ -51,6 +57,7 @@ export class ThreeRenderCoordinator {
     this.controls.minDistance = 15;
     this.controls.maxDistance = 130;
     this.controls.target.set(0, 0, 0);
+    this.cameraController = new MapCameraController(this.camera, this.controls, this.renderer.domElement);
 
     this.scene.add(new THREE.AmbientLight(0x708090, 0.85));
     this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -91,6 +98,7 @@ export class ThreeRenderCoordinator {
     if (this.#disposed) return;
     this.#disposed = true;
     window.removeEventListener('resize', this.#handleResize);
+    this.cameraController.dispose();
     this.controls.dispose();
     this.soldiers.dispose();
     this.effects.dispose();

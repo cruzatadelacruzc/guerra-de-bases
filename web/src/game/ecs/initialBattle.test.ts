@@ -5,6 +5,8 @@ import { COMPONENTS, FACTIONS } from './components.ts';
 import { World } from './World.ts';
 import {
   createInitialBattle,
+  ENEMY_BASE_POSITION,
+  PLAYER_BASE_POSITION,
   createSoldier,
   createSoldierFactory,
   createStructure
@@ -647,4 +649,16 @@ test('simulation clamps a long background delta and rejects invalid timing', () 
   simulation.advance(10);
   assert.ok((simulation.world.getComponent(soldier, COMPONENTS.transform)?.z ?? 20) > 19);
   assert.throws(() => simulation.advance(Number.NaN), RangeError);
+});
+
+test('initial battle places both nexuses at their mirrored base positions', () => {
+  const { world, playerBase, enemyBase } = createInitialBattle();
+  assert.deepEqual(world.getComponent(playerBase, COMPONENTS.transform), PLAYER_BASE_POSITION);
+  assert.deepEqual(world.getComponent(enemyBase, COMPONENTS.transform), ENEMY_BASE_POSITION);
+  assert.equal(PLAYER_BASE_POSITION.x, ENEMY_BASE_POSITION.x);
+  assert.equal(PLAYER_BASE_POSITION.z, -ENEMY_BASE_POSITION.z);
+  // Mutating an entity's transform must not move the shared constant.
+  const transform = world.getComponent(playerBase, COMPONENTS.transform);
+  if (transform) transform.z += 1;
+  assert.equal(PLAYER_BASE_POSITION.z, 60);
 });
