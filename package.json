@@ -18,6 +18,7 @@
     "@capacitor/android": "^7.6.9",
     "@capacitor/app": "^7.1.2",
     "@capacitor/core": "^7.6.9",
+    "@capacitor/haptics": "^7.0.5",
     "@fontsource/orbitron": "^5.2.8",
     "@fontsource/rajdhani": "^5.2.8",
     "three": "0.128.0"

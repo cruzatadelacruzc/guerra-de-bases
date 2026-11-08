@@ -24,6 +24,7 @@ import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
 import { exceedsTapTolerance, GameInputController, isDoubleTap, type TapSample } from './game/GameInputController.ts';
 import { GameSession } from './game/GameSession.ts';
+import { createHapticFeedback, createPlatformVibrate } from './platform/HapticFeedback.ts';
 import {
     AIR_STRIKE_BOMB_OFFSETS,
     AIR_STRIKE_EFFECTIVE_RADIUS,
@@ -168,6 +169,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let enemyKillStreak = 0;
     let playerUnitsDestroyed = 0;
     let playerUnitsLost = 0;
+
+    const haptics = createHapticFeedback({ vibrate: createPlatformVibrate(), now: () => performance.now() });
 
     const SFX: SoundEffects = {
         ctx: null,
@@ -1610,6 +1613,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     function createMushroomCloud(position: THREE.Vector3) {
         cameraShake = 4.5;
         SFX.playCinematicExplosion(true);
+        haptics.nexusDestroyed();
         combatEffects.createNuclearExplosion(position);
     }
 
@@ -2206,6 +2210,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     }
                 }
                 createCinematicExplosion(impact.point, 0.85, false);
+                haptics.strikeImpact();
             }
             if (strike.impacts.every((impact) => impact.complete)) artilleryEffects.splice(effectIndex, 1);
         }
@@ -2354,6 +2359,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 bomb.landed = true;
                 const impact = new THREE.Vector3(bomb.target.x, 0, bomb.target.z);
                 createCinematicExplosion(impact, 0.82, false);
+                haptics.strikeImpact();
                 for (const candidate of getRewardTargetCandidates(strike.faction)) {
                     if (Math.hypot(candidate.position.x - impact.x, candidate.position.z - impact.z) <= AIR_STRIKE_EFFECTIVE_RADIUS) {
                         applyDamage(candidate.runtime, damage);
