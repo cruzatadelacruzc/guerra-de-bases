@@ -1,6 +1,6 @@
 import { uiIconMarkup } from './uiIcons.ts';
 
-export const canvasTemplate =`<!-- 3D Canvas Container -->
+export const canvasTemplate = `<!-- 3D Canvas Container -->
     <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
     <!-- Kept outside #game-hud: its panels are laid out with child-position selectors. -->
     <div id="nexus-alert-vignette" class="nexus-alert-vignette" aria-hidden="true"></div>`;
@@ -57,9 +57,9 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
                         <span class="menu-rewards-toggle" aria-hidden="true">${uiIconMarkup('chevron-down')}</span>
                     </summary>
                     <div class="menu-rewards-scroll-wrap">
-                        <button type="button" class="menu-scroll-cue is-up" data-scroll-cue="up" tabindex="-1" aria-label="Ver recompensas anteriores">${uiIconMarkup('double-up')}</button>
-                        <div id="mission-rules-content" class="mission-rules-content" aria-live="polite"></div>
-                        <button type="button" class="menu-scroll-cue is-down" data-scroll-cue="down" tabindex="-1" aria-label="Ver más recompensas">${uiIconMarkup('double-down')}</button>
+                        <button type="button" class="menu-scroll-cue is-up" data-scroll-cue="up" tabindex="-1" aria-hidden="true">${uiIconMarkup('double-up')}</button>
+                        <div id="mission-rules-content" class="mission-rules-content" tabindex="0" aria-label="Recompensas de combate"></div>
+                        <button type="button" class="menu-scroll-cue is-down" data-scroll-cue="down" tabindex="-1" aria-hidden="true">${uiIconMarkup('double-down')}</button>
                     </div>
                 </details>
             </section>
@@ -207,7 +207,7 @@ export const pauseModalTemplate = `<div id="pause-modal" class="hidden absolute 
         </div>
     </div>`;
 
-export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolute inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="game-over-title">
+export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolute inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="game-over-title" aria-describedby="game-over-msg">
         <div id="game-over-card" class="game-over-card">
             <section class="game-over-hero">
                 <div class="game-over-insignia">

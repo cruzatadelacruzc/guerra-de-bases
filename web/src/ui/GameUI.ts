@@ -97,6 +97,9 @@ export class GameUI implements GameUiPort {
   }
 
   enterMainMenu(): void {
+    // Each visit to the menu starts with the rewards accordion closed.
+    this.#element<HTMLDetailsElement>('menu-rewards').open = false;
+    this.#root.querySelector('.menu-shell')?.classList.remove('is-rewards-open');
     this.#hud?.setPauseVisible(false);
     this.#hud?.setGameOverVisible(false);
     this.#hud?.setGameVisible(false);

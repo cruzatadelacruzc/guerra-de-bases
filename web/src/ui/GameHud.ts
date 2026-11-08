@@ -14,7 +14,23 @@ export class GameHud {
     const rewardCards = root.querySelector<HTMLElement>('#tactical-reward-cards');
     if (!rewardCards) throw new Error('Tactical reward card container is missing');
     this.#rewardCards = rewardCards;
+    this.#element<HTMLElement>('game-over-modal').addEventListener('keydown', this.#trapGameOverFocus);
   }
+
+  /** Keeps Tab cycling between the two game-over actions while the dialog is open. */
+  readonly #trapGameOverFocus = (event: KeyboardEvent): void => {
+    if (event.key !== 'Tab') return;
+    const restart = this.#element<HTMLButtonElement>('btn-restart-game');
+    const menu = this.#element<HTMLButtonElement>('btn-gameover-menu');
+    const active = document.activeElement;
+    if (event.shiftKey && active === restart) {
+      event.preventDefault();
+      menu.focus();
+    } else if (!event.shiftKey && active === menu) {
+      event.preventDefault();
+      restart.focus();
+    }
+  };
 
   setBaseHealth(
     player: { current: number; maximum: number },
@@ -151,12 +167,15 @@ export class GameHud {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const damage = summary.enemyBaseDamagePercent;
     const bar = this.#element<HTMLElement>('stat-enemy-hq-damage-bar');
+    const fill = `scaleX(${damage / 100})`;
     if (reducedMotion) {
-      bar.style.width = `${damage}%`;
+      bar.style.transform = fill;
     } else {
-      // Start empty and fill on the next frame so the CSS width transition runs.
-      bar.style.width = '0%';
-      requestAnimationFrame(() => { bar.style.width = `${damage}%`; });
+      // Commit the empty bar before filling it, so the CSS transition runs
+      // even when this is called outside an animation frame (e.g. a timer).
+      bar.style.transform = 'scaleX(0)';
+      void bar.offsetWidth;
+      bar.style.transform = fill;
     }
 
     const time = this.#element<HTMLElement>('stat-time');
@@ -173,6 +192,8 @@ export class GameHud {
       targets.push({ element: time, to: durationSeconds, format: formatClockDuration });
     }
     this.#countUp.start(targets, { durationMs: 1100, reducedMotion });
+    // Move focus into the dialog so its title and message are announced.
+    this.#element<HTMLButtonElement>('btn-restart-game').focus({ preventScroll: true });
   }
 
   flashNexusAlert(): void {
