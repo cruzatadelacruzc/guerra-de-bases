@@ -16,6 +16,15 @@
     rgba(2, 7, 17, 0.97);
 }
 
+/* The report fades in after the Nexus explosion sequence instead of cutting in. */
+#game-over-modal:not(.hidden) {
+  animation: game-over-fade-in 450ms ease-out both;
+}
+
+#game-over-modal.is-arming .game-over-actions {
+  pointer-events: none;
+}
+
 #game-over-modal.is-victory {
   --rc: #00e5ff;
   --rg: rgba(0, 229, 255, 0.3);
@@ -557,6 +566,10 @@
     width: 1rem;
     height: 1rem;
   }
+}
+
+@keyframes game-over-fade-in {
+  from { opacity: 0; }
 }
 
 @keyframes game-over-ring-turn {

@@ -4,11 +4,15 @@ import { CountUpAnimator, formatClockDuration, parseClockDuration, type CountUpT
 import { getRetryHint } from './gameOverHints.ts';
 import { createRewardIcon, getRewardCategory } from './rewardPresentation.ts';
 
+/** How long the game-over actions ignore taps after the screen appears. */
+const GAME_OVER_ARMING_MS = 600;
+
 export class GameHud {
   readonly #root: ParentNode;
   readonly #rewardCards: HTMLElement;
   #rewardStructureKey = '';
   readonly #countUp = new CountUpAnimator();
+  #armTimer: number | undefined;
 
   constructor(root: ParentNode) {
     this.#root = root;
@@ -144,6 +148,11 @@ export class GameHud {
     const isVictory = summary.victory;
     const modal = this.#element<HTMLElement>('game-over-modal');
     modal.classList.remove('hidden');
+    // Ignore taps for a moment so a tap still in flight from the battle
+    // can't hit JUGAR DE NUEVO and skip the report.
+    window.clearTimeout(this.#armTimer);
+    modal.classList.add('is-arming');
+    this.#armTimer = window.setTimeout(() => modal.classList.remove('is-arming'), GAME_OVER_ARMING_MS);
     // The modal's frame and backdrop glow follow the result colour too.
     modal.classList.toggle('is-victory', isVictory);
     const card = this.#element<HTMLElement>('game-over-card');
@@ -152,12 +161,12 @@ export class GameHud {
 
     const values = isVictory
       ? {
-          badge: 'ASEGURADO',
+          badge: '¡GANASTE!',
           title: 'VICTORIA',
           message: 'El Nexo rival ha caído. El sector está bajo tu control.',
         }
       : {
-          badge: 'CRÍTICO',
+          badge: 'NEXO PERDIDO',
           title: 'DERROTA',
           message: 'Tu Nexo principal fue destruido por el asedio enemigo.',
         };
@@ -219,7 +228,11 @@ export class GameHud {
   }
 
   setGameOverVisible(visible: boolean): void {
-    if (!visible) this.#countUp.cancel();
+    if (!visible) {
+      this.#countUp.cancel();
+      window.clearTimeout(this.#armTimer);
+      this.#element<HTMLElement>('game-over-modal').classList.remove('is-arming');
+    }
     this.#element<HTMLElement>('game-over-modal').classList.toggle('hidden', !visible);
   }
 

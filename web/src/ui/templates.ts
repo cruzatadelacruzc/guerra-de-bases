@@ -246,7 +246,7 @@ export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolut
                             </div>
                         </div>
                     </div>
-                    <span class="game-over-badge" id="game-over-badge">CRÍTICO</span>
+                    <span class="game-over-badge" id="game-over-badge">NEXO PERDIDO</span>
                 </div>
                 <h2 id="game-over-title">DERROTA</h2>
                 <p id="game-over-msg">Tu Nexo principal fue destruido por el asedio enemigo.</p>
