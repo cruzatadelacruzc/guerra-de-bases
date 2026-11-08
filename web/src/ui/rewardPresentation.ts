@@ -3,12 +3,12 @@ import type { Difficulty, RewardId } from './contracts.ts';
 import type { UiIconId } from './uiIcons.ts';
 
 const ICON_PATHS: Readonly<Record<RewardId, readonly string[]>> = {
+  // A field cannon: angled barrel on a wheel, with a muzzle flash.
   artillery_strike: [
-    'M3 19 10 12',
-    'M8 20 15 13',
-    'm14 7 3-3 3 3-3 3',
-    'M17 7 9 15',
-    'M5 5h4M7 3v4'
+    'M5.5 15.5 16 7l2 2.5-10.5 8.5',
+    'M11 18.5a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z',
+    'M9.5 21H18',
+    'M19 4l1.5-1.5M21 7h1.5M17.5 2.5V1'
   ],
   air_strike: [
     'm2 12 20-8-7 18-3-7-10-3Z',
@@ -35,7 +35,7 @@ export function createRewardIcon(id: RewardId): SVGSVGElement {
 
 export function getRewardCategory(id: RewardId): string {
   if (id === 'artillery_strike') return 'ATAQUE DE ÁREA';
-  if (id === 'air_strike') return 'ATAQUE AÉREO';
+  if (id === 'air_strike') return 'APOYO AÉREO';
   return 'DEFENSA DEL NEXO';
 }
 
@@ -59,7 +59,11 @@ export function getRewardFacts(id: RewardId, difficulty: Difficulty): readonly R
     id === 'artillery_strike'
       ? { icon: 'target', value: String(pattern.impacts.length), label: 'impactos' }
       : { icon: 'bomb', value: String(pattern.impacts.length), label: 'bombas' },
-    { icon: 'burst', value: String(pattern.damagePerImpact), label: 'daño c/u' },
+    {
+      icon: 'burst',
+      value: String(pattern.damagePerImpact),
+      label: id === 'artillery_strike' ? 'daño por impacto' : 'daño por bomba',
+    },
   ];
 }
 

@@ -317,7 +317,7 @@ export class GameUI implements GameUiPort {
     const howText = document.createElement('span');
     howText.append(
       'Elimina unidades y estructuras enemigas para ganar ',
-      highlight('CP', 'is-cp'),
+      highlight('puntos de combate (CP)', 'is-cp'),
       '. Gasta ',
       highlight('CP', 'is-cp'),
       ' + ',

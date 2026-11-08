@@ -781,9 +781,6 @@
     font-size: clamp(1.6rem, 9vh, 2.6rem);
   }
 
-  .is-rewards-open .menu-tagline {
-    display: block;
-  }
 
   .menu-bottom {
     grid-column: 1;
@@ -825,8 +822,38 @@
     min-height: 2.75rem;
   }
 
+  /* Open: the difficulty moves under the title in the left column and the
+     rewards take the full height of the right column (the briefing panel
+     dissolves into the grid), so the list shows more than one card. */
+  .menu-shell.is-rewards-open {
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+
+  .is-rewards-open .menu-brief {
+    display: contents;
+  }
+
+  .is-rewards-open .menu-difficulty {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .is-rewards-open .menu-bottom {
+    grid-row: 3;
+  }
+
   .is-rewards-open .menu-rewards {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    align-self: stretch;
     min-height: 0;
+    padding: 0.75rem;
+    background: rgba(10, 15, 29, 0.9);
+    border: 1px solid var(--menu-line);
+  }
+
+  .is-rewards-open .menu-rewards-scroll-wrap {
+    inset: calc(3.85rem + 0.75rem) 0.75rem 0.75rem;
   }
 
   .menu-rewards-summary {
