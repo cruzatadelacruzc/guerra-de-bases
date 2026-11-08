@@ -180,7 +180,7 @@
 .menu-starting-resources > span {
   margin-top: 0.3rem;
   color: var(--menu-muted);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -194,9 +194,9 @@
   gap: 0.75rem;
   color: #cbd5e1;
   font-family: 'Orbitron', sans-serif;
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
 }
 
 .menu-difficulty-options {
@@ -546,7 +546,7 @@
   width: 1rem;
   height: 1rem;
   margin-top: 0.15rem;
-  color: var(--reward-gold);
+  color: var(--reward-cp);
   stroke-width: 2;
 }
 

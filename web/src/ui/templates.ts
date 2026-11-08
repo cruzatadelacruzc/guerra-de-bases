@@ -31,7 +31,7 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
                     <div class="menu-difficulty-heading">
                         <span>DIFICULTAD ENEMIGA</span>
                         <!-- Starting gold stays in view while the rewards list (with gold costs) is open. -->
-                        <span class="menu-open-gold" aria-hidden="true">${uiIconMarkup('coin')}<b>200</b> ORO</span>
+                        <span class="menu-open-gold"><span class="sr-only">Oro inicial: </span>${uiIconMarkup('coin')}<b>200</b> ORO</span>
                     </div>
                     <div class="menu-difficulty-options" role="group" aria-label="Dificultad enemiga">
                         <button type="button" data-difficulty="easy" aria-pressed="false">${uiIconMarkup('smile')}<span>FÁCIL</span></button>
@@ -59,7 +59,7 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
                     </summary>
                     <div class="menu-rewards-scroll-wrap">
                         <button type="button" class="menu-scroll-cue is-up" data-scroll-cue="up" tabindex="-1" aria-hidden="true">${uiIconMarkup('double-up')}</button>
-                        <div id="mission-rules-content" class="mission-rules-content" tabindex="0" aria-label="Recompensas de combate"></div>
+                        <div id="mission-rules-content" class="mission-rules-content" role="region" tabindex="0" aria-label="Recompensas de combate"></div>
                         <button type="button" class="menu-scroll-cue is-down" data-scroll-cue="down" tabindex="-1" aria-hidden="true">${uiIconMarkup('double-down')}</button>
                     </div>
                 </details>
@@ -208,7 +208,7 @@ export const pauseModalTemplate = `<div id="pause-modal" class="hidden absolute 
         </div>
     </div>`;
 
-export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolute inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="game-over-title" aria-describedby="game-over-msg">
+export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolute inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="game-over-title" aria-describedby="game-over-msg game-over-hint">
         <div id="game-over-card" class="game-over-card">
             <section class="game-over-hero">
                 <div class="game-over-insignia">

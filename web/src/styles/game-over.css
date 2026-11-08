@@ -451,6 +451,18 @@
   color: #00e5ff;
 }
 
+/* Narrow portrait phones: "JUGAR DE NUEVO" needs the full width. */
+@media (orientation: portrait) and (max-width: 379px) {
+  .game-over-actions {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .game-over-actions button {
+    min-height: 3rem;
+  }
+}
+
 /* ---------- Landscape: hero left, report and actions right ---------- */
 
 @media (orientation: landscape) and (min-width: 600px) {
