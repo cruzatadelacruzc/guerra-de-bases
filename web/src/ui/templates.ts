@@ -209,96 +209,81 @@ export const pauseModalTemplate = `<div id="pause-modal" class="hidden absolute 
 
 export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolute inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="game-over-title">
         <div id="game-over-card" class="game-over-card">
-            <header class="game-over-header">
-                <div class="game-over-status">
-                    <span class="game-over-status-light" aria-hidden="true"></span>
-                    <span id="game-over-status">ALERTA CRÍTICA // SECTOR 07</span>
+            <section class="game-over-hero">
+                <div class="game-over-insignia">
+                    <div class="game-over-emblem-wrap">
+                        <div id="game-over-icon" class="game-over-emblem" aria-hidden="true">
+                            <div class="game-over-emblem-inner">
+                                <!-- Defeat: the Nexus hexagon split along a fracture. -->
+                                <svg class="game-over-icon-defeat" viewBox="0 0 48 48" role="presentation">
+                                    <defs>
+                                        <linearGradient id="game-over-defeat-fill" x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
+                                            <stop stop-color="#ff5a73" />
+                                            <stop offset=".55" stop-color="#e0153d" />
+                                            <stop offset="1" stop-color="#ff8a3d" />
+                                        </linearGradient>
+                                    </defs>
+                                    <path class="game-over-icon-shape game-over-shard-left" d="M24 4 6 14.5v19L24 44l-2.5-12 5.5-8.5-6.5-7.5L24 4Z" />
+                                    <path class="game-over-icon-shape game-over-shard-right" d="M24 4 42 14.5v19L24 44l-2.5-12 5.5-8.5-6.5-7.5L24 4Z" />
+                                    <path class="game-over-icon-spark" d="m35 3.5 4-1.5-1 4Zm-24 39.5-3.6 2.2.3-4.2Zm30.5-5 3.3.6-2.3 2.4Z" />
+                                </svg>
+                                <!-- Victory: a flag planted on the captured Nexus. -->
+                                <svg class="game-over-icon-victory" viewBox="0 0 48 48" role="presentation">
+                                    <defs>
+                                        <linearGradient id="game-over-victory-fill" x1="16" y1="8" x2="38" y2="24" gradientUnits="userSpaceOnUse">
+                                            <stop stop-color="#e6fdff" />
+                                            <stop offset=".5" stop-color="#4deeff" />
+                                            <stop offset="1" stop-color="#0891b2" />
+                                        </linearGradient>
+                                    </defs>
+                                    <path class="game-over-icon-base" d="M7 39.5 14 35h20l7 4.5-7 4.5H14Z" />
+                                    <path class="game-over-icon-pole" d="M17 39V3.5" />
+                                    <path class="game-over-icon-shape" d="M17 5h25l-6 8 6 8H17Z" />
+                                    <path class="game-over-icon-detail" d="m22.5 10.5 4 3 4-3" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="game-over-badge" id="game-over-badge">CRÍTICO</span>
                 </div>
-                <div class="game-over-connectivity">ESTADO: <b id="game-over-state">OPERACIÓN FINALIZADA</b></div>
-            </header>
+                <h2 id="game-over-title">DERROTA</h2>
+                <p id="game-over-msg">Tu Nexo principal fue destruido por el asedio enemigo.</p>
+            </section>
 
-            <main class="game-over-body">
-                <section class="game-over-hero">
-                    <div class="game-over-insignia">
-                        <div class="game-over-emblem-wrap">
-                            <div id="game-over-icon" class="game-over-emblem" aria-hidden="true">
-                                <div class="game-over-emblem-inner">
-                                    <!-- Defeat: the Nexus hexagon split along a fracture. -->
-                                    <svg class="game-over-icon-defeat" viewBox="0 0 48 48" role="presentation">
-                                        <defs>
-                                            <linearGradient id="game-over-defeat-fill" x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
-                                                <stop stop-color="#ff5a73" />
-                                                <stop offset=".55" stop-color="#e0153d" />
-                                                <stop offset="1" stop-color="#ff8a3d" />
-                                            </linearGradient>
-                                        </defs>
-                                        <path class="game-over-icon-shape game-over-shard-left" d="M24 4 6 14.5v19L24 44l-2.5-12 5.5-8.5-6.5-7.5L24 4Z" />
-                                        <path class="game-over-icon-shape game-over-shard-right" d="M24 4 42 14.5v19L24 44l-2.5-12 5.5-8.5-6.5-7.5L24 4Z" />
-                                        <path class="game-over-icon-spark" d="m35 3.5 4-1.5-1 4Zm-24 39.5-3.6 2.2.3-4.2Zm30.5-5 3.3.6-2.3 2.4Z" />
-                                    </svg>
-                                    <!-- Victory: a flag planted on the captured Nexus. -->
-                                    <svg class="game-over-icon-victory" viewBox="0 0 48 48" role="presentation">
-                                        <defs>
-                                            <linearGradient id="game-over-victory-fill" x1="16" y1="8" x2="38" y2="24" gradientUnits="userSpaceOnUse">
-                                                <stop stop-color="#e6fdff" />
-                                                <stop offset=".5" stop-color="#4deeff" />
-                                                <stop offset="1" stop-color="#0891b2" />
-                                            </linearGradient>
-                                        </defs>
-                                        <path class="game-over-icon-base" d="M7 39.5 14 35h20l7 4.5-7 4.5H14Z" />
-                                        <path class="game-over-icon-pole" d="M17 39V3.5" />
-                                        <path class="game-over-icon-shape" d="M17 5h25l-6 8 6 8H17Z" />
-                                        <path class="game-over-icon-detail" d="m22.5 10.5 4 3 4-3" />
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
-                        <span class="game-over-badge" id="game-over-badge">CRÍTICO</span>
-                    </div>
-                    <h2 id="game-over-title">DERROTA OPERATIVA</h2>
-                    <p id="game-over-msg">Tu <b>Nexo Principal</b> fue destruido por el asedio blindado enemigo.</p>
-                </section>
-
-                <section class="game-over-report" aria-label="Resumen de la partida">
-                    <header>
-                        <span class="game-over-report-title"><span aria-hidden="true">▤</span> INFORME POSTERIOR</span>
-                        <span>REGISTRO LOCAL</span>
-                    </header>
-                    <div class="game-over-metrics">
-                        <div class="game-over-stat">
-                            <span><i class="metric-marker is-cyan"></i>Tiempo de operación</span>
-                            <b id="stat-time">00:00</b>
-                        </div>
-                        <div class="game-over-stat">
-                            <span><i class="metric-marker"></i>Soldados desplegados</span>
-                            <b><span id="stat-soldiers">0</span><small><em>/ <span id="stat-losses">0</span> bajas</em></small></b>
-                        </div>
-                        <div class="game-over-stat">
-                            <span><i class="metric-marker"></i>Estructuras construidas</span>
-                            <b id="stat-buildings">0</b>
-                        </div>
-                        <div class="game-over-damage">
-                            <div class="game-over-stat">
-                                <span><i class="metric-marker is-red"></i>Daño infligido al Nexo rival</span>
-                                <b id="stat-enemy-hq-damage">0%</b>
-                            </div>
-                            <div class="game-over-progress"><span id="stat-enemy-hq-damage-bar"></span></div>
-                        </div>
-                    </div>
-                    <span class="game-over-corner" aria-hidden="true"></span>
-                </section>
-            </main>
+            <section class="game-over-report" aria-labelledby="game-over-report-title">
+                <h3 id="game-over-report-title">INFORME DE BATALLA</h3>
+                <div class="game-over-stat">
+                    <span class="game-over-stat-icon">${uiIconMarkup('clock')}</span>
+                    <span>Tiempo</span>
+                    <b class="game-over-stat-value is-time" id="stat-time">00:00</b>
+                </div>
+                <div class="game-over-stat">
+                    <span class="game-over-stat-icon">${uiIconMarkup('soldier')}</span>
+                    <span>Soldados desplegados</span>
+                    <b class="game-over-stat-value"><span id="stat-soldiers">0</span><span class="game-over-losses">${uiIconMarkup('cross')}<span id="stat-losses">0</span> bajas</span></b>
+                </div>
+                <div class="game-over-stat">
+                    <span class="game-over-stat-icon">${uiIconMarkup('building')}</span>
+                    <span>Estructuras construidas</span>
+                    <b class="game-over-stat-value" id="stat-buildings">0</b>
+                </div>
+                <div class="game-over-stat is-damage">
+                    <span class="game-over-stat-icon">${uiIconMarkup('target')}</span>
+                    <span>Daño al Nexo rival</span>
+                    <b class="game-over-stat-value" id="stat-enemy-hq-damage">0%</b>
+                </div>
+                <div class="game-over-progress"><span id="stat-enemy-hq-damage-bar"></span></div>
+            </section>
 
             <footer class="game-over-actions">
-                <button id="btn-restart-game" class="game-over-primary" aria-label="Reiniciar batalla">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v5h5M4.6 9A8 8 0 1 1 4 14" /></svg>
-                    <span>REINICIAR</span>
+                <button id="btn-restart-game" class="game-over-primary" aria-label="Jugar de nuevo">
+                    ${uiIconMarkup('replay')}
+                    <span>JUGAR DE NUEVO</span>
                 </button>
-                <button id="btn-gameover-menu" class="game-over-secondary" aria-label="Volver al comando central">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8M5 10v10h5v-6h4v6h5V10" /></svg>
-                    <span>VOLVER</span>
+                <button id="btn-gameover-menu" class="game-over-secondary" aria-label="Volver al menú">
+                    ${uiIconMarkup('home')}
+                    <span>MENÚ</span>
                 </button>
-                <small>GUERRA DE BASES · PROTOCOLO DE DESPLIEGUE</small>
             </footer>
         </div>
     </div>`;

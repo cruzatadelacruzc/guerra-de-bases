@@ -1,11 +1,13 @@
 import { getRewardDefinitionForDifficulty } from '../game/rewardSystem.ts';
 import type { GameOverSummary, RewardUiState } from './contracts.ts';
+import { CountUpAnimator, formatClockDuration, parseClockDuration, type CountUpTarget } from './countUp.ts';
 import { createRewardIcon, getRewardCategory } from './rewardPresentation.ts';
 
 export class GameHud {
   readonly #root: ParentNode;
   readonly #rewardCards: HTMLElement;
   #rewardStructureKey = '';
+  readonly #countUp = new CountUpAnimator();
 
   constructor(root: ParentNode) {
     this.#root = root;
@@ -133,31 +135,44 @@ export class GameHud {
 
     const values = isVictory
       ? {
-          status: 'MISIÓN CUMPLIDA // SECTOR 07',
-          state: 'SECTOR ASEGURADO',
           badge: 'ASEGURADO',
           title: 'VICTORIA',
           message: 'El Nexo rival ha caído. El sector está bajo tu control.',
         }
       : {
-          status: 'ALERTA CRÍTICA // SECTOR 07',
-          state: 'NEXO DESTRUIDO',
           badge: 'CRÍTICO',
-          title: 'DERROTA OPERATIVA',
+          title: 'DERROTA',
           message: 'Tu Nexo principal fue destruido por el asedio enemigo.',
         };
-    this.#element<HTMLElement>('game-over-status').innerText = values.status;
-    this.#element<HTMLElement>('game-over-state').innerText = values.state;
     this.#element<HTMLElement>('game-over-badge').innerText = values.badge;
     this.#element<HTMLElement>('game-over-title').innerText = values.title;
     this.#element<HTMLElement>('game-over-msg').innerText = values.message;
-    this.#element<HTMLElement>('stat-soldiers').innerText = String(summary.soldiersTrained);
-    this.#element<HTMLElement>('stat-losses').innerText = String(summary.losses);
-    this.#element<HTMLElement>('stat-buildings').innerText = String(summary.buildingsConstructed);
-    this.#element<HTMLElement>('stat-time').innerText = summary.duration;
-    this.#element<HTMLElement>('stat-enemy-hq-damage').innerText = `${summary.enemyBaseDamagePercent}%`;
-    this.#element<HTMLElement>('stat-enemy-hq-damage-bar').style.width =
-      `${summary.enemyBaseDamagePercent}%`;
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const damage = summary.enemyBaseDamagePercent;
+    const bar = this.#element<HTMLElement>('stat-enemy-hq-damage-bar');
+    if (reducedMotion) {
+      bar.style.width = `${damage}%`;
+    } else {
+      // Start empty and fill on the next frame so the CSS width transition runs.
+      bar.style.width = '0%';
+      requestAnimationFrame(() => { bar.style.width = `${damage}%`; });
+    }
+
+    const time = this.#element<HTMLElement>('stat-time');
+    const durationSeconds = parseClockDuration(summary.duration);
+    const targets: CountUpTarget[] = [
+      { element: this.#element<HTMLElement>('stat-soldiers'), to: summary.soldiersTrained, format: String },
+      { element: this.#element<HTMLElement>('stat-losses'), to: summary.losses, format: String },
+      { element: this.#element<HTMLElement>('stat-buildings'), to: summary.buildingsConstructed, format: String },
+      { element: this.#element<HTMLElement>('stat-enemy-hq-damage'), to: damage, format: (value) => `${value}%` },
+    ];
+    if (durationSeconds === null) {
+      time.textContent = summary.duration;
+    } else {
+      targets.push({ element: time, to: durationSeconds, format: formatClockDuration });
+    }
+    this.#countUp.start(targets, { durationMs: 1100, reducedMotion });
   }
 
   flashNexusAlert(): void {
@@ -178,6 +193,7 @@ export class GameHud {
   }
 
   setGameOverVisible(visible: boolean): void {
+    if (!visible) this.#countUp.cancel();
     this.#element<HTMLElement>('game-over-modal').classList.toggle('hidden', !visible);
   }
 
