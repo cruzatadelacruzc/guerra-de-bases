@@ -99,4 +99,6 @@ npm run android:open
 npm run android:build
 ```
 
+El teléfono vibra con cada impacto de las recompensas Ataque de área y Ataque aéreo (de ambos bandos) y con un pulso largo cuando explota un Nexus. En la app nativa se usa `@capacitor/haptics` (servicio `Vibrator` de Android, permiso `VIBRATE` añadido por el plugin al sincronizar); en el navegador se usa `navigator.vibrate` si existe. Si el dispositivo no tiene motor de vibración o el sistema la tiene desactivada, simplemente no vibra.
+
 La interfaz admite orientación vertical y horizontal; en teléfonos se recomienda girar el dispositivo a horizontal. La cámara responde a gestos de uno y dos dedos mediante OrbitControls. Los botones de construcción, reclutamiento, pausa y menús usan áreas táctiles ampliadas.
