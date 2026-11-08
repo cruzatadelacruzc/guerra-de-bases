@@ -117,7 +117,7 @@ export const DIFFICULTY_PROFILES: Readonly<Record<Difficulty, DifficultyProfile>
 export const REWARD_DEFINITIONS: Readonly<Record<RewardId, RewardDefinition>> = Object.freeze({
   artillery_strike: {
     id: 'artillery_strike',
-    title: 'Artillery Strike',
+    title: 'Bombardeo de artillería',
     pointsCost: 10,
     goldCost: 180,
     durationSeconds: 20,
@@ -127,7 +127,7 @@ export const REWARD_DEFINITIONS: Readonly<Record<RewardId, RewardDefinition>> = 
   },
   air_strike: {
     id: 'air_strike',
-    title: 'Air Strike',
+    title: 'Ataque aéreo',
     pointsCost: 18,
     goldCost: 280,
     durationSeconds: 20,
@@ -137,7 +137,7 @@ export const REWARD_DEFINITIONS: Readonly<Record<RewardId, RewardDefinition>> = 
   },
   defensive_shield: {
     id: 'defensive_shield',
-    title: 'Defensive Shield',
+    title: 'Escudo defensivo',
     pointsCost: 14,
     goldCost: 220,
     durationSeconds: 10,

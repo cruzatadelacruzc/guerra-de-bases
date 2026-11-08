@@ -198,3 +198,9 @@ test('an artillery strike lasts until its last staggered shell lands', () => {
   );
   assert.throws(() => artilleryStrikeDurationSeconds(0), RangeError);
 });
+
+test('reward titles are shown in Spanish', () => {
+  assert.equal(getRewardDefinitionForDifficulty('artillery_strike', 'normal').title, 'Bombardeo de artillería');
+  assert.equal(getRewardDefinitionForDifficulty('air_strike', 'normal').title, 'Ataque aéreo');
+  assert.equal(getRewardDefinitionForDifficulty('defensive_shield', 'hard').title, 'Escudo defensivo');
+});

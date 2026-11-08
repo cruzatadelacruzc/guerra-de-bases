@@ -9,3 +9,6 @@ android/captures/
 # Playwright browser-testing logs and snapshots
 .playwright-mcp/
 .playwright-cli/
+
+# Brainstorming mockups (superpowers visual companion)
+.superpowers/

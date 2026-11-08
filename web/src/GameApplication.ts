@@ -2540,8 +2540,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 gameplayClockMs + durationSeconds * 1000;
             if (faction === ECS_FACTIONS.player) {
                 showToast(id === 'artillery_strike'
-                    ? 'Artillery Strike activado: impactos en camino.'
-                    : 'Air Strike activado: avión cruzando el campo.');
+                    ? 'Bombardeo de artillería activado: impactos en camino.'
+                    : 'Ataque aéreo activado: avión cruzando el campo.');
             } else {
                 SFX.playAirRaidSiren();
                 showToast('¡ALERTA! Ataque enemigo entrante');

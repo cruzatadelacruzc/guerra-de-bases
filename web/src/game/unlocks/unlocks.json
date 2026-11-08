@@ -1,7 +1,7 @@
 [
   {
     "id": "artillery_strike",
-    "title": "Artillery Strike",
+    "title": "Bombardeo de artillería",
     "type": "temporary",
     "durationSeconds": 20,
     "meta": {
@@ -10,7 +10,7 @@
   },
   {
     "id": "air_strike",
-    "title": "Air Strike",
+    "title": "Ataque aéreo",
     "type": "temporary",
     "durationSeconds": 20,
     "meta": {
@@ -19,7 +19,7 @@
   },
   {
     "id": "defensive_shield",
-    "title": "Defensive Shield",
+    "title": "Escudo defensivo",
     "type": "temporary",
     "durationSeconds": 10,
     "meta": {
