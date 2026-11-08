@@ -1,4 +1,6 @@
-import type { RewardId } from './contracts.ts';
+import { getRewardDefinitionForDifficulty, getStrikePattern } from '../game/rewardSystem.ts';
+import type { Difficulty, RewardId } from './contracts.ts';
+import type { UiIconId } from './uiIcons.ts';
 
 const ICON_PATHS: Readonly<Record<RewardId, readonly string[]>> = {
   artillery_strike: [
@@ -37,6 +39,31 @@ export function getRewardCategory(id: RewardId): string {
   return 'DEFENSA DEL NEXO';
 }
 
+export interface RewardFact {
+  icon: UiIconId;
+  value: string;
+  label: string;
+}
+
+/** Short, icon-led facts for a reward card, read from the gameplay definitions. */
+export function getRewardFacts(id: RewardId, difficulty: Difficulty): readonly RewardFact[] {
+  if (id === 'defensive_shield') {
+    const shield = getRewardDefinitionForDifficulty(id, difficulty);
+    return [
+      { icon: 'shield', value: `−${Math.round((shield.reduction ?? 0) * 100)}%`, label: 'daño' },
+      { icon: 'clock', value: `${shield.durationSeconds} s`, label: '' },
+    ];
+  }
+  const pattern = getStrikePattern(id, difficulty);
+  return [
+    id === 'artillery_strike'
+      ? { icon: 'target', value: String(pattern.impacts.length), label: 'impactos' }
+      : { icon: 'bomb', value: String(pattern.impacts.length), label: 'bombas' },
+    { icon: 'burst', value: String(pattern.damagePerImpact), label: 'daño c/u' },
+  ];
+}
+
+/** @deprecated Replaced by `getRewardFacts`; removed once the menu stops using it. */
 export function getRewardEffect(id: RewardId): string {
   if (id === 'artillery_strike') return '3 impactos de artillería · 120 de daño por impacto.';
   if (id === 'air_strike') return '4 bombas en ruta · 220 de daño por impacto.';
