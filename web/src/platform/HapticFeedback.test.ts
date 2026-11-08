@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createHapticFeedback,
+  NEXUS_ALERT_PULSE_GAP_MS,
+  NEXUS_ALERT_PULSE_MS,
   NEXUS_DESTROYED_DURATION_MS,
   STRIKE_IMPACT_DURATION_MS,
   STRIKE_IMPACT_MIN_INTERVAL_MS
@@ -56,4 +58,20 @@ test('a failing vibrator does not throw', () => {
   });
   assert.doesNotThrow(() => haptics.strikeImpact());
   assert.doesNotThrow(() => haptics.nexusDestroyed());
+});
+
+test('nexus under attack plays two short pulses', () => {
+  const calls: number[] = [];
+  const scheduled: Array<{ callback: () => void; delayMs: number }> = [];
+  const haptics = createHapticFeedback({
+    vibrate: (durationMs) => calls.push(durationMs),
+    now: () => 0,
+    schedule: (callback, delayMs) => scheduled.push({ callback, delayMs })
+  });
+  haptics.nexusUnderAttack();
+  assert.deepEqual(calls, [NEXUS_ALERT_PULSE_MS]);
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delayMs, NEXUS_ALERT_PULSE_GAP_MS);
+  scheduled[0].callback();
+  assert.deepEqual(calls, [NEXUS_ALERT_PULSE_MS, NEXUS_ALERT_PULSE_MS]);
 });

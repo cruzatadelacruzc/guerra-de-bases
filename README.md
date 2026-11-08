@@ -101,4 +101,6 @@ npm run android:build
 
 El teléfono vibra con cada impacto de las recompensas Ataque de área y Ataque aéreo (de ambos bandos) y con un pulso largo cuando explota un Nexus. En la app nativa se usa `@capacitor/haptics` (servicio `Vibrator` de Android, permiso `VIBRATE` añadido por el plugin al sincronizar); en el navegador se usa `navigator.vibrate` si existe. Si el dispositivo no tiene motor de vibración o el sistema la tiene desactivada, simplemente no vibra.
 
+Cuando tu Nexus recibe daño aparece un borde rojo pulsante, el aviso «¡NEXUS BAJO ATAQUE!» y una doble vibración corta (como mucho una vez cada 6 s de juego). Los ataques tienen sonidos generados con Web Audio, sin archivos: silbido de los proyectiles de artillería antes del impacto, motor del avión en el Ataque aéreo y una sirena antiaérea cuando el enemigo lanza un ataque. Al pausar, el audio se congela y se reanuda sincronizado con la partida.
+
 La interfaz admite orientación vertical y horizontal; en teléfonos se recomienda girar el dispositivo a horizontal. La cámara responde a gestos de uno y dos dedos mediante OrbitControls. Los botones de construcción, reclutamiento, pausa y menús usan áreas táctiles ampliadas.

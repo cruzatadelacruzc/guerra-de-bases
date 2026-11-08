@@ -59,6 +59,7 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
     </div>`;
 
 export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-0 z-20 pointer-events-none">
+        <div id="nexus-alert-vignette" class="nexus-alert-vignette" aria-hidden="true"></div>
         <div class="game-status-rail pointer-events-auto">
             <section class="game-faction-status game-faction-player cyber-panel" aria-label="Estado del Nexo aliado">
                 <div class="game-faction-heading">

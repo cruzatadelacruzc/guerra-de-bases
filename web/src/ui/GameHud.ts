@@ -157,6 +157,15 @@ export class GameHud {
       `${summary.enemyBaseDamagePercent}%`;
   }
 
+  flashNexusAlert(): void {
+    const vignette = this.#element<HTMLElement>('nexus-alert-vignette');
+    vignette.classList.remove('is-active');
+    // Force a reflow so re-adding the class restarts the animation.
+    void vignette.offsetWidth;
+    vignette.classList.add('is-active');
+    vignette.addEventListener('animationend', () => vignette.classList.remove('is-active'), { once: true });
+  }
+
   setGameVisible(visible: boolean): void {
     this.#element<HTMLElement>('game-hud').classList.toggle('hidden', !visible);
   }

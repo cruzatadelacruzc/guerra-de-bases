@@ -128,6 +128,10 @@ export class GameUI implements GameUiPort {
     this.#hud?.setAiStatus(status);
   }
 
+  flashNexusAlert(): void {
+    this.#hud?.flashNexusAlert();
+  }
+
   setDemolishMode(active: boolean): void {
     this.#buildMenu?.setDemolishMode(active);
   }

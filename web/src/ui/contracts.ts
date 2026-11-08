@@ -87,6 +87,8 @@ export interface GameUiPort {
     enemy: { current: number; maximum: number }
   ): void;
   setAiStatus(status: string): void;
+  /** Pulses a red screen-edge warning while the player's Nexus is being hit. */
+  flashNexusAlert(): void;
   setDemolishMode(active: boolean): void;
   setPlacementActive(active: boolean): void;
   setUnlocks(unlocks: readonly UnlockView[]): void;
