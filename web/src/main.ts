@@ -10,6 +10,7 @@ import '@fontsource/rajdhani/500.css';
 import '@fontsource/rajdhani/600.css';
 import '@fontsource/rajdhani/700.css';
 import './style.css';
+import './styles/main-menu.css';
 
 import UnlockManager from './game/unlocks/UnlockManager.ts';
 import { createGameRuntime } from './GameApplication.ts';

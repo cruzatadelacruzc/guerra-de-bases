@@ -63,9 +63,3 @@ export function getRewardFacts(id: RewardId, difficulty: Difficulty): readonly R
   ];
 }
 
-/** @deprecated Replaced by `getRewardFacts`; removed once the menu stops using it. */
-export function getRewardEffect(id: RewardId): string {
-  if (id === 'artillery_strike') return '3 impactos de artillería · 120 de daño por impacto.';
-  if (id === 'air_strike') return '4 bombas en ruta · 220 de daño por impacto.';
-  return 'Reduce 50% del daño al Nexo durante 10 s.';
-}

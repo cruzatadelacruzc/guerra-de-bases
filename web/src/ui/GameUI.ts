@@ -20,7 +20,9 @@ import type {
   UnlockView,
 } from './contracts.ts';
 import { ToastNotifications } from './ToastNotifications.ts';
-import { createRewardIcon, getRewardCategory, getRewardEffect } from './rewardPresentation.ts';
+import { createRewardIcon, getRewardCategory, getRewardFacts } from './rewardPresentation.ts';
+import { ScrollCues } from './ScrollCues.ts';
+import { createUiIcon } from './uiIcons.ts';
 
 export class GameUI implements GameUiPort {
   readonly #root: HTMLElement;
@@ -31,6 +33,7 @@ export class GameUI implements GameUiPort {
   #hud: GameHud | undefined;
   #toast: ToastNotifications | undefined;
   #permanentUnlockCount = 0;
+  #rewardCues: ScrollCues | undefined;
 
   constructor(root: HTMLElement) {
     this.#root = root;
@@ -50,7 +53,9 @@ export class GameUI implements GameUiPort {
     this.#hud = new GameHud(this.#root);
     this.#toast = new ToastNotifications(this.#root);
     this.#root.addEventListener('click', this.#handleClick);
+    this.#renderRewardTeaser();
     this.#renderMissionRules(this.getMissionSettings().difficulty);
+    this.#bindRewardsAccordion();
     this.#mounted = true;
   }
 
@@ -304,55 +309,104 @@ export class GameUI implements GameUiPort {
     const panel = this.#root.querySelector<HTMLElement>('#mission-rules-content');
     if (!panel) return;
 
-    panel.replaceChildren();
-    const intro = document.createElement('p');
-    intro.textContent = 'Construye. Resiste. Destruye el Nexo enemigo.';
-    intro.className = 'mission-rules-intro';
+    const how = document.createElement('p');
+    how.className = 'mission-rules-how';
+    const howCp = document.createElement('b');
+    howCp.textContent = 'CP';
+    const howCost = document.createElement('b');
+    howCost.textContent = 'CP + oro';
+    const howText = document.createElement('span');
+    howText.append(
+      'Elimina unidades y estructuras enemigas para ganar ',
+      howCp,
+      '. Gasta ',
+      howCost,
+      ' para lanzar el ataque cuando tú decidas.'
+    );
+    how.append(createUiIcon('bolt'), howText);
 
-    const grid = document.createElement('div');
-    grid.className = 'mission-rules-grid';
-
-    for (const id of Object.keys(REWARD_DEFINITIONS) as RewardId[]) {
+    const cards = (Object.keys(REWARD_DEFINITIONS) as RewardId[]).map((id) => {
       const definition = getRewardDefinitionForDifficulty(id, difficulty);
       const card = document.createElement('article');
-      card.className = 'mission-rules-card';
+      card.className = `mission-rules-card is-${id}`;
 
-      const header = document.createElement('div');
-      header.className = 'mission-rules-card-header';
-      header.append(createRewardIcon(id));
+      const tile = document.createElement('span');
+      tile.className = 'mission-rules-tile';
+      tile.append(createRewardIcon(id));
 
+      const head = document.createElement('div');
+      head.className = 'mission-rules-head';
       const name = document.createElement('div');
-      name.className = 'mission-rules-card-title';
       const category = document.createElement('span');
-      category.className = 'mission-rules-card-category';
+      category.className = 'mission-rules-category';
       category.textContent = getRewardCategory(id);
       const title = document.createElement('h3');
       title.textContent = definition.title;
       name.append(category, title);
-      header.append(name);
+
+      const cost = document.createElement('div');
+      cost.className = 'mission-rules-cost';
+      const points = document.createElement('span');
+      points.className = 'is-cp';
+      points.append(createUiIcon('bolt'), `${definition.pointsCost} CP`);
+      const gold = document.createElement('span');
+      gold.className = 'is-gold';
+      const goldLabel = document.createElement('span');
+      goldLabel.className = 'sr-only';
+      goldLabel.textContent = ' oro';
+      gold.append(createUiIcon('coin'), String(definition.goldCost), goldLabel);
+      cost.append(points, gold);
+      head.append(name, cost);
 
       const description = document.createElement('p');
+      description.className = 'mission-rules-desc';
       description.textContent = definition.description;
-      const effect = document.createElement('p');
-      effect.className = 'mission-rules-card-effect';
-      effect.textContent = getRewardEffect(id);
-      const costs = document.createElement('div');
-      costs.className = 'mission-rules-card-costs';
-      const points = document.createElement('span');
-      const pointsValue = document.createElement('b');
-      pointsValue.textContent = String(definition.pointsCost);
-      points.append(pointsValue, ' CP');
-      const gold = document.createElement('span');
-      const goldValue = document.createElement('b');
-      goldValue.textContent = String(definition.goldCost);
-      gold.append(goldValue, ' ORO');
-      costs.append(points, gold);
 
-      card.append(header, description, effect, costs);
-      grid.append(card);
-    }
+      const facts = document.createElement('div');
+      facts.className = 'mission-rules-facts';
+      for (const fact of getRewardFacts(id, difficulty)) {
+        const chip = document.createElement('span');
+        const value = document.createElement('b');
+        value.textContent = fact.value;
+        chip.append(createUiIcon(fact.icon), value);
+        if (fact.label) chip.append(` ${fact.label}`);
+        facts.append(chip);
+      }
 
-    panel.append(intro, grid);
+      card.append(tile, head, description, facts);
+      return card;
+    });
+
+    panel.replaceChildren(how, ...cards);
+    this.#rewardCues?.refresh();
+  }
+
+  /** The closed accordion previews the three rewards as coloured hexagons. */
+  #renderRewardTeaser(): void {
+    const icons = this.#element<HTMLElement>('menu-rewards').querySelector('.menu-rewards-icons');
+    if (!icons) return;
+    icons.replaceChildren(...(Object.keys(REWARD_DEFINITIONS) as RewardId[]).map((id) => {
+      const hex = document.createElement('span');
+      hex.className = `menu-reward-hex is-${id}`;
+      hex.append(createRewardIcon(id));
+      return hex;
+    }));
+  }
+
+  #bindRewardsAccordion(): void {
+    const accordion = this.#element<HTMLDetailsElement>('menu-rewards');
+    const wrap = accordion.querySelector<HTMLElement>('.menu-rewards-scroll-wrap');
+    const list = this.#element<HTMLElement>('mission-rules-content');
+    const shell = this.#root.querySelector<HTMLElement>('.menu-shell');
+    if (!wrap || !shell) throw new Error('Rewards accordion markup is incomplete');
+    this.#rewardCues = new ScrollCues(wrap, list);
+    accordion.addEventListener('toggle', () => {
+      shell.classList.toggle('is-rewards-open', accordion.open);
+      if (!accordion.open) return;
+      list.scrollTop = 0;
+      // Measure after the open layout (taller panel, compact title) settles.
+      requestAnimationFrame(() => this.#rewardCues?.refresh());
+    });
   }
 
   #element<ElementType extends Element>(id: string): ElementType {

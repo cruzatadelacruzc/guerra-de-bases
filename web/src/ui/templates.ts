@@ -1,4 +1,6 @@
-export const canvasTemplate = `<!-- 3D Canvas Container -->
+import { uiIconMarkup } from './uiIcons.ts';
+
+export const canvasTemplate =`<!-- 3D Canvas Container -->
     <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
     <!-- Kept outside #game-hud: its panels are laid out with child-position selectors. -->
     <div id="nexus-alert-vignette" class="nexus-alert-vignette" aria-hidden="true"></div>`;
@@ -6,8 +8,8 @@ export const canvasTemplate = `<!-- 3D Canvas Container -->
 export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 transition-opacity duration-500 md:p-8">
         <main class="menu-shell">
             <header class="menu-heading">
-                <span class="menu-kicker">COMANDO TÁCTICO <i></i> SECTOR 07</span>
                 <h1 class="font-orbitron">GUERRA <span>DE BASES</span></h1>
+                <p class="menu-tagline">Construye, defiende y destruye el Nexo enemigo.</p>
             </header>
 
             <section class="menu-brief cyber-panel" aria-label="Configuración de misión">
@@ -45,15 +47,26 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
                     </select>
                 </div>
 
-                <details class="menu-rules">
-                    <summary>Recompensa <span>+</span></summary>
-                    <div id="mission-rules-content" class="mission-rules-content" aria-live="polite"></div>
+                <details id="menu-rewards" class="menu-rewards">
+                    <summary class="menu-rewards-summary">
+                        <span class="menu-rewards-icons" aria-hidden="true"></span>
+                        <span class="menu-rewards-copy">
+                            <strong>RECOMPENSAS DE COMBATE</strong>
+                            <span class="menu-rewards-hint">Gana CP y desbloquea 3 ataques especiales</span>
+                        </span>
+                        <span class="menu-rewards-toggle" aria-hidden="true">${uiIconMarkup('chevron-down')}</span>
+                    </summary>
+                    <div class="menu-rewards-scroll-wrap">
+                        <button type="button" class="menu-scroll-cue is-up" data-scroll-cue="up" tabindex="-1" aria-label="Ver recompensas anteriores">${uiIconMarkup('double-up')}</button>
+                        <div id="mission-rules-content" class="mission-rules-content" aria-live="polite"></div>
+                        <button type="button" class="menu-scroll-cue is-down" data-scroll-cue="down" tabindex="-1" aria-label="Ver más recompensas">${uiIconMarkup('double-down')}</button>
+                    </div>
                 </details>
             </section>
 
             <div class="menu-bottom">
                 <button id="btn-start-game" class="cyber-button menu-start-button font-orbitron">
-                    DESPLEGAR UNIDADES <span aria-hidden="true">→</span><small>ST-07</small>
+                    DESPLEGAR UNIDADES <span aria-hidden="true">→</span>
                 </button>
                 <section id="menu-intel-panel" class="menu-intel-panel hidden" aria-live="polite" aria-label="Información del arsenal"></section>
             </div>
