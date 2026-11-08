@@ -1,5 +1,7 @@
 export const canvasTemplate = `<!-- 3D Canvas Container -->
-    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>`;
+    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
+    <!-- Kept outside #game-hud: its panels are laid out with child-position selectors. -->
+    <div id="nexus-alert-vignette" class="nexus-alert-vignette" aria-hidden="true"></div>`;
 
 export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto bg-slate-950/75 p-4 transition-opacity duration-500 md:p-8">
         <main class="menu-shell">
@@ -59,7 +61,6 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
     </div>`;
 
 export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-0 z-20 pointer-events-none">
-        <div id="nexus-alert-vignette" class="nexus-alert-vignette" aria-hidden="true"></div>
         <div class="game-status-rail pointer-events-auto">
             <section class="game-faction-status game-faction-player cyber-panel" aria-label="Estado del Nexo aliado">
                 <div class="game-faction-heading">
