@@ -4424,10 +4424,12 @@ select {
   }
 }
 
-/* Red screen-edge warning when the player's Nexus takes damage; animates opacity only. */
+/* Red screen-edge warning when the player's Nexus takes damage; animates opacity only.
+   Sits between the 3D canvas (z-0) and the HUD (z-20). */
 .nexus-alert-vignette {
   position: absolute;
   inset: 0;
+  z-index: 10;
   pointer-events: none;
   opacity: 0;
   background: radial-gradient(ellipse at center, transparent 55%, rgba(239, 68, 68, 0.55) 100%);
