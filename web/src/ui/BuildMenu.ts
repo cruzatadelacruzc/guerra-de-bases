@@ -17,6 +17,16 @@ const BUILDING_COSTS: Record<BuildingType, number> = {
   turret: 125,
 };
 
+const TRAIN_UNIT_IDS: ReadonlySet<string> = new Set(['train-rifleman', 'train-tank']);
+
+/**
+ * Training orders are often repeated, so they keep the command drawer open;
+ * every other build action closes it (placement needs the battlefield).
+ */
+export function keepsControlsOpen(id: string): boolean {
+  return TRAIN_UNIT_IDS.has(id);
+}
+
 export class BuildMenu {
   readonly #root: ParentNode;
 

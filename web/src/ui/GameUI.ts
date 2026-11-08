@@ -5,7 +5,7 @@ import {
   mainMenuTemplate,
   pauseModalTemplate,
 } from './templates.ts';
-import { BuildMenu } from './BuildMenu.ts';
+import { BuildMenu, keepsControlsOpen } from './BuildMenu.ts';
 import { ControlsDrawer } from './ControlsDrawer.ts';
 import { GameHud } from './GameHud.ts';
 import { getRewardDefinitionForDifficulty, REWARD_DEFINITIONS } from '../game/rewardSystem.ts';
@@ -241,7 +241,7 @@ export class GameUI implements GameUiPort {
     }
     if (actions && this.#buildMenu?.dispatchAction(id, actions)) {
       event.stopPropagation();
-      this.#controls?.setExpanded(false);
+      if (!keepsControlsOpen(id)) this.#controls?.setExpanded(false);
     }
   };
 
