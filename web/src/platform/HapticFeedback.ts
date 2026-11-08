@@ -8,20 +8,32 @@ export interface HapticFeedback {
   strikeImpact(): void;
   /** Long pulse when a Nexus is destroyed. */
   nexusDestroyed(): void;
+  /** Two short pulses when the player's Nexus takes damage. */
+  nexusUnderAttack(): void;
 }
 
 export interface HapticFeedbackOptions {
   vibrate: VibrateFn;
   /** Milliseconds clock; injectable so throttling is testable. */
   now: () => number;
+  /** Delayed callback used for multi-pulse patterns; defaults to `setTimeout`. */
+  schedule?: (callback: () => void, delayMs: number) => void;
 }
 
 export const STRIKE_IMPACT_DURATION_MS = 60;
 /** Bombs land a few frames apart; without this gap they merge into one long buzz. */
 export const STRIKE_IMPACT_MIN_INTERVAL_MS = 90;
 export const NEXUS_DESTROYED_DURATION_MS = 400;
+export const NEXUS_ALERT_PULSE_MS = 70;
+export const NEXUS_ALERT_PULSE_GAP_MS = 140;
 
-export function createHapticFeedback({ vibrate, now }: HapticFeedbackOptions): HapticFeedback {
+export function createHapticFeedback({
+  vibrate,
+  now,
+  schedule = (callback, delayMs) => {
+    setTimeout(callback, delayMs);
+  }
+}: HapticFeedbackOptions): HapticFeedback {
   let lastStrikeAt = Number.NEGATIVE_INFINITY;
 
   const safeVibrate = (durationMs: number): void => {
@@ -42,6 +54,10 @@ export function createHapticFeedback({ vibrate, now }: HapticFeedbackOptions): H
     nexusDestroyed() {
       lastStrikeAt = now();
       safeVibrate(NEXUS_DESTROYED_DURATION_MS);
+    },
+    nexusUnderAttack() {
+      safeVibrate(NEXUS_ALERT_PULSE_MS);
+      schedule(() => safeVibrate(NEXUS_ALERT_PULSE_MS), NEXUS_ALERT_PULSE_GAP_MS);
     }
   };
 }

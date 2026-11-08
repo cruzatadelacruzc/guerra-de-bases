@@ -24,6 +24,7 @@ import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
 import { exceedsTapTolerance, GameInputController, isDoubleTap, type TapSample } from './game/GameInputController.ts';
 import { GameSession } from './game/GameSession.ts';
+import { createNexusDamageAlert } from './game/nexusDamageAlert.ts';
 import { createHapticFeedback, createPlatformVibrate } from './platform/HapticFeedback.ts';
 import {
     AIR_STRIKE_BOMB_OFFSETS,
@@ -131,6 +132,12 @@ interface SoundEffects {
     playRifleShot(): void;
     playHeavyCannon(): void;
     playCinematicExplosion(isNuclear?: boolean): void;
+    playShellWhistle(flightSeconds: number): void;
+    playJetFlyby(durationSeconds: number): void;
+    playAirRaidSiren(): void;
+    getNoiseBuffer(durationSeconds: number): AudioBuffer | null;
+    suspend(): void;
+    resume(): void;
 }
 
 interface UnlockEvent {
@@ -171,6 +178,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let playerUnitsLost = 0;
 
     const haptics = createHapticFeedback({ vibrate: createPlatformVibrate(), now: () => performance.now() });
+    const nexusDamageAlert = createNexusDamageAlert();
 
     const SFX: SoundEffects = {
         ctx: null,
@@ -226,19 +234,25 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             osc.start();
             osc.stop(this.ctx.currentTime + 0.28);
         },
-        playCinematicExplosion: function(isNuclear = false) {
-            if (!this.ctx) return;
-            const dur = isNuclear ? 3.8 : 0.8;
-            let buffer = this.noiseBuffers.get(dur);
+        getNoiseBuffer: function(durationSeconds: number) {
+            if (!this.ctx) return null;
+            let buffer = this.noiseBuffers.get(durationSeconds);
             if (!buffer) {
-                const bufferSize = this.ctx.sampleRate * dur;
+                const bufferSize = this.ctx.sampleRate * durationSeconds;
                 buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
                 const data = buffer.getChannelData(0);
                 for (let i = 0; i < bufferSize; i++) {
                     data[i] = Math.random() * 2 - 1;
                 }
-                this.noiseBuffers.set(dur, buffer);
+                this.noiseBuffers.set(durationSeconds, buffer);
             }
+            return buffer;
+        },
+        playCinematicExplosion: function(isNuclear = false) {
+            if (!this.ctx) return;
+            const dur = isNuclear ? 3.8 : 0.8;
+            const buffer = this.getNoiseBuffer(dur);
+            if (!buffer) return;
             const noise = this.ctx.createBufferSource();
             noise.buffer = buffer;
 
@@ -255,6 +269,84 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             filter.connect(gain);
             gain.connect(this.ctx.destination);
             noise.start();
+        },
+        /** Falling whistle over the last stretch of a shell's flight, ending on impact. */
+        playShellWhistle: function(flightSeconds: number) {
+            if (!this.ctx) return;
+            const impactAt = this.ctx.currentTime + flightSeconds;
+            const startAt = Math.max(this.ctx.currentTime, impactAt - 1.2);
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1800, startAt);
+            osc.frequency.exponentialRampToValueAtTime(350, impactAt);
+            gain.gain.setValueAtTime(0.001, startAt);
+            gain.gain.exponentialRampToValueAtTime(0.06, startAt + 0.1);
+            gain.gain.setValueAtTime(0.06, impactAt - 0.05);
+            gain.gain.exponentialRampToValueAtTime(0.001, impactAt);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(startAt);
+            osc.stop(impactAt);
+        },
+        /** Jet roar that swells as the aircraft passes overhead and drops in pitch (doppler). */
+        playJetFlyby: function(durationSeconds: number) {
+            if (!this.ctx) return;
+            const buffer = this.getNoiseBuffer(0.8);
+            if (!buffer) return;
+            const now = this.ctx.currentTime;
+            const end = now + durationSeconds;
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+            noise.loop = true;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.Q.value = 0.8;
+            filter.frequency.setValueAtTime(900, now);
+            filter.frequency.exponentialRampToValueAtTime(250, end);
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.001, now);
+            gain.gain.exponentialRampToValueAtTime(0.22, now + durationSeconds / 2);
+            gain.gain.exponentialRampToValueAtTime(0.001, end);
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            noise.start(now);
+            noise.stop(end);
+        },
+        /** Two rise-and-fall sweeps warning that an enemy strike is incoming. */
+        playAirRaidSiren: function() {
+            if (!this.ctx) return;
+            const now = this.ctx.currentTime;
+            const sweep = 1.2;
+            const end = now + sweep * 2;
+            const osc = this.ctx.createOscillator();
+            const filter = this.ctx.createBiquadFilter();
+            const gain = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.linearRampToValueAtTime(850, now + sweep / 2);
+            osc.frequency.linearRampToValueAtTime(400, now + sweep);
+            osc.frequency.linearRampToValueAtTime(850, now + sweep * 1.5);
+            osc.frequency.linearRampToValueAtTime(400, end);
+            filter.type = 'lowpass';
+            filter.frequency.value = 1200;
+            gain.gain.setValueAtTime(0.001, now);
+            gain.gain.exponentialRampToValueAtTime(0.1, now + 0.15);
+            gain.gain.setValueAtTime(0.1, end - 0.3);
+            gain.gain.exponentialRampToValueAtTime(0.001, end);
+            osc.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start(now);
+            osc.stop(end);
+        },
+        // Freezing the audio clock keeps scheduled whistles and engines in sync with a paused simulation.
+        suspend: function() {
+            if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
+        },
+        resume: function() {
+            if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
         }
     };
 
@@ -855,6 +947,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function startNewGame(settings = ui.getMissionSettings()) {
         SFX.init();
+        nexusDamageAlert.reset();
 
         aiDifficulty = settings.difficulty;
         cancelPlacement();
@@ -1004,9 +1097,11 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function togglePause() {
         if (session.pause()) {
+            SFX.suspend();
             ui.setPaused(true);
         } else if (session.resume()) {
             frameLoop?.resetDelta();
+            SFX.resume();
             ui.setPaused(false);
         }
     }
@@ -1843,6 +1938,11 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 ? undefined
                 : battleSimulation.world.getComponent(enemyHQ.ecsEntityId, ECS_COMPONENTS.health);
             if (playerHealth) {
+                if (nexusDamageAlert.report(playerHQ.hp, playerHealth.current, gameplayClockMs)) {
+                    ui.flashNexusAlert();
+                    showToast('¡NEXUS BAJO ATAQUE!');
+                    haptics.nexusUnderAttack();
+                }
                 playerHQ.hp = playerHealth.current;
                 playerHQ.maxHp = playerHealth.max;
             }
@@ -2195,6 +2295,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     scene.add(impact.projectile);
                     combatEffects.createExplosion(impact.origin, 0.3);
                     SFX.playHeavyCannon();
+                    SFX.playShellWhistle(ARTILLERY_SHELL_FLIGHT_SECONDS);
                 }
                 const flightProgress = Math.min(1, flightElapsed / ARTILLERY_SHELL_FLIGHT_SECONDS);
                 ballisticPoint(impact.origin, impact.point, impact.apexHeight, flightProgress, impact.projectile.position);
@@ -2273,6 +2374,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         aircraft.position.copy(start);
         orientAircraftAlongFlightPath(aircraft, start, end, 0);
         scene.add(aircraft);
+        SFX.playJetFlyby(AIR_STRIKE_FLIGHT_SECONDS);
 
         const bombs = AIR_STRIKE_BOMB_OFFSETS.map((offset) => {
             const mesh = new THREE.Mesh(
@@ -2440,6 +2542,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 showToast(id === 'artillery_strike'
                     ? 'Artillery Strike activado: impactos en camino.'
                     : 'Air Strike activado: avión cruzando el campo.');
+            } else {
+                SFX.playAirRaidSiren();
+                showToast('¡ALERTA! Ataque enemigo entrante');
             }
         }
         updateResourceUI();
