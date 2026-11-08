@@ -30,12 +30,13 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
                 <div class="menu-difficulty">
                     <div class="menu-difficulty-heading">
                         <span>DIFICULTAD ENEMIGA</span>
-                        <span id="difficulty-threat">AMENAZA: ESTÁNDAR</span>
+                        <!-- Starting gold stays in view while the rewards list (with gold costs) is open. -->
+                        <span class="menu-open-gold" aria-hidden="true">${uiIconMarkup('coin')}<b>200</b> ORO</span>
                     </div>
                     <div class="menu-difficulty-options" role="group" aria-label="Dificultad enemiga">
-                        <button type="button" data-difficulty="easy" aria-pressed="false">FÁCIL</button>
-                        <button type="button" data-difficulty="normal" aria-pressed="true">NORMAL</button>
-                        <button type="button" data-difficulty="hard" aria-pressed="false">PESADILLA</button>
+                        <button type="button" data-difficulty="easy" aria-pressed="false">${uiIconMarkup('smile')}<span>FÁCIL</span></button>
+                        <button type="button" data-difficulty="normal" aria-pressed="true">${uiIconMarkup('swords')}<span>NORMAL</span></button>
+                        <button type="button" data-difficulty="hard" aria-pressed="false">${uiIconMarkup('skull')}<span>PESADILLA</span></button>
                     </div>
                     <select id="select-difficulty" class="sr-only" tabindex="-1" aria-hidden="true">
                         <option value="easy">Fácil</option>

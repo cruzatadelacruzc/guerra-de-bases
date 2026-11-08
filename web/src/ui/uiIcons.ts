@@ -14,7 +14,10 @@ export type UiIconId =
   | 'double-down'
   | 'double-up'
   | 'replay'
-  | 'home';
+  | 'home'
+  | 'smile'
+  | 'swords'
+  | 'skull';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
@@ -43,6 +46,20 @@ const ICON_PATHS: Readonly<Record<UiIconId, readonly string[]>> = {
   'double-up': ['m5 19 7-6 7 6', 'm5 12 7-6 7 6'],
   replay: ['M4 4v5h5M4.6 9A8 8 0 1 1 4 14'],
   home: ['m3 11 9-8 9 8M5 10v10h5v-6h4v6h5V10'],
+  smile: [
+    'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
+    'M8 14s1.5 2 4 2 4-2 4-2',
+    'M9.8 9.5a.8.8 0 1 1-1.6 0 .8.8 0 0 1 1.6 0ZM15.8 9.5a.8.8 0 1 1-1.6 0 .8.8 0 0 1 1.6 0Z',
+  ],
+  swords: [
+    'M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2',
+    'M14.5 6.5 18 3h3v3l-3.5 3.5M5 14l4 4M7 17l-3 3M3 19l2 2',
+  ],
+  skull: [
+    'M12 3a8 8 0 0 0-8 8c0 2.6 1.3 4.6 3 5.8V20h10v-3.2c1.7-1.2 3-3.2 3-5.8a8 8 0 0 0-8-8Z',
+    'M10.5 11.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM16.5 11.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z',
+    'M10 20v-2M14 20v-2',
+  ],
 };
 
 function iconClass(className: string | undefined): string {

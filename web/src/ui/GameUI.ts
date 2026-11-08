@@ -252,12 +252,6 @@ export class GameUI implements GameUiPort {
     this.#root.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((button) => {
       button.setAttribute('aria-pressed', String(button.dataset.difficulty === value));
     });
-    const labels: Record<'easy' | 'normal' | 'hard', string> = {
-      easy: 'AMENAZA: BAJA',
-      normal: 'AMENAZA: ESTÁNDAR',
-      hard: 'AMENAZA: CRÍTICA',
-    };
-    this.#element<HTMLElement>('difficulty-threat').innerText = labels[value];
     const rulesContent = this.#root.querySelector<HTMLElement>('#mission-rules-content');
     if (rulesContent) {
       this.#renderMissionRules(value);
@@ -314,16 +308,20 @@ export class GameUI implements GameUiPort {
 
     const how = document.createElement('p');
     how.className = 'mission-rules-how';
-    const howCp = document.createElement('b');
-    howCp.textContent = 'CP';
-    const howCost = document.createElement('b');
-    howCost.textContent = 'CP + oro';
+    const highlight = (text: string, className: string): HTMLElement => {
+      const element = document.createElement('b');
+      element.className = className;
+      element.textContent = text;
+      return element;
+    };
     const howText = document.createElement('span');
     howText.append(
       'Elimina unidades y estructuras enemigas para ganar ',
-      howCp,
+      highlight('CP', 'is-cp'),
       '. Gasta ',
-      howCost,
+      highlight('CP', 'is-cp'),
+      ' + ',
+      highlight('oro', 'is-gold'),
       ' para lanzar el ataque cuando tú decidas.'
     );
     how.append(createUiIcon('bolt'), howText);

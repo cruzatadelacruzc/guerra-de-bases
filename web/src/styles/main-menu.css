@@ -12,6 +12,8 @@
   --reward-artillery: #fb923c;
   --reward-air: #38bdf8;
   --reward-shield: #34d399;
+  /* Combat points get their own electric violet so they never read as gold. */
+  --reward-cp: #a78bfa;
   --menu-gap: clamp(1.1rem, 3vh, 1.75rem);
   padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
     max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
@@ -103,6 +105,33 @@
   display: none;
 }
 
+.menu-open-gold {
+  display: none;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--menu-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.is-rewards-open .menu-open-gold {
+  display: inline-flex;
+}
+
+.menu-open-gold .ui-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  color: #facc15;
+  filter: drop-shadow(0 0 0.3rem rgba(250, 204, 21, 0.5));
+}
+
+.menu-open-gold b {
+  color: #facc15;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
 .menu-label {
   color: var(--menu-cyan);
   font-family: 'Orbitron', sans-serif;
@@ -170,17 +199,6 @@
   letter-spacing: 0.14em;
 }
 
-#difficulty-threat {
-  padding: 0.4rem 0.55rem;
-  color: var(--menu-cyan);
-  border: 1px solid var(--menu-line);
-  border-radius: 0.375rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-}
-
 .menu-difficulty-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -188,42 +206,64 @@
   margin-top: 0.7rem;
 }
 
+/* Each level has its own colour and icon, readable without the label:
+   green smile (easy), cyan swords (normal), red skull (nightmare). */
 .menu-difficulty-options button {
-  min-height: 2.9rem;
-  color: #8a99ab;
-  background: #0b1324;
-  border: 1px solid #334155;
+  --dc: #34d399;
+  display: flex;
+  min-height: 3.5rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.25rem;
+  color: color-mix(in srgb, var(--dc) 80%, white);
+  background: color-mix(in srgb, var(--dc) 8%, #0b1324);
+  border: 1px solid color-mix(in srgb, var(--dc) 40%, transparent);
   border-radius: 0.25rem;
   font-family: 'Orbitron', sans-serif;
-  font-size: 0.64rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   cursor: pointer;
   touch-action: manipulation;
-  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.menu-difficulty-options button[data-difficulty="normal"] {
+  --dc: #22d3ee;
 }
 
 .menu-difficulty-options button[data-difficulty="hard"] {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.45);
+  --dc: #f87171;
+}
+
+.menu-difficulty-options .ui-icon {
+  width: 1.25rem;
+  height: 1.25rem;
 }
 
 .menu-difficulty-options button[aria-pressed="true"] {
-  color: #f0fdff;
-  background: #062a3a;
-  border: 2px solid #22d3ee;
-  box-shadow: 0 0 14px rgba(34, 211, 238, 0.25);
+  color: #fff;
+  background: color-mix(in srgb, var(--dc) 24%, #0b1324);
+  border: 2px solid var(--dc);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--dc) 35%, transparent);
 }
 
-.menu-difficulty-options button[data-difficulty="hard"][aria-pressed="true"] {
-  color: #fee2e2;
-  background: rgba(127, 29, 29, 0.4);
-  border-color: #f87171;
-  box-shadow: 0 0 14px rgba(248, 113, 113, 0.3);
+.menu-difficulty-options button[aria-pressed="true"] .ui-icon {
+  color: var(--dc);
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--dc) 70%, transparent));
 }
 
 .is-rewards-open .menu-difficulty-options button {
   min-height: 2.75rem;
+  gap: 0.15rem;
+  padding-block: 0.3rem;
+}
+
+.is-rewards-open .menu-difficulty-options .ui-icon {
+  width: 0.95rem;
+  height: 0.95rem;
 }
 
 /* ---------- Rewards accordion ---------- */
@@ -490,8 +530,15 @@
 }
 
 .mission-rules-how b {
-  color: var(--reward-gold-soft);
   font-weight: 700;
+}
+
+.mission-rules-how b.is-cp {
+  color: var(--reward-cp);
+}
+
+.mission-rules-how b.is-gold {
+  color: #facc15;
 }
 
 .mission-rules-how .ui-icon {
@@ -588,8 +635,8 @@
 }
 
 .mission-rules-cost .is-cp {
-  color: #1c1203;
-  background: var(--reward-gold);
+  color: #1e1033;
+  background: var(--reward-cp);
 }
 
 .mission-rules-cost .is-cp .ui-icon {
