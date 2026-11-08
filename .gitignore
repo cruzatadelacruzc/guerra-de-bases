@@ -12,3 +12,6 @@ android/captures/
 
 # Brainstorming mockups (superpowers visual companion)
 .superpowers/
+
+# Impeccable design-critique history (local only)
+.impeccable/
