@@ -213,6 +213,7 @@ export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolut
             <section class="game-over-hero">
                 <div class="game-over-insignia">
                     <div class="game-over-emblem-wrap">
+                        <span class="game-over-burst" aria-hidden="true"></span>
                         <div id="game-over-icon" class="game-over-emblem" aria-hidden="true">
                             <div class="game-over-emblem-inner">
                                 <!-- Defeat: the Nexus hexagon split along a fracture. -->
@@ -274,6 +275,7 @@ export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolut
                     <b class="game-over-stat-value" id="stat-enemy-hq-damage">0%</b>
                 </div>
                 <div class="game-over-progress"><span id="stat-enemy-hq-damage-bar"></span></div>
+                <p id="game-over-hint" class="game-over-hint" hidden></p>
             </section>
 
             <footer class="game-over-actions">

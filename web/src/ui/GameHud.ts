@@ -1,6 +1,7 @@
 import { getRewardDefinitionForDifficulty } from '../game/rewardSystem.ts';
 import type { GameOverSummary, RewardUiState } from './contracts.ts';
 import { CountUpAnimator, formatClockDuration, parseClockDuration, type CountUpTarget } from './countUp.ts';
+import { getRetryHint } from './gameOverHints.ts';
 import { createRewardIcon, getRewardCategory } from './rewardPresentation.ts';
 
 export class GameHud {
@@ -163,6 +164,10 @@ export class GameHud {
     this.#element<HTMLElement>('game-over-badge').innerText = values.badge;
     this.#element<HTMLElement>('game-over-title').innerText = values.title;
     this.#element<HTMLElement>('game-over-msg').innerText = values.message;
+    const hint = this.#element<HTMLElement>('game-over-hint');
+    const hintText = getRetryHint(isVictory, summary.enemyBaseDamagePercent);
+    hint.textContent = hintText ?? '';
+    hint.hidden = hintText === null;
 
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const damage = summary.enemyBaseDamagePercent;
