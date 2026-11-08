@@ -2574,26 +2574,72 @@ select {
   animation: game-over-core-pulse 2.6s ease-in-out infinite;
 }
 
-.game-over-blast-shape {
-  fill: url(#game-over-blast);
-  stroke: #ffe8ed;
+.game-over-icon-victory,
+.is-victory .game-over-icon-defeat {
+  display: none;
+}
+
+.is-victory .game-over-icon-victory {
+  display: block;
+}
+
+.game-over-icon-shape {
   stroke-linejoin: round;
-  stroke-width: 1.5;
+  stroke-width: 1.4;
 }
 
-.game-over-blast-crack {
+.game-over-icon-defeat .game-over-icon-shape {
+  fill: url(#game-over-defeat-fill);
+  stroke: #ffd6dd;
+}
+
+.game-over-icon-victory .game-over-icon-shape {
+  fill: url(#game-over-victory-fill);
+  stroke: #e6fdff;
+}
+
+.game-over-icon-detail,
+.game-over-icon-pole,
+.game-over-icon-base {
   fill: none;
-  stroke: #ffb4c1;
   stroke-linecap: round;
-  stroke-width: 1.5;
+  stroke-linejoin: round;
 }
 
-.is-victory .game-over-blast-shape {
-  fill: var(--result-color);
+.game-over-icon-detail {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1.6;
 }
 
-.is-victory .game-over-blast-crack {
-  stroke: #e1fdff;
+.game-over-icon-victory .game-over-icon-detail {
+  stroke: rgba(4, 47, 61, 0.75);
+  stroke-width: 2.2;
+}
+
+.game-over-icon-pole {
+  stroke: #e6fdff;
+  stroke-width: 2.4;
+}
+
+.game-over-icon-base {
+  fill: rgba(0, 229, 255, 0.16);
+  stroke: #4deeff;
+  stroke-width: 1.4;
+}
+
+.game-over-icon-spark {
+  fill: #ffb27a;
+}
+
+/* The two halves of the broken Nexus drift apart along the fracture. */
+.game-over-shard-left {
+  transform: translate(-2.6px, 1px) rotate(-6deg);
+  transform-origin: 24px 44px;
+}
+
+.game-over-shard-right {
+  transform: translate(2.6px, -1px) rotate(5deg);
+  transform-origin: 24px 44px;
 }
 
 .game-over-badge {
@@ -3944,6 +3990,96 @@ select {
 #game-over-modal .game-over-actions small {
   grid-column: 1 / -1;
   margin-top: 0.2cqh;
+}
+
+/* Result insignia: the badge hangs centred under the emblem like a medal
+   tag instead of floating over its top-right corner, where on short
+   landscape screens it covered most of the shrunken emblem. The insignia
+   is as wide as its widest child, so the badge stays inside the hero
+   column in both the centred (portrait) and left-aligned (landscape)
+   layouts. */
+#game-over-modal .game-over-insignia {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: clamp(0.6rem, 2.4cqh, 1.25rem);
+}
+
+#game-over-modal .game-over-insignia > .game-over-emblem-wrap {
+  margin-bottom: 0;
+}
+
+#game-over-modal .game-over-insignia > .game-over-badge {
+  position: relative;
+  z-index: 1;
+  top: auto;
+  right: auto;
+  margin-top: -0.95em;
+  padding: 0.38em 0.85em 0.34em;
+  border-radius: 0.2rem;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.55), 0 0 14px var(--result-glow);
+  clip-path: polygon(0.5em 0, calc(100% - 0.5em) 0, 100% 50%, calc(100% - 0.5em) 100%, 0.5em 100%, 0 50%);
+  animation: game-over-badge-stamp 520ms cubic-bezier(0.16, 1, 0.3, 1) 260ms both;
+}
+
+#game-over-modal .game-over-card.is-victory .game-over-badge {
+  color: #022c36;
+  background: #67f0ff;
+  border-color: #d5fcff;
+}
+
+#game-over-modal .game-over-emblem-inner {
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--result-color) 35%, transparent), transparent 70%),
+    linear-gradient(165deg, color-mix(in srgb, var(--result-color) 14%, #070b14), #070b14 72%);
+}
+
+#game-over-modal .game-over-emblem-inner svg {
+  width: 64%;
+  height: 64%;
+}
+
+#game-over-modal.is-victory {
+  background:
+    radial-gradient(ellipse at 50% 38%, rgba(0, 229, 255, 0.12), transparent 44%),
+    rgba(2, 7, 17, 0.96);
+}
+
+#game-over-modal.is-victory::after {
+  border-color: rgba(0, 229, 255, 0.5);
+  box-shadow:
+    inset 0 0 22px rgba(0, 229, 255, 0.1),
+    inset 0 0 90px rgba(0, 229, 255, 0.04);
+}
+
+@keyframes game-over-badge-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.7);
+    filter: blur(2px);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  /* The badge no longer overlaps the emblem, so the emblem can reclaim
+     the hero column's spare height instead of shrinking to ~60px. */
+  #game-over-modal .game-over-emblem-wrap {
+    width: clamp(3.25rem, 24cqh, 6.5rem);
+    height: clamp(3.25rem, 24cqh, 6.5rem);
+  }
+
+  #game-over-modal .game-over-insignia {
+    margin-bottom: 2.4cqh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #game-over-modal .game-over-insignia > .game-over-badge {
+    animation: none;
+  }
 }
 
 .menu-nav button > svg {

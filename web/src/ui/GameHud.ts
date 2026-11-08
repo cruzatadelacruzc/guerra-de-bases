@@ -123,7 +123,10 @@ export class GameHud {
 
   showGameOver(summary: GameOverSummary): void {
     const isVictory = summary.victory;
-    this.#element<HTMLElement>('game-over-modal').classList.remove('hidden');
+    const modal = this.#element<HTMLElement>('game-over-modal');
+    modal.classList.remove('hidden');
+    // The modal's frame and backdrop glow follow the result colour too.
+    modal.classList.toggle('is-victory', isVictory);
     const card = this.#element<HTMLElement>('game-over-card');
     card.classList.toggle('is-victory', isVictory);
     card.classList.toggle('is-defeat', !isVictory);

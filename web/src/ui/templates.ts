@@ -206,20 +206,38 @@ export const gameOverTemplate = `<div id="game-over-modal" class="hidden absolut
 
             <main class="game-over-body">
                 <section class="game-over-hero">
-                    <div class="game-over-emblem-wrap">
-                        <div id="game-over-icon" class="game-over-emblem" aria-hidden="true">
-                            <div class="game-over-emblem-inner">
-                                <svg viewBox="0 0 48 48" role="presentation">
-                                    <defs>
-                                        <linearGradient id="game-over-blast" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-                                            <stop stop-color="#ff1744" />
-                                            <stop offset=".5" stop-color="#ff5252" />
-                                            <stop offset="1" stop-color="#ff9100" />
-                                        </linearGradient>
-                                    </defs>
-                                    <path class="game-over-blast-shape" d="M24 2 28 17 44 14 32 25 46 36 30 33 27 46 21 32 7 40 16 26 2 20 18 19 24 2Z" />
-                                    <path class="game-over-blast-crack" d="m24 10-2 12-10 6m12-4 10 2 4 8" />
-                                </svg>
+                    <div class="game-over-insignia">
+                        <div class="game-over-emblem-wrap">
+                            <div id="game-over-icon" class="game-over-emblem" aria-hidden="true">
+                                <div class="game-over-emblem-inner">
+                                    <!-- Defeat: the Nexus hexagon split along a fracture. -->
+                                    <svg class="game-over-icon-defeat" viewBox="0 0 48 48" role="presentation">
+                                        <defs>
+                                            <linearGradient id="game-over-defeat-fill" x1="8" y1="6" x2="40" y2="42" gradientUnits="userSpaceOnUse">
+                                                <stop stop-color="#ff5a73" />
+                                                <stop offset=".55" stop-color="#e0153d" />
+                                                <stop offset="1" stop-color="#ff8a3d" />
+                                            </linearGradient>
+                                        </defs>
+                                        <path class="game-over-icon-shape game-over-shard-left" d="M24 4 6 14.5v19L24 44l-2.5-12 5.5-8.5-6.5-7.5L24 4Z" />
+                                        <path class="game-over-icon-shape game-over-shard-right" d="M24 4 42 14.5v19L24 44l-2.5-12 5.5-8.5-6.5-7.5L24 4Z" />
+                                        <path class="game-over-icon-spark" d="m35 3.5 4-1.5-1 4Zm-24 39.5-3.6 2.2.3-4.2Zm30.5-5 3.3.6-2.3 2.4Z" />
+                                    </svg>
+                                    <!-- Victory: a flag planted on the captured Nexus. -->
+                                    <svg class="game-over-icon-victory" viewBox="0 0 48 48" role="presentation">
+                                        <defs>
+                                            <linearGradient id="game-over-victory-fill" x1="16" y1="8" x2="38" y2="24" gradientUnits="userSpaceOnUse">
+                                                <stop stop-color="#e6fdff" />
+                                                <stop offset=".5" stop-color="#4deeff" />
+                                                <stop offset="1" stop-color="#0891b2" />
+                                            </linearGradient>
+                                        </defs>
+                                        <path class="game-over-icon-base" d="M7 39.5 14 35h20l7 4.5-7 4.5H14Z" />
+                                        <path class="game-over-icon-pole" d="M17 39V3.5" />
+                                        <path class="game-over-icon-shape" d="M17 5h25l-6 8 6 8H17Z" />
+                                        <path class="game-over-icon-detail" d="m22.5 10.5 4 3 4-3" />
+                                    </svg>
+                                </div>
                             </div>
                         </div>
                         <span class="game-over-badge" id="game-over-badge">CRÍTICO</span>
