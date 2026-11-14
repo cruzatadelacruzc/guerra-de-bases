@@ -21,7 +21,8 @@ import type {
     ProjectileImpact,
     WeaponFireEvent
 } from './game/ecs/systems.ts';
-import { DecisionClock } from './game/ai/DecisionClock.ts';
+import { EnemyAiController } from './game/ai/EnemyAiController.ts';
+import type { EnemyAiSnapshot, EnemyAiTurn } from './game/ai/enemyAi.ts';
 import { getEnemyAiProfile } from './game/ai/enemyAiProfile.ts';
 import { NEXUS_HEALTH, STRUCTURE_DEFINITIONS } from './game/definitions/structures.ts';
 import { GameFrameLoop } from './game/GameFrameLoop.ts';
@@ -449,18 +450,13 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let enemyShieldVisual: THREE.Mesh | null = null;
     const rewardCooldownMs = 15000;
 
-    // Enemy AI Satisfaction Thresholds
-    let aiTargetGenerators = 3;
-    let aiTargetBarracks = 2;
-    let aiTargetTurrets = 3;
-
     let stats: { soldiersTrained: number; buildingsConstructed: number; startTime: number } = {
         soldiersTrained: 0,
         buildingsConstructed: 0,
         startTime: 0
     };
 
-    let enemyAiClock: DecisionClock | null = null;
+    let enemyAi: EnemyAiController | null = null;
     let enemyAIEnabled = true;
     function showToast(msg: string) {
         ui.showToast(msg);
@@ -1040,7 +1036,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         stats.soldiersTrained = 0;
         stats.buildingsConstructed = 0;
         stats.startTime = Date.now();
-        enemyAiClock = new DecisionClock(getEnemyAiProfile(aiDifficulty).decisionIntervalSeconds);
         playerKillStreak = 0;
         enemyKillStreak = 0;
         playerUnitsDestroyed = 0;
@@ -1058,20 +1053,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         playerShieldVisual = null;
         enemyShieldVisual = null;
 
-        // Randomize enemy AI satisfaction thresholds based on difficulty
-        if (aiDifficulty === 'easy') {
-            aiTargetGenerators = 2 + Math.floor(Math.random() * 2);
-            aiTargetBarracks = 1 + Math.floor(Math.random() * 2);
-            aiTargetTurrets = 1 + Math.floor(Math.random() * 2);
-        } else if (aiDifficulty === 'normal') {
-            aiTargetGenerators = 3 + Math.floor(Math.random() * 2);
-            aiTargetBarracks = 2 + Math.floor(Math.random() * 2);
-            aiTargetTurrets = 2 + Math.floor(Math.random() * 3);
-        } else { // Hard
-            aiTargetGenerators = 4 + Math.floor(Math.random() * 2);
-            aiTargetBarracks = 3 + Math.floor(Math.random() * 2);
-            aiTargetTurrets = 4 + Math.floor(Math.random() * 3);
-        }
+        // A fresh enemy AI per match: its own decision clock and structure targets.
+        enemyAi = new EnemyAiController(getEnemyAiProfile(aiDifficulty), Math.random);
 
         updateResourceUI();
 
@@ -1692,72 +1675,65 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         enemyBuildings.push(newB);
     }
 
-    function updateEnemyAI(delta: number) {
-        if (!enemyAIEnabled) return;
-        if (diagnosticsEnabled) diagnosticsAiCalls++;
-        const enemyGens = enemyBuildings.filter(b => isBuildingKind(b, 'generator') && isBuildingAlive(b)).length;
+    /** What the enemy AI sees when it decides: plain data read from the ECS and match state. */
+    function buildEnemyAiSnapshot(simulation: BattleSimulation): EnemyAiSnapshot {
+        const factories = enemyBuildings.filter(isValidSoldierFactory);
+        const countAlive = (kind: BuildingType) =>
+            enemyBuildings.filter((building) => isBuildingKind(building, kind) && isBuildingAlive(building)).length;
+        return {
+            difficulty: aiDifficulty,
+            nowMs: gameplayClockMs,
+            gold: getFactionGold(ECS_FACTIONS.enemy),
+            structureCounts: {
+                generator: countAlive('generator'),
+                barracks: factories.length,
+                turret: countAlive('turret')
+            },
+            idleFactories: factories
+                .filter((barracks) =>
+                    !simulation.world.getComponent(barracks.ecsEntityId, ECS_COMPONENTS.production)?.order)
+                .map((barracks) => ({
+                    entity: barracks.ecsEntityId,
+                    position: { x: barracks.position.x, y: barracks.position.y, z: barracks.position.z }
+                })),
+            combatPoints: enemyCombatPoints,
+            rewardCooldownUntilMs: enemyRewardCooldownUntil,
+            shieldActive: isShieldActiveForFaction(ECS_FACTIONS.enemy),
+            validRewardTargetCount: getRewardTargetCandidates(ECS_FACTIONS.enemy).length,
+            nexusHealthRatio: enemyHQ && enemyHQ.maxHp > 0 ? enemyHQ.hp / enemyHQ.maxHp : 1
+        };
+    }
 
-        if (enemyAiClock?.advance(delta)) {
-            if (diagnosticsEnabled) diagnosticsAiDecisions++;
-
-            const enemyBarracks = enemyBuildings.filter(isValidSoldierFactory);
-            const enemyTurrets = enemyBuildings.filter(b => isBuildingKind(b, 'turret') && isBuildingAlive(b));
-
-            const hasReachedGenTarget = enemyGens >= aiTargetGenerators;
-            const hasReachedBarracksTarget = enemyBarracks.length >= aiTargetBarracks;
-            const hasReachedTurretTarget = enemyTurrets.length >= aiTargetTurrets;
-            const isFullySatisfied = hasReachedGenTarget && hasReachedBarracksTarget && hasReachedTurretTarget;
-
-            ui.setAiStatus(isFullySatisfied ? "BATALLÓN ACTIVO" : "CONSTRUYENDO");
-
-            // AI places random structures until satisfied
-            if (!hasReachedGenTarget
-                && getFactionGold(ECS_FACTIONS.enemy) >= getBuildingCost('generator') && Math.random() < 0.6) {
-                spendFactionGold(ECS_FACTIONS.enemy, getBuildingCost('generator'));
-                const rx = (Math.random() - 0.5) * 44;
-                const rz = -38 - Math.random() * 32;
-                spawnAIBuilding('generator', { x: rx, y: 0, z: rz });
-            } else if (!hasReachedBarracksTarget
-                && getFactionGold(ECS_FACTIONS.enemy) >= getBuildingCost('barracks') && Math.random() < 0.65) {
-                spendFactionGold(ECS_FACTIONS.enemy, getBuildingCost('barracks'));
-                const rx = (Math.random() - 0.5) * 40;
-                const rz = -25 - Math.random() * 30;
-                spawnAIBuilding('barracks', { x: rx, y: 0, z: rz });
-            } else if (!hasReachedTurretTarget
-                && getFactionGold(ECS_FACTIONS.enemy) >= getBuildingCost('turret') && Math.random() < 0.7) {
-                spendFactionGold(ECS_FACTIONS.enemy, getBuildingCost('turret'));
-                const rx = (Math.random() - 0.5) * 42;
-                const rz = -12 - Math.random() * 20;
-                spawnAIBuilding('turret', { x: rx, y: 0, z: rz });
-            }
-
-            const simulation = battleSimulation;
-            if (!simulation) return;
-            for (const barracks of enemyBarracks) {
-                if (simulation.world.getComponent(barracks.ecsEntityId, ECS_COMPONENTS.production)?.order) {
-                    continue;
+    /** Carries out the AI's orders through the same game functions every other caller uses. */
+    function executeEnemyAiTurn(turn: EnemyAiTurn, simulation: BattleSimulation): void {
+        ui.setAiStatus(turn.status === 'satisfied' ? "BATALLÓN ACTIVO" : "CONSTRUYENDO");
+        for (const command of turn.commands) {
+            if (command.type === 'build') {
+                if (spendFactionGold(ECS_FACTIONS.enemy, getBuildingCost(command.kind))) {
+                    spawnAIBuilding(command.kind, command.position);
                 }
-                const roll = Math.random();
-                const kind: UnitType | undefined = roll < 0.45
-                    ? (getFactionGold(ECS_FACTIONS.enemy) >= 180 ? 'tank' : undefined)
-                    : 'rifleman';
-                if (!kind) continue;
-
+            } else if (command.type === 'train') {
                 requestUnitProduction(
                     simulation.world,
-                    barracks.ecsEntityId,
+                    command.factory,
                     simulation.enemyBase,
-                    kind,
-                    {
-                        x: barracks.position.x + (Math.random() - 0.5) * 5,
-                        y: barracks.position.y,
-                        z: barracks.position.z + 3
-                    }
+                    command.unit,
+                    command.spawnPosition
                 );
+            } else {
+                activateRewardForFaction(ECS_FACTIONS.enemy, command.reward);
             }
-
-            maybeActivateEnemyReward();
         }
+    }
+
+    function updateEnemyAI(delta: number) {
+        const simulation = battleSimulation;
+        if (!enemyAIEnabled || !enemyAi || !simulation) return;
+        if (diagnosticsEnabled) diagnosticsAiCalls++;
+        const turn = enemyAi.update(delta, () => buildEnemyAiSnapshot(simulation));
+        if (!turn) return;
+        if (diagnosticsEnabled) diagnosticsAiDecisions++;
+        executeEnemyAiTurn(turn, simulation);
     }
 
     function createMushroomCloud(position: THREE.Vector3) {
@@ -2609,26 +2585,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function activatePlayerReward(id: RewardId): boolean {
         return session.state === 'PLAYING' && activateRewardForFaction(ECS_FACTIONS.player, id);
-    }
-
-    function maybeActivateEnemyReward(): void {
-        if (!battleSimulation || enemyRewardCooldownUntil > gameplayClockMs) return;
-        const enemyHealthRatio = enemyHQ && enemyHQ.maxHp > 0 ? enemyHQ.hp / enemyHQ.maxHp : 1;
-        const shieldThreshold = aiDifficulty === 'easy' ? 0.3 : aiDifficulty === 'normal' ? 0.55 : 0.75;
-        const options: RewardId[] = ['artillery_strike', 'air_strike', 'defensive_shield'];
-        const valid = options.filter((id) => {
-            if (id === 'defensive_shield' && enemyHealthRatio > shieldThreshold) return false;
-            return validateRewardForFaction(ECS_FACTIONS.enemy, id).accepted;
-        });
-        if (!valid.length) return;
-
-        const offensivePreference: RewardId[] = aiDifficulty === 'hard'
-            ? ['air_strike', 'artillery_strike', 'defensive_shield']
-            : aiDifficulty === 'normal'
-                ? ['artillery_strike', 'air_strike', 'defensive_shield']
-                : ['defensive_shield', 'artillery_strike', 'air_strike'];
-        const preferred = offensivePreference.find((id) => valid.includes(id));
-        if (preferred) activateRewardForFaction(ECS_FACTIONS.enemy, preferred);
     }
 
     function updateNexusShieldVisuals(): void {
