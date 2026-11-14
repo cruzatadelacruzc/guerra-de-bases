@@ -96,10 +96,21 @@ API de consola, en `window.__gameDiagnostics`:
 | `read(latest?)` | Resume los últimos `latest` fotogramas, o todos los guardados (hasta 3.600). Conserva las claves anteriores y añade las nuevas |
 | `reset()` | Vacía las muestras para medir solo lo que sigue |
 | `environment()` | GPU, WebGL, pixel ratio, viewport, antialias, sombras y tipo de puntero |
-| `runMatchScenario({ difficulty, warmupSeconds, durationSeconds })` | Partida real contra la IA, con el jugador inactivo |
+| `runMatchScenario({ difficulty, warmupSeconds, durationSeconds })` | Partida real contra la IA, con el jugador inactivo (25 s por defecto: en Normal, un jugador inactivo suele perder hacia los 35-40 s) |
 | `runCombatScenario({ barracksPerSide, warmupSeconds, durationSeconds })` | Combate simétrico guionizado: IA desactivada, oro ilimitado y producción continua de 3 soldados por cada tanque |
 | `runStressScenario(count, intervalMs)` | Escenario de estrés de explosiones existente |
 | `prepareRewardScenario(mode)` | Escenario de recompensas existente |
+
+Parámetros de experimento, solo junto a `?diagnostics=1`. No cambian nada sin el parámetro:
+
+| Parámetro | Efecto |
+|---|---|
+| `dpr=<0.25-3>` | Sustituye el límite del pixel ratio del renderer (por defecto 1,5 en táctil y 2 en escritorio), sin superar nunca el del dispositivo |
+| `shockwaves=0` | Las explosiones no crean ondas de choque |
+| `smoke=0` | Los incendios mantienen llamas y luz, pero no echan humo |
+| `scenario=combat` o `scenario=match` | Ejecuta ese escenario al cargar, sin panel en vivo, y deja el resultado fijo en pantalla con la configuración usada. Pensado para medir en un teléfono sin consola. El resultado también se escribe en la consola |
+
+Por ejemplo, `?diagnostics=1&scenario=combat&dpr=0.75&smoke=0`.
 
 Notas de medición:
 

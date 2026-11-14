@@ -61,6 +61,13 @@ interface FadingLight {
   intensity: number;
 }
 
+/** Development switches for measuring what each effect costs; everything is on by default. */
+export interface CombatEffectsOptions {
+  shockwaves?: boolean;
+  /** Fires keep their flames and light; only the smoke they give off is skipped. */
+  smoke?: boolean;
+}
+
 export interface CombatEffectStats {
   activeParticles: number;
   particleSlots: number;
@@ -83,6 +90,8 @@ const SMOKE_INTERVAL = 0.12;
 
 export class CombatEffects {
   #scene: THREE.Scene;
+  readonly #shockwavesEnabled: boolean;
+  readonly #smokeEnabled: boolean;
   #geometries: {
     particle: THREE.SphereGeometry;
     debris: THREE.BoxGeometry;
@@ -113,8 +122,10 @@ export class CombatEffects {
   #rotation = new THREE.Quaternion();
   #euler = new THREE.Euler();
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, options: CombatEffectsOptions = {}) {
     this.#scene = scene;
+    this.#shockwavesEnabled = options.shockwaves ?? true;
+    this.#smokeEnabled = options.smoke ?? true;
     this.#geometries = {
       particle: new THREE.SphereGeometry(1, 8, 8),
       debris: new THREE.BoxGeometry(1, 1, 1),
@@ -533,6 +544,7 @@ export class CombatEffects {
   }
 
   #emitSmoke(emitter: BurningEmitter): void {
+    if (!this.#smokeEnabled) return;
     this.#scratchPosition.copy(emitter.position);
     this.#scratchPosition.x += (Math.random() - 0.5) * 0.6 * emitter.scale;
     this.#scratchPosition.y += 0.8 * emitter.scale;
@@ -554,6 +566,7 @@ export class CombatEffects {
   }
 
   #addShockwave(position: THREE.Vector3, speed: number, opacity: number): void {
+    if (!this.#shockwavesEnabled) return;
     let shockwave = this.#shockwaveBatch.available.pop();
     if (!shockwave) {
       if (this.#shockwaveSlots >= MAX_SHOCKWAVE_MESHES) return;

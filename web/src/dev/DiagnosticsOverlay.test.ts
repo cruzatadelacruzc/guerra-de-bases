@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatDiagnosticsLines } from './DiagnosticsOverlay.ts';
+import { formatDiagnosticsLines, formatDiagnosticsResult } from './DiagnosticsOverlay.ts';
 
 test('the overlay lines cover frame time, CPU split, ECS systems, AI, GPU and entities', () => {
   const lines = formatDiagnosticsLines({
@@ -62,4 +62,11 @@ test('the overlay lines cover frame time, CPU split, ECS systems, AI, GPU and en
 test('missing metrics show a dash instead of a number', () => {
   const [first] = formatDiagnosticsLines({ fps: null });
   assert.equal(first, 'FPS – · fotograma – ms · p95 – ms');
+});
+
+test('a scenario result puts its heading above the usual lines', () => {
+  const reading = { fps: 30 };
+  const result = formatDiagnosticsResult(['RESULTADO · combate', 'dpr 0.75 · ondas no · humo sí'], reading);
+  assert.deepEqual(result.slice(0, 2), ['RESULTADO · combate', 'dpr 0.75 · ondas no · humo sí']);
+  assert.deepEqual(result.slice(2), formatDiagnosticsLines(reading));
 });

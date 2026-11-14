@@ -1,9 +1,23 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { CombatEffects } from './CombatEffects.ts';
+import { CombatEffects, type CombatEffectsOptions } from './CombatEffects.ts';
 import { InstancedSoldierRenderer } from './InstancedSoldierRenderer.ts';
 import { MapCameraController } from './MapCameraController.ts';
 import { ProjectilePool } from './ProjectilePool.ts';
+
+export interface RenderCoordinatorOptions {
+  /** Development override for the pixel ratio cap (1.5 on touch devices, 2 otherwise). */
+  maxPixelRatio?: number;
+  effects?: CombatEffectsOptions;
+}
+
+export function resolvePixelRatio(
+  devicePixelRatio: number,
+  isTouchDevice: boolean,
+  maxPixelRatio?: number
+): number {
+  return Math.min(devicePixelRatio, maxPixelRatio ?? (isTouchDevice ? 1.5 : 2));
+}
 
 export class ThreeRenderCoordinator {
   readonly scene: THREE.Scene;
@@ -16,13 +30,15 @@ export class ThreeRenderCoordinator {
   readonly effects: CombatEffects;
   readonly projectiles: ProjectilePool;
   readonly #container: HTMLElement;
+  readonly #maxPixelRatio: number | undefined;
   #disposed = false;
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: RenderCoordinatorOptions = {}) {
     this.#container = container;
+    this.#maxPixelRatio = options.maxPixelRatio;
     this.scene = new THREE.Scene();
     this.soldiers = new InstancedSoldierRenderer(this.scene);
-    this.effects = new CombatEffects(this.scene);
+    this.effects = new CombatEffects(this.scene, options.effects);
     this.projectiles = new ProjectilePool(this.scene);
     this.scene.background = new THREE.Color(0x050811);
     // Linear fog only fades the ground surrounding the map into the
@@ -45,7 +61,7 @@ export class ThreeRenderCoordinator {
       powerPreference: 'high-performance',
     });
     this.renderer.setSize(this.#viewportWidth, this.#viewportHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2));
+    this.renderer.setPixelRatio(resolvePixelRatio(window.devicePixelRatio, isTouchDevice, this.#maxPixelRatio));
     this.renderer.shadowMap.enabled = !isTouchDevice || this.#viewportWidth >= 900;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
@@ -112,7 +128,7 @@ export class ThreeRenderCoordinator {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(this.#viewportWidth, this.#viewportHeight);
     const isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouchDevice ? 1.5 : 2));
+    this.renderer.setPixelRatio(resolvePixelRatio(window.devicePixelRatio, isTouchDevice, this.#maxPixelRatio));
     this.renderer.shadowMap.enabled = !isTouchDevice || this.#viewportWidth >= 900;
     this.directionalLight.castShadow = this.renderer.shadowMap.enabled;
   };

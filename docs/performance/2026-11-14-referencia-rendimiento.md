@@ -212,6 +212,28 @@ El usuario observó **congelaciones breves** de la pantalla.
 - **El menú renderiza la escena 3D a pleno ritmo** (9 ms de render CPU, 48 FPS). `AGENTS.md` pide evitarlo; queda para las fases de render.
 - **Las 113 geometrías del menú no indican una fuga.** Verificado en el portátil con el perfil móvil emulado: tras tres partidas seguidas, volviendo al menú cada vez, el menú tuvo 80, 76, 71 y 38 geometrías. El pico dentro de cada partida fue 117-119. El valor del menú depende de qué objetos ya se han dibujado con el giro de la cámara.
 
+**Tercera tanda de lecturas (19:02-19:06, mismo teléfono, panel en vivo durante partidas normales, no el experimento de §9).** Condiciones aún preliminares:
+- batería al 31-32 %;
+- el icono de la barra de estado parece indicar ahorro de energía activo (sin confirmar);
+- el teléfono se conectaba al portátil en 10.132.51.103 sin acceso a internet.
+
+| Métrica | 19:03 (Centro de mando abierto) | 19:03 (Centro de mando abierto) | 19:06 (cerrado) | 19:02 (menú) |
+|---|---:|---:|---:|---:|
+| FPS | 14,1 | 13,0 | 20,1 | 59,1 |
+| Fotograma medio / p95 (ms) | 71,1 / 168,4 | 76,9 / 190,2 | 49,7 / 105,7 | 16,9 / 23,0 |
+| CPU total / render CPU (ms) | 22,79 / 17,73 | 21,10 / 16,33 | 13,52 / 9,56 | 5,08 / 4,99 |
+| Simulación (ms) / pasos fijos por fotograma | 1,47 / 1,9 | 1,66 / 2,0 | 0,94 / 1,5 | 0 / 0 |
+| IA: llamadas por fotograma / decisiones/s | 2,0 / 1,4 | 2,0 / 1,5 | 2,0 / 1,5 | — |
+| Draw calls / triángulos / geometrías | 111 / 20,5k / 144 | 84 / 15,2k / 105 | 70 / 19,3k / 196 | 31 / 1,3k / 95 |
+| Entidades / partículas / emisores | 35 / 189 / 10 de 12 | 37 / 164 / 12 de 12 | 31 / 194 / 11 de 12 | — |
+
+**Pista nueva: el Centro de mando abierto.** Con el panel de construcción desplegado, el render CPU fue de 16-18 ms, frente a 9,6 ms con el panel cerrado y una carga de entidades parecida.
+
+- **Verificado en el código:** el panel abierto (`.game-controls-content`) usa `backdrop-filter: blur(14-16px)` sobre el canvas WebGL. Los paneles de estado de los Nexos (`.game-faction-status`, `blur(10px)`) y el botón del panel (`blur(12px)`) también usan desenfoque y están siempre visibles durante la partida (`style.css`).
+- **Inferencia, sin medir:** desenfocar en cada fotograma un fondo que cambia sin parar es caro para la GPU de un móvil de entrada. Cuando la GPU va saturada, las llamadas WebGL esperan, y esa espera aparece como render CPU.
+- **Pendiente:** confirmarlo con una comparación controlada, la misma escena con y sin desenfoque. Lo que hay ahora son lecturas en vivo de escenas distintas.
+- **Al medir el experimento de §9 hay que mantener cerrado el Centro de mando** para que la interfaz no altere las comparaciones.
+
 **La doble ejecución de `updateEnemyAI` se confirma también en el dispositivo real** (2,0 llamadas por fotograma). Se corregirá en R2, en un cambio aislado con pruebas de los intervalos de decisión.
 
 ## 5. Lectura de los resultados
@@ -299,5 +321,27 @@ Repetición en R1: tres combates seguidos terminan con 105 geometrías (escritor
   - temperatura normal del dispositivo.
 
   Se compararán los resultados con las lecturas preliminares de §4.4.
+- **Experimento de cuello de botella en el Galaxy A05**, con las mismas condiciones. Responde si el teléfono va lento por resolución, por ondas de choque, por humo o por otra causa.
+  - **Cómo se mide:** cada fila es una URL que ejecuta el combate guionizado sola y deja el resultado fijo en el panel. Se repite tres veces y se guarda una captura de cada resultado.
+  - **Cómo se conecta el teléfono:** sin compartir conexión, al servidor del portátil por USB (`adb reverse tcp:5173 tcp:5173` y `http://localhost:5173/…`) o por una red Wi-Fi común.
+
+  | Prueba | URL (después de `/?diagnostics=1`) | Qué responde |
+  |---|---|---|
+  | Referencia | `&scenario=combat` | Punto de partida |
+  | Resolución 1,0 | `&scenario=combat&dpr=1` | ¿Pesa la resolución? |
+  | Resolución 0,75 | `&scenario=combat&dpr=0.75` | ¿Escala con los píxeles? |
+  | Sin ondas de choque | `&scenario=combat&shockwaves=0` | ¿Pesan las ondas? |
+  | Sin humo | `&scenario=combat&smoke=0` | ¿Pesa el humo? |
+  | Todo reducido | `&scenario=combat&dpr=0.75&shockwaves=0&smoke=0` | ¿Queda algo cuando se quita todo? |
+
+  **Lectura del resultado:**
+  - Si el fotograma baja casi en proporción a los píxeles, el cuello de botella es el relleno de píxeles de la GPU.
+  - Si baja mucho sin ondas o sin humo, es el sobredibujado de ese efecto.
+  - Si baja poco con todo reducido, queda por investigar: llamadas de dibujo (barras de vida y tanques no instanciados), luces dinámicas de los incendios y destellos, el desenfoque (`backdrop-filter`) de los paneles de la interfaz sobre el canvas (§4.4) o el propio navegador.
+  - En todas las pruebas: no tocar la pantalla y no abrir el Centro de mando.
+
+  Cualquier corrección será una fase aparte, con aprobación.
+
+  Comprobación de la herramienta (no es una medición): la URL "todo reducido" en el portátil con el perfil móvil emulado terminó con el resultado fijo esperado (dpr 0,75 → buffer 309×686, ondas no, humo no).
 - Repetir los escenarios en al menos un Android de gama baja y uno de gama media, con el build de producción en Capacitor. Requiere permitir el panel fuera de `DEV`, una decisión que queda abierta.
 - Una sesión de 10 minutos del escenario de combate para confirmar la ausencia de crecimiento de memoria.

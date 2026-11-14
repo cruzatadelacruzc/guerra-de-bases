@@ -46,13 +46,20 @@ export function formatDiagnosticsLines(reading: DiagnosticsReading): string[] {
   return lines;
 }
 
+/** A finished scenario: its heading (what ran, with which settings) above the usual lines. */
+export function formatDiagnosticsResult(heading: readonly string[], reading: DiagnosticsReading): string[] {
+  return [...heading, ...formatDiagnosticsLines(reading)];
+}
+
 /**
  * Development-only panel for `?diagnostics=1`, kept apart from the player HUD.
- * Tapping it toggles between the full panel and the FPS line.
+ * Tapping it toggles between the full panel and the FPS line. Once a scenario
+ * result is shown, it stays on screen so it can be captured.
  */
 export class DiagnosticsOverlay {
   readonly #element: HTMLElement;
   #compact = false;
+  #showingResult = false;
 
   constructor(parent: HTMLElement) {
     const element = document.createElement('div');
@@ -78,8 +85,19 @@ export class DiagnosticsOverlay {
   }
 
   show(reading: DiagnosticsReading): void {
+    if (this.#showingResult) return;
     const lines = formatDiagnosticsLines(reading);
     this.#element.textContent = this.#compact ? lines[0] : lines.join('\n');
+  }
+
+  showMessage(message: string): void {
+    if (this.#showingResult) return;
+    this.#element.textContent = message;
+  }
+
+  showResult(lines: readonly string[]): void {
+    this.#showingResult = true;
+    this.#element.textContent = lines.join('\n');
   }
 
   dispose(): void {

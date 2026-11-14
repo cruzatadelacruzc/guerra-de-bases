@@ -62,3 +62,35 @@ test('expired fire emitters stop spawning smoke and their effects stop updating'
   effects.dispose();
   assert.equal(scene.children.length, 0);
 });
+
+test('turning shockwaves off removes only the shockwave of an explosion', () => {
+  const scene = new THREE.Scene();
+  const withShockwave = new CombatEffects(scene);
+  const withoutShockwave = new CombatEffects(new THREE.Scene(), { shockwaves: false });
+  withShockwave.createExplosion(new THREE.Vector3(), 1);
+  withoutShockwave.createExplosion(new THREE.Vector3(), 1);
+
+  assert.equal(withShockwave.stats().activeShockwaves, 1);
+  assert.equal(withoutShockwave.stats().activeShockwaves, 0);
+  assert.equal(withoutShockwave.stats().activeParticles, withShockwave.stats().activeParticles);
+  assert.equal(withoutShockwave.stats().activeEmitters, 1);
+  assert.equal(withoutShockwave.stats().activeLights, withShockwave.stats().activeLights);
+});
+
+test('turning smoke off keeps fires burning but stops their smoke', () => {
+  const withSmoke = new CombatEffects(new THREE.Scene());
+  const withoutSmoke = new CombatEffects(new THREE.Scene(), { smoke: false });
+  withSmoke.createExplosion(new THREE.Vector3(), 1);
+  withoutSmoke.createExplosion(new THREE.Vector3(), 1);
+
+  // Past the explosion's own sparks and debris, while the fire is still burning.
+  for (let step = 0; step < 30; step++) {
+    withSmoke.update(0.1);
+    withoutSmoke.update(0.1);
+  }
+
+  assert.equal(withoutSmoke.stats().activeEmitters, 1);
+  assert.equal(withoutSmoke.stats().activeLights, withSmoke.stats().activeLights);
+  assert.ok(withSmoke.stats().activeParticles > 0);
+  assert.equal(withoutSmoke.stats().activeParticles, 0);
+});

@@ -62,7 +62,8 @@ import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createTerrainGrid } from './rendering/TerrainGrid.ts';
 import { apexHeightFor, ballisticPoint } from './rendering/ballisticArc.ts';
 import type { SoldierVisualHandle } from './rendering/InstancedSoldierRenderer.ts';
-import { DiagnosticsOverlay } from './dev/DiagnosticsOverlay.ts';
+import { DiagnosticsOverlay, formatDiagnosticsResult } from './dev/DiagnosticsOverlay.ts';
+import { parseDiagnosticsOptions } from './dev/diagnosticsOptions.ts';
 import { countEntities, createEntityCensus } from './dev/entityCensus.ts';
 import { MetricRing } from './dev/MetricRing.ts';
 
@@ -386,8 +387,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let menuUnits: THREE.Group[] = [];
     let ruinsAndCorpses: THREE.Group[] = [];
     const MAX_BATTLEFIELD_REMAINS = 64;
-    const diagnosticsParams = new URLSearchParams(window.location.search);
-    const diagnosticsEnabled = import.meta.env.DEV && diagnosticsParams.get('diagnostics') === '1';
+    const diagnosticsEnabled = import.meta.env.DEV
+        && new URLSearchParams(window.location.search).get('diagnostics') === '1';
+    const diagnosticsOptions = diagnosticsEnabled ? parseDiagnosticsOptions(window.location.search) : null;
     // About one minute of frames at 60 FPS, so a whole scenario fits in one summary.
     const diagnosticsSamples = diagnosticsEnabled ? new MetricRing(3600) : null;
     let diagnosticsPreviousFrame = 0;
@@ -503,7 +505,15 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     }
 
     function initEngine() {
-        renderCoordinator = new ThreeRenderCoordinator(ui.getCanvasContainer());
+        renderCoordinator = new ThreeRenderCoordinator(
+            ui.getCanvasContainer(),
+            diagnosticsOptions
+                ? {
+                    maxPixelRatio: diagnosticsOptions.maxPixelRatio,
+                    effects: { shockwaves: diagnosticsOptions.shockwaves, smoke: diagnosticsOptions.smoke }
+                }
+                : undefined
+        );
         scene = renderCoordinator.scene;
         camera = renderCoordinator.camera;
         renderer = renderCoordinator.renderer;
@@ -2946,7 +2956,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 memoryBytes: (performance as PerformanceWithMemory).memory?.usedJSHeapSize ?? null
             };
         };
-        if (diagnosticsParams.get('overlay') !== '0') {
+        // A scenario run keeps the live panel off so it measures like a console run.
+        if (diagnosticsOptions?.overlay && !diagnosticsOptions.scenario) {
             const overlay = new DiagnosticsOverlay(document.body);
             diagnosticsOverlay = overlay;
             // The overlay summarizes about the last two seconds so its own cost stays small.
@@ -2992,7 +3003,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     overlay: diagnosticsOverlay !== null
                 };
             },
-            async runMatchScenario({ difficulty = 'normal', warmupSeconds = 5, durationSeconds = 60 } = {}) {
+            // 25 s by default: an idle player usually loses a Normal match within 35-40 s.
+            async runMatchScenario({ difficulty = 'normal', warmupSeconds = 5, durationSeconds = 25 } = {}) {
                 startNewGame({ difficulty, mode: 'ai' });
                 await waitSeconds(warmupSeconds);
                 resetSamples();
@@ -3181,6 +3193,40 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 return this.read();
             }
         };
+        const scenario = diagnosticsOptions?.scenario;
+        if (diagnosticsOptions && scenario) {
+            // `?scenario=` runs a scenario on load and leaves its result on screen, so a
+            // phone can be measured without a debugging console.
+            const overlay = diagnosticsOverlay ?? new DiagnosticsOverlay(document.body);
+            diagnosticsOverlay = overlay;
+            const scenarioName = scenario === 'combat' ? 'combate' : 'partida (Normal)';
+            overlay.showMessage(`Midiendo ${scenarioName}… no toques la pantalla (unos 40 s)`);
+            const runScenario = async () => {
+                const diagnostics = window.__gameDiagnostics;
+                if (!diagnostics) return;
+                const reading = scenario === 'combat'
+                    ? await diagnostics.runCombatScenario()
+                    : await diagnostics.runMatchScenario();
+                const environment = diagnostics.environment();
+                const heading = [
+                    `RESULTADO · ${scenarioName} · ${reading.sampleCount ?? 0} fotogramas`,
+                    `Ajustes: dpr ${diagnosticsOptions.maxPixelRatio ?? 'por defecto'} → renderer `
+                        + `${environment.rendererPixelRatio} (${environment.drawingBuffer}) · `
+                        + `ondas ${diagnosticsOptions.shockwaves ? 'sí' : 'no'} · humo ${diagnosticsOptions.smoke ? 'sí' : 'no'}`,
+                    `GPU: ${environment.gpuRenderer}`
+                ];
+                if (scenario === 'match') {
+                    heading.push(`Nexo del jugador al final: ${reading.playerNexusHealth ?? 'partida terminada'}`);
+                }
+                overlay.showResult(formatDiagnosticsResult(heading, reading));
+                console.info('[diagnostics] result', JSON.stringify({ options: diagnosticsOptions, environment, reading }));
+            };
+            window.setTimeout(() => {
+                runScenario().catch((error: unknown) => {
+                    overlay.showResult([`El escenario falló: ${error instanceof Error ? error.message : String(error)}`]);
+                });
+            }, 1000);
+        }
     }
 
     let initialized = false;
