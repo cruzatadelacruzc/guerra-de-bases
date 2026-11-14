@@ -332,12 +332,13 @@ Repetición en R1: tres combates seguidos terminan con 105 geometrías (escritor
   | Resolución 0,75 | `&scenario=combat&dpr=0.75` | ¿Escala con los píxeles? |
   | Sin ondas de choque | `&scenario=combat&shockwaves=0` | ¿Pesan las ondas? |
   | Sin humo | `&scenario=combat&smoke=0` | ¿Pesa el humo? |
-  | Todo reducido | `&scenario=combat&dpr=0.75&shockwaves=0&smoke=0` | ¿Queda algo cuando se quita todo? |
+  | Sin desenfoque de la interfaz | `&scenario=combat&blur=0` | ¿Pesa el `backdrop-filter` de los paneles sobre el canvas? |
+  | Todo reducido | `&scenario=combat&dpr=0.75&shockwaves=0&smoke=0&blur=0` | ¿Queda algo cuando se quita todo? |
 
   **Lectura del resultado:**
   - Si el fotograma baja casi en proporción a los píxeles, el cuello de botella es el relleno de píxeles de la GPU.
-  - Si baja mucho sin ondas o sin humo, es el sobredibujado de ese efecto.
-  - Si baja poco con todo reducido, queda por investigar: llamadas de dibujo (barras de vida y tanques no instanciados), luces dinámicas de los incendios y destellos, el desenfoque (`backdrop-filter`) de los paneles de la interfaz sobre el canvas (§4.4) o el propio navegador.
+  - Si baja mucho sin ondas o sin humo, es el sobredibujado de ese efecto; si baja mucho sin desenfoque, es la composición de la interfaz sobre el canvas.
+  - Si baja poco con todo reducido, queda por investigar: llamadas de dibujo (barras de vida y tanques no instanciados), luces dinámicas de los incendios y destellos o el propio navegador.
   - En todas las pruebas: no tocar la pantalla y no abrir el Centro de mando.
 
   Cualquier corrección será una fase aparte, con aprobación.

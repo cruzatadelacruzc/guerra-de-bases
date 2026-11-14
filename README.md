@@ -108,6 +108,7 @@ Parámetros de experimento, solo junto a `?diagnostics=1`. No cambian nada sin e
 | `dpr=<0.25-3>` | Sustituye el límite del pixel ratio del renderer (por defecto 1,5 en táctil y 2 en escritorio), sin superar nunca el del dispositivo |
 | `shockwaves=0` | Las explosiones no crean ondas de choque |
 | `smoke=0` | Los incendios mantienen llamas y luz, pero no echan humo |
+| `blur=0` | Quita el desenfoque (`backdrop-filter`) de los paneles de la interfaz sobre el canvas. Se aplica con una hoja de estilo inyectada solo en diagnóstico; los estilos del juego no cambian |
 | `scenario=combat` o `scenario=match` | Ejecuta ese escenario al cargar, sin panel en vivo, y deja el resultado fijo en pantalla con la configuración usada. Pensado para medir en un teléfono sin consola. El resultado también se escribe en la consola |
 
 Por ejemplo, `?diagnostics=1&scenario=combat&dpr=0.75&smoke=0`.

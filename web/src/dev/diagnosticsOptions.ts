@@ -9,6 +9,8 @@ export interface DiagnosticsOptions {
   shockwaves: boolean;
   /** `smoke=0` keeps fires burning without their smoke. */
   smoke: boolean;
+  /** `blur=0` removes the UI's backdrop blur over the 3D canvas. */
+  blur: boolean;
   /** `scenario=combat|match` runs that scenario on load and shows its result in the panel. */
   scenario: DiagnosticsScenario | undefined;
 }
@@ -34,6 +36,7 @@ export function parseDiagnosticsOptions(search: string): DiagnosticsOptions {
     maxPixelRatio: readPixelRatio(params.get('dpr')),
     shockwaves: params.get('shockwaves') !== '0',
     smoke: params.get('smoke') !== '0',
+    blur: params.get('blur') !== '0',
     scenario: readScenario(params.get('scenario'))
   };
 }

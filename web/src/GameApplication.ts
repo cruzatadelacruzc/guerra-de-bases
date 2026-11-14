@@ -64,6 +64,7 @@ import { apexHeightFor, ballisticPoint } from './rendering/ballisticArc.ts';
 import type { SoldierVisualHandle } from './rendering/InstancedSoldierRenderer.ts';
 import { DiagnosticsOverlay, formatDiagnosticsResult } from './dev/DiagnosticsOverlay.ts';
 import { parseDiagnosticsOptions } from './dev/diagnosticsOptions.ts';
+import { disableBackdropBlur } from './dev/backdropBlur.ts';
 import { countEntities, createEntityCensus } from './dev/entityCensus.ts';
 import { MetricRing } from './dev/MetricRing.ts';
 
@@ -3193,6 +3194,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 return this.read();
             }
         };
+        if (diagnosticsOptions && !diagnosticsOptions.blur) disableBackdropBlur(document);
         const scenario = diagnosticsOptions?.scenario;
         if (diagnosticsOptions && scenario) {
             // `?scenario=` runs a scenario on load and leaves its result on screen, so a
@@ -3212,7 +3214,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     `RESULTADO · ${scenarioName} · ${reading.sampleCount ?? 0} fotogramas`,
                     `Ajustes: dpr ${diagnosticsOptions.maxPixelRatio ?? 'por defecto'} → renderer `
                         + `${environment.rendererPixelRatio} (${environment.drawingBuffer}) · `
-                        + `ondas ${diagnosticsOptions.shockwaves ? 'sí' : 'no'} · humo ${diagnosticsOptions.smoke ? 'sí' : 'no'}`,
+                        + `ondas ${diagnosticsOptions.shockwaves ? 'sí' : 'no'} · humo ${diagnosticsOptions.smoke ? 'sí' : 'no'} · `
+                        + `desenfoque ${diagnosticsOptions.blur ? 'sí' : 'no'}`,
                     `GPU: ${environment.gpuRenderer}`
                 ];
                 if (scenario === 'match') {
