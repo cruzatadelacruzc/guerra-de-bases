@@ -236,6 +236,44 @@ El usuario observó **congelaciones breves** de la pantalla.
 
 **La doble ejecución de `updateEnemyAI` se confirma también en el dispositivo real** (2,0 llamadas por fotograma). Se corregirá en R2, en un cambio aislado con pruebas de los intervalos de decisión.
 
+### 4.5 Experimento de cuello de botella en el Galaxy A05 (preliminar)
+
+El usuario ejecutó la matriz de §9 entre las 19:18 y las 19:29 con el combate guionizado (`scenario=combat`), cuyo resultado queda fijo en el panel.
+
+**Condiciones aún preliminares:**
+- una sola ejecución por prueba;
+- batería al 27-29 %, con el icono que parece de ahorro de energía;
+- conexión al portátil en 10.132.51.103;
+- modo desarrollo.
+
+Lo comprobado: GPU `ANGLE (ARM, Mali-G52 MC2, OpenGL ES 3.2)`, IA desactivada en el escenario y una carga similar en todas las pruebas (53-59 entidades y 185-203 draw calls).
+
+| Prueba | Buffer | Fotograma medio / p95 (ms) | FPS | CPU total (ms) | Render CPU (ms) | Simulación (ms) / pasos | Draw calls | Triángulos |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| Referencia (dpr 1,5) | 576×1044 | 53,3 / 110,8 | 18,8 | 23,47 | 18,45 | 1,63 / 1,5 | 194 | 25,6k |
+| `dpr=1` | 384×696 | 44,1 / 96,0 | 22,7 | 20,74 | 16,23 | 1,27 / 1,3 | 198 | 25,8k |
+| `dpr=0.75` | 288×522 | 38,6 / 79,3 | 25,9 | 18,67 | 14,55 | 1,13 / 1,1 | 203 | 26,2k |
+| `shockwaves=0` | 576×1044 | 55,6 / 115,5 | 18,0 | 23,91 | 18,55 | 1,73 / 1,6 | 195 | 25,3k |
+| `smoke=0` | 576×1044 | 55,2 / 105,8 | 18,1 | 23,63 | 18,25 | 1,80 / 1,6 | 190 | 16,7k |
+| `blur=0` | 576×1044 | 57,8 / 99,3 | 17,3 | 24,13 | 18,71 | 1,74 / 1,7 | 185 | 25,1k |
+| Todo reducido (dpr 0,75 sin ondas, humo ni desenfoque) | 288×522 | 34,5 / 60,1 | 28,9 | 16,67 | 13,16 | 0,89 / 1,0 | 191 | 16,2k |
+
+**Lectura (las magnitudes son de una sola ejecución; la dirección es lo fiable):**
+
+1. **Ondas de choque, humo y desenfoque no son el cuello de botella** en este escenario. Quitar cada uno deja el fotograma entre 53 y 58 ms, dentro de la variación entre pruebas. El humo sí reduce mucho los triángulos (25,6k → 16,7k) sin mejorar el tiempo.
+2. **La resolución pesa, pero no es la causa principal.**
+   - Con 2,25 veces menos píxeles (`dpr=1`), el fotograma baja un 17 %. Con 4 veces menos (`dpr=0.75`), baja un 28 %.
+   - Si el relleno de píxeles mandara, bajaría casi en proporción.
+   - Ajustando los tres puntos, queda un **coste fijo de unos 33-36 ms por fotograma** que no depende de la resolución.
+3. **Ese coste fijo coincide con las ~190-200 llamadas de dibujo**, que no cambian en ninguna prueba.
+   - Incluso con todo reducido, el render CPU sigue en 13 ms y el fotograma en 34,5 ms, justo por encima del presupuesto de 30 FPS (33,3 ms).
+   - El render CPU también baja con la resolución (18,5 → 14,6 ms). Indica que parte de ese tiempo es espera de la GPU, que bloquea las llamadas WebGL.
+   - **Inferencia, sin medir directamente:** el principal limitador en este teléfono es el coste por llamada de dibujo (CPU del navegador y del driver), con el relleno de píxeles como segundo factor.
+   - **Origen de esas llamadas (verificado en el código):** tanques, edificios y barras de vida usan mallas propias y no compartidas. Cada barra de vida son 3 mallas. Los soldados sí están instanciados (§5.3).
+4. **La simulación y la IA no son el problema:** 0,9-1,8 ms y 0,01 ms. Los más de 1 pasos fijos por fotograma son consecuencia de fotogramas largos, no su causa.
+
+**Siguiente comprobación posible**, sin hacer: un interruptor que oculte las barras de vida confirmaría directamente la hipótesis de las llamadas de dibujo. En este escenario hay unas 37 barras (tanques, edificios y Nexos), de 3 mallas cada una: hasta ~110 llamadas si todas están en cámara, menos con el recorte por cámara. Las correcciones que se derivan son trabajo de render y quedan fuera de las fases actuales: instanciar tanques, edificios y barras, y quizá una resolución adaptativa en móviles débiles.
+
 ## 5. Lectura de los resultados
 
 1. **Doble ejecución de la IA confirmada con datos.** 2,00 llamadas por fotograma y 1,40 decisiones/s en Normal frente a 0,71/s configuradas. Es la cifra que la fase 1 debe llevar a 1 llamada por fotograma y al intervalo que se acuerde.
