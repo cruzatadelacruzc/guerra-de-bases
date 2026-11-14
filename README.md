@@ -74,6 +74,40 @@ Smoke test de navegador: después de 13 segundos sin Barraca del jugador, había
 
 El bundle principal de producción mide 594,94 kB (154,41 kB gzip), por encima del umbral de aviso de 500 kB de Vite. El baseline era 679,45 kB (178,06 kB gzip): tree-shaking al importar directamente los módulos Three.js usados, en vez de exponer su namespace completo en `window`, redujo el bundle aproximadamente un 12,4 % (13,3 % gzip), pero no elimina el aviso. No se añadió división de código: la escena 3D es necesaria al iniciar la partida, y reducir este bundle no explica ni corrige el coste de render en tiempo de ejecución.
 
+### Panel de diagnóstico (`?diagnostics=1`)
+
+Solo existe en desarrollo (`npm run dev`). En el build de producción, Vite elimina el panel, los escenarios y el almacén de métricas. Al abrir el juego con `?diagnostics=1` aparece un panel separado del HUD, arriba a la izquierda. Al tocarlo alterna entre el panel completo y la línea de FPS. Con `&overlay=0` el panel no se crea, pero la API de consola sigue disponible; es lo recomendable para medir.
+
+El panel resume unos dos segundos recientes y muestra:
+
+- FPS y tiempo por fotograma;
+- reparto del trabajo de CPU: simulación (con pasos fijos por fotograma), IA, efectos, resto del gameplay y render;
+- tiempo de cada sistema ECS: consultas, objetivos, movimiento, armas, producción, recursos y proyectiles;
+- llamadas y decisiones de la IA;
+- draw calls, triángulos, geometrías y texturas;
+- entidades por tipo y facción;
+- partículas, emisores y memoria JS (cuando el navegador la expone).
+
+API de consola, en `window.__gameDiagnostics`:
+
+| Método | Uso |
+|---|---|
+| `read(latest?)` | Resume los últimos `latest` fotogramas, o todos los guardados (hasta 3.600). Conserva las claves anteriores y añade las nuevas |
+| `reset()` | Vacía las muestras para medir solo lo que sigue |
+| `environment()` | GPU, WebGL, pixel ratio, viewport, antialias, sombras y tipo de puntero |
+| `runMatchScenario({ difficulty, warmupSeconds, durationSeconds })` | Partida real contra la IA, con el jugador inactivo |
+| `runCombatScenario({ barracksPerSide, warmupSeconds, durationSeconds })` | Combate simétrico guionizado: IA desactivada, oro ilimitado y producción continua de 3 soldados por cada tanque |
+| `runStressScenario(count, intervalMs)` | Escenario de estrés de explosiones existente |
+| `prepareRewardScenario(mode)` | Escenario de recompensas existente |
+
+Notas de medición:
+
+- `renderMs` es el tiempo de CPU para enviar el fotograma, no el tiempo de GPU.
+- El tiempo por sistema ECS añade algunas lecturas de reloj por paso fijo dentro de `simulationMs`.
+- Sin el parámetro, la simulación no paga más que una comprobación vacía por fase.
+
+La medición de referencia de la versión actual está en [docs/performance/2026-11-14-referencia-rendimiento.md](./docs/performance/2026-11-14-referencia-rendimiento.md).
+
 ## Desarrollo y pruebas
 
 ```sh

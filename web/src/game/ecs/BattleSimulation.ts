@@ -45,6 +45,24 @@ const COLLIDER_QUERY = [
   COMPONENTS.health
 ] satisfies readonly ComponentName[];
 
+/** The parts of one fixed step, in the order they run. */
+export const SIMULATION_PHASES = [
+  'queries',
+  'targeting',
+  'movement',
+  'weapons',
+  'production',
+  'resources',
+  'projectiles'
+] as const;
+export type SimulationPhase = typeof SIMULATION_PHASES[number];
+
+/** Optional development timing hook; the simulation never reads what it records. */
+export interface SimulationProfiler {
+  now(): number;
+  record(phase: SimulationPhase, milliseconds: number): void;
+}
+
 export class BattleSimulation {
   readonly world: World;
   readonly playerBase: Entity;
@@ -65,16 +83,25 @@ export class BattleSimulation {
   #productionEvents: ProductionCompletedEvent[] = [];
   #projectileImpacts: ProjectileImpact[] = [];
   #generatedIncome: ResourceIncome = { player: 0, enemy: 0 };
+  readonly #profiler: SimulationProfiler | undefined;
+  #lastStepCount = 0;
 
   constructor(options: {
     enemyBaseIncome?: number;
     modifyDamage?: (target: Entity, damage: number) => number;
+    profiler?: SimulationProfiler;
   } = {}) {
     const battle = createInitialBattle(options.enemyBaseIncome);
     this.world = battle.world;
     this.playerBase = battle.playerBase;
     this.enemyBase = battle.enemyBase;
     this.#modifyDamage = options.modifyDamage ?? ((_target, damage) => damage);
+    this.#profiler = options.profiler;
+  }
+
+  /** Fixed steps run by the last `advance` call. */
+  get lastStepCount(): number {
+    return this.#lastStepCount;
   }
 
   advance(frameDeltaSeconds: number): void {
@@ -94,6 +121,7 @@ export class BattleSimulation {
     if (steps === MAX_STEPS_PER_FRAME && this.#accumulator >= FIXED_STEP_SECONDS) {
       this.#accumulator = 0;
     }
+    this.#lastStepCount = steps;
   }
 
   getTarget(entity: Entity): Entity | undefined {
@@ -118,7 +146,15 @@ export class BattleSimulation {
     return income;
   }
 
+  #lap(profiler: SimulationProfiler, phase: SimulationPhase, start: number): number {
+    const now = profiler.now();
+    profiler.record(phase, now - start);
+    return now;
+  }
+
   #advanceStep(deltaSeconds: number): void {
+    const profiler = this.#profiler;
+    let mark = profiler ? profiler.now() : 0;
     this.world.queryInto(this.#soldiers, SOLDIER_QUERY);
     this.world.queryInto(this.#candidates, TARGET_QUERY);
     this.world.queryInto(this.#weaponOwners, WEAPON_QUERY);
@@ -130,6 +166,7 @@ export class BattleSimulation {
       if (faction === 'player') this.#playerTargets.push(entity);
       else if (faction === 'enemy') this.#enemyTargets.push(entity);
     }
+    if (profiler) mark = this.#lap(profiler, 'queries', mark);
     this.#targets.clear();
 
     for (const soldier of this.#soldiers) {
@@ -168,6 +205,7 @@ export class BattleSimulation {
         if (targeting) targeting.target = target;
       }
     }
+    if (profiler) mark = this.#lap(profiler, 'targeting', mark);
 
     for (const soldier of this.#soldiers) {
       const target = this.#targets.get(soldier);
@@ -179,6 +217,7 @@ export class BattleSimulation {
         runMovementSystem(this.world, soldier, targetPosition, deltaSeconds, this.#obstacles);
       }
     }
+    if (profiler) mark = this.#lap(profiler, 'movement', mark);
 
     for (const weaponOwner of this.#weaponOwners) {
       const event = runWeaponSystem(
@@ -189,14 +228,17 @@ export class BattleSimulation {
       );
       if (event) this.#weaponEvents.push(event);
     }
+    if (profiler) mark = this.#lap(profiler, 'weapons', mark);
 
     runProductionSystem(this.world, deltaSeconds, this.#productionEvents, this.#factories);
+    if (profiler) mark = this.#lap(profiler, 'production', mark);
     const income = runResourceGenerationSystem(this.world, deltaSeconds, this.#generators, {
       player: this.playerBase,
       enemy: this.enemyBase
     });
     this.#generatedIncome.player += income.player;
     this.#generatedIncome.enemy += income.enemy;
+    if (profiler) mark = this.#lap(profiler, 'resources', mark);
     runProjectileSystem(
       this.world,
       deltaSeconds,
@@ -204,5 +246,6 @@ export class BattleSimulation {
       this.#projectiles,
       this.#modifyDamage
     );
+    if (profiler) this.#lap(profiler, 'projectiles', mark);
   }
 }

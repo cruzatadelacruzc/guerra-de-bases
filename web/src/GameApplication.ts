@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { COMPONENTS as ECS_COMPONENTS, FACTIONS as ECS_FACTIONS } from './game/ecs/components.ts';
 import type { Entity, Position } from './game/ecs/components.ts';
 import { BattleSimulation } from './game/ecs/BattleSimulation.ts';
+import type { SimulationPhase, SimulationProfiler } from './game/ecs/BattleSimulation.ts';
 import { visitCombatPositions } from './game/ecs/combatFocus.ts';
 import {
     createSoldierFactory,
@@ -60,6 +61,9 @@ import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createTerrainGrid } from './rendering/TerrainGrid.ts';
 import { apexHeightFor, ballisticPoint } from './rendering/ballisticArc.ts';
 import type { SoldierVisualHandle } from './rendering/InstancedSoldierRenderer.ts';
+import { DiagnosticsOverlay } from './dev/DiagnosticsOverlay.ts';
+import { countEntities, createEntityCensus } from './dev/entityCensus.ts';
+import { MetricRing } from './dev/MetricRing.ts';
 
 interface HealthBar {
     group: THREE.Group;
@@ -97,10 +101,6 @@ interface RuntimeProjectile {
     mesh: THREE.Mesh;
 }
 
-interface DiagnosticsSample {
-    [metric: string]: number;
-}
-
 interface AudioWindow extends Window {
     webkitAudioContext?: typeof AudioContext;
 }
@@ -110,11 +110,25 @@ interface PerformanceWithMemory extends Performance {
 }
 
 interface GameDiagnostics {
-    read(): Record<string, number | null>;
+    /** Summarizes the latest `latest` frames (every stored frame by default). */
+    read(latest?: number): Record<string, number | null>;
+    /** Forgets every stored frame so the next read covers only what follows. */
+    reset(): void;
+    environment(): Record<string, string | number | boolean>;
     runStressScenario(
         explosionCount?: number,
         intervalMs?: number
     ): Promise<Record<string, number | null>>;
+    runMatchScenario(options?: {
+        difficulty?: 'easy' | 'normal' | 'hard';
+        warmupSeconds?: number;
+        durationSeconds?: number;
+    }): Promise<Record<string, number | null>>;
+    runCombatScenario(options?: {
+        barracksPerSide?: number;
+        warmupSeconds?: number;
+        durationSeconds?: number;
+    }): Promise<Record<string, number | null>>;
     prepareRewardScenario(mode?: 'ready' | 'insufficient-gold' | 'no-target'): void;
 }
 
@@ -371,12 +385,36 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let menuUnits: THREE.Group[] = [];
     let ruinsAndCorpses: THREE.Group[] = [];
     const MAX_BATTLEFIELD_REMAINS = 64;
-    const diagnosticsEnabled = import.meta.env.DEV
-        && new URLSearchParams(window.location.search).get('diagnostics') === '1';
-    const diagnosticsSamples: DiagnosticsSample[] = [];
+    const diagnosticsParams = new URLSearchParams(window.location.search);
+    const diagnosticsEnabled = import.meta.env.DEV && diagnosticsParams.get('diagnostics') === '1';
+    // About one minute of frames at 60 FPS, so a whole scenario fits in one summary.
+    const diagnosticsSamples = diagnosticsEnabled ? new MetricRing(3600) : null;
     let diagnosticsPreviousFrame = 0;
     let diagnosticsSimulationMs = 0;
     let diagnosticsEffectsMs = 0;
+    let diagnosticsAiMs = 0;
+    let diagnosticsAiCalls = 0;
+    let diagnosticsAiDecisions = 0;
+    const diagnosticsPhaseMs = {
+        queries: 0,
+        targeting: 0,
+        movement: 0,
+        weapons: 0,
+        production: 0,
+        resources: 0,
+        projectiles: 0
+    } satisfies Record<SimulationPhase, number>;
+    const diagnosticsProfiler: SimulationProfiler | undefined = diagnosticsEnabled
+        ? {
+            now: () => performance.now(),
+            record: (phase, milliseconds) => {
+                diagnosticsPhaseMs[phase] += milliseconds;
+            }
+        }
+        : undefined;
+    let diagnosticsOverlay: DiagnosticsOverlay | null = null;
+    let diagnosticsOverlayRefresh: (() => void) | null = null;
+    let diagnosticsOverlayRefreshedAt = 0;
 
     // Economy & AI Targets
     let gold = 200;
@@ -1060,6 +1098,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         const enemyBaseIncome = getDifficultyProfile(aiDifficulty).enemyBaseIncome;
         battleSimulation = new BattleSimulation({
             enemyBaseIncome,
+            profiler: diagnosticsProfiler,
             modifyDamage: (target, amount) => {
                 const simulation = battleSimulation;
                 if (!simulation) return amount;
@@ -1637,6 +1676,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function updateEnemyAI(delta: number) {
         if (!enemyAIEnabled) return;
+        if (diagnosticsEnabled) diagnosticsAiCalls++;
         const enemyGens = enemyBuildings.filter(b => isBuildingKind(b, 'generator') && isBuildingAlive(b)).length;
 
         const decisionCooldown = aiDifficulty === 'easy' ? 2.5 : (aiDifficulty === 'normal' ? 1.4 : 0.7);
@@ -1644,6 +1684,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         enemyAITimer += delta;
         if (enemyAITimer > decisionCooldown) {
             enemyAITimer = 0;
+            if (diagnosticsEnabled) diagnosticsAiDecisions++;
 
             const enemyBarracks = enemyBuildings.filter(isValidSoldierFactory);
             const enemyTurrets = enemyBuildings.filter(b => isBuildingKind(b, 'turret') && isBuildingAlive(b));
@@ -2658,9 +2699,84 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         frameLoop?.stop();
     }
 
+    /** Runs one enemy AI update and, with diagnostics on, adds its cost to this frame. */
+    function runEnemyAIUpdate(delta: number): void {
+        if (!diagnosticsEnabled) {
+            updateEnemyAI(delta);
+            return;
+        }
+        const start = performance.now();
+        updateEnemyAI(delta);
+        diagnosticsAiMs += performance.now() - start;
+    }
+
+    function resetDiagnosticsFrame(): void {
+        diagnosticsSimulationMs = 0;
+        diagnosticsEffectsMs = 0;
+        diagnosticsAiMs = 0;
+        diagnosticsAiCalls = 0;
+        diagnosticsAiDecisions = 0;
+        diagnosticsPhaseMs.queries = 0;
+        diagnosticsPhaseMs.targeting = 0;
+        diagnosticsPhaseMs.movement = 0;
+        diagnosticsPhaseMs.weapons = 0;
+        diagnosticsPhaseMs.production = 0;
+        diagnosticsPhaseMs.resources = 0;
+        diagnosticsPhaseMs.projectiles = 0;
+    }
+
+    function recordDiagnosticsFrame(
+        ring: MetricRing,
+        now: number,
+        frameStart: number,
+        renderStart: number,
+        combatMs: number,
+        gameplayDeltaSeconds: number
+    ): void {
+        const effectStats = combatEffects.stats();
+        const projectileStats = projectilePool.stats();
+        ring.record('frameMs', now - diagnosticsPreviousFrame);
+        ring.record('workMs', now - frameStart);
+        ring.record('combatMs', combatMs);
+        ring.record('simulationMs', diagnosticsSimulationMs);
+        ring.record('simulationSteps', gameplayDeltaSeconds > 0 ? battleSimulation?.lastStepCount ?? 0 : 0);
+        ring.record('ecsQueriesMs', diagnosticsPhaseMs.queries);
+        ring.record('ecsTargetingMs', diagnosticsPhaseMs.targeting);
+        ring.record('ecsMovementMs', diagnosticsPhaseMs.movement);
+        ring.record('ecsWeaponsMs', diagnosticsPhaseMs.weapons);
+        ring.record('ecsProductionMs', diagnosticsPhaseMs.production);
+        ring.record('ecsResourcesMs', diagnosticsPhaseMs.resources);
+        ring.record('ecsProjectilesMs', diagnosticsPhaseMs.projectiles);
+        ring.record('aiMs', diagnosticsAiMs);
+        ring.record('aiCalls', diagnosticsAiCalls);
+        ring.record('aiDecisions', diagnosticsAiDecisions);
+        ring.record('gameplayDeltaSeconds', gameplayDeltaSeconds);
+        ring.record('effectsMs', diagnosticsEffectsMs);
+        // Gameplay work outside the simulation, AI and effects: visual sync, UI, rewards, camera.
+        ring.record('gameplayOtherMs', Math.max(
+            0,
+            combatMs - diagnosticsSimulationMs - diagnosticsAiMs - diagnosticsEffectsMs
+        ));
+        ring.record('renderMs', now - renderStart);
+        ring.record('drawCalls', renderer.info.render.calls);
+        ring.record('triangles', renderer.info.render.triangles);
+        ring.record('geometries', renderer.info.memory.geometries);
+        ring.record('textures', renderer.info.memory.textures);
+        ring.record('sceneObjects', scene.children.length);
+        ring.record('particles', effectStats.activeParticles);
+        ring.record('shockwaves', effectStats.activeShockwaves);
+        ring.record('emitters', effectStats.activeEmitters);
+        ring.record('projectiles', projectiles.length);
+        ring.record('cachedProjectiles', projectileStats.cached);
+        ring.record('soldiers', playerUnits.length + enemyUnits.length);
+        ring.record('playerSoldiers', playerUnits.length);
+        ring.record('enemySoldiers', enemyUnits.length);
+    }
+
     function animate({ deltaSeconds: delta, elapsedSeconds: time }: FrameTiming) {
         const frameStart = diagnosticsEnabled ? performance.now() : 0;
         let combatMs = 0;
+        if (diagnosticsEnabled) resetDiagnosticsFrame();
 
         if (session.state === 'MENU') {
             camera.position.x = Math.sin(time * 0.25) * 60;
@@ -2671,12 +2787,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             gameplayClockMs += delta * 1000;
             cameraController.update(delta);
             const combatStart = diagnosticsEnabled ? performance.now() : 0;
-            updateEnemyAI(delta);
+            runEnemyAIUpdate(delta);
             advanceBattleSimulation(delta, time);
             updateActiveArtillery(delta);
             updateActiveAirStrikes(delta);
             updateNexusShieldVisuals();
-            updateEnemyAI(delta);
+            runEnemyAIUpdate(delta);
             updateCombat(delta);
             if (gameplayClockMs - lastRewardUiUpdateMs >= 250) {
                 lastRewardUiUpdateMs = gameplayClockMs;
@@ -2689,107 +2805,248 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         const renderStart = diagnosticsEnabled ? performance.now() : 0;
         renderCoordinator.render(time);
-        if (diagnosticsEnabled) {
+        if (diagnosticsEnabled && diagnosticsSamples) {
             const now = performance.now();
             if (diagnosticsPreviousFrame > 0) {
-                const effectStats = combatEffects.stats();
-                const projectileStats = projectilePool.stats();
-                diagnosticsSamples.push({
-                    frameMs: now - diagnosticsPreviousFrame,
-                    workMs: now - frameStart,
+                recordDiagnosticsFrame(
+                    diagnosticsSamples,
+                    now,
+                    frameStart,
+                    renderStart,
                     combatMs,
-                    simulationMs: diagnosticsSimulationMs,
-                    effectsMs: diagnosticsEffectsMs,
-                    renderMs: now - renderStart,
-                    drawCalls: renderer.info.render.calls,
-                    geometries: renderer.info.memory.geometries,
-                    textures: renderer.info.memory.textures,
-                    sceneObjects: scene.children.length,
-                    particles: effectStats.activeParticles,
-                    particleSlots: effectStats.particleSlots,
-                    shockwaves: effectStats.activeShockwaves,
-                    emitters: effectStats.activeEmitters,
-                    effectGeometries: effectStats.geometries,
-                    effectMaterials: effectStats.materials,
-                    projectiles: projectiles.length,
-                    cachedProjectiles: projectileStats.cached,
-                    soldiers: playerUnits.length + enemyUnits.length,
-                    playerSoldiers: playerUnits.length,
-                    enemySoldiers: enemyUnits.length
-                });
-                if (diagnosticsSamples.length > 300) diagnosticsSamples.shift();
+                    session.state === 'PLAYING' ? delta : 0
+                );
             }
             diagnosticsPreviousFrame = now;
+            if (diagnosticsOverlayRefresh && now - diagnosticsOverlayRefreshedAt >= 500) {
+                diagnosticsOverlayRefreshedAt = now;
+                diagnosticsOverlayRefresh();
+            }
         }
     }
 
-    if (diagnosticsEnabled) {
+    if (diagnosticsEnabled && diagnosticsSamples) {
+        const samples = diagnosticsSamples;
+        const census = createEntityCensus();
+        const censusScratch: Entity[] = [];
+        const waitSeconds = (seconds: number) => new Promise<void>((resolve) => {
+            window.setTimeout(resolve, seconds * 1000);
+        });
+        const resetSamples = () => {
+            samples.clear();
+            diagnosticsPreviousFrame = 0;
+        };
+        const readDiagnostics = (latest?: number): Record<string, number | null> => {
+            const effectStats = combatEffects.stats();
+            const projectileStats = projectilePool.stats();
+            const average = (key: string) => samples.summary(key, latest).average;
+            const maximum = (key: string) => samples.summary(key, latest).maximum;
+            const lastOr = (key: string, fallback: number) => {
+                const summary = samples.summary(key, latest);
+                return summary.count > 0 ? summary.last : fallback;
+            };
+            const frame = samples.summary('frameMs', latest);
+            const gameplaySeconds = average('gameplayDeltaSeconds');
+            const simulation = battleSimulation;
+            if (simulation) countEntities(simulation.world, censusScratch, census);
+            const playerNexusHealth = simulation?.world
+                .getComponent(simulation.playerBase, ECS_COMPONENTS.health)?.current ?? null;
+            const rewardScenarioHealth = simulation
+                ? rewardScenarioBuildings.reduce((total, building) => total + (
+                    building.ecsEntityId === undefined
+                        ? 0
+                        : simulation.world.getComponent(
+                            building.ecsEntityId,
+                            ECS_COMPONENTS.health
+                        )?.current ?? 0
+                ), 0)
+                : null;
+            const factionCounts = (prefix: 'player' | 'enemy') => {
+                const counts = census[prefix];
+                return simulation
+                    ? {
+                        [`${prefix}Rifleman`]: counts.rifleman,
+                        [`${prefix}Tank`]: counts.tank,
+                        [`${prefix}Hq`]: counts.hq,
+                        [`${prefix}Generator`]: counts.generator,
+                        [`${prefix}Barracks`]: counts.barracks,
+                        [`${prefix}Turret`]: counts.turret
+                    }
+                    : {};
+            };
+            return {
+                sampleCount: frame.count,
+                frameMs: frame.average,
+                p95FrameMs: frame.p95,
+                maxFrameMs: frame.maximum,
+                fps: 1000 / Math.max(frame.average, 0.001),
+                workMs: average('workMs'),
+                p95WorkMs: samples.summary('workMs', latest).p95,
+                idleMs: Math.max(0, frame.average - average('workMs')),
+                combatMs: average('combatMs'),
+                simulationMs: average('simulationMs'),
+                simulationSteps: average('simulationSteps'),
+                ecsQueriesMs: average('ecsQueriesMs'),
+                ecsTargetingMs: average('ecsTargetingMs'),
+                ecsMovementMs: average('ecsMovementMs'),
+                ecsWeaponsMs: average('ecsWeaponsMs'),
+                ecsProductionMs: average('ecsProductionMs'),
+                ecsResourcesMs: average('ecsResourcesMs'),
+                ecsProjectilesMs: average('ecsProjectilesMs'),
+                aiMs: average('aiMs'),
+                maxAiMs: maximum('aiMs'),
+                aiCallsPerFrame: average('aiCalls'),
+                aiDecisionsPerSecond: gameplaySeconds > 0 ? average('aiDecisions') / gameplaySeconds : 0,
+                effectsMs: average('effectsMs'),
+                gameplayOtherMs: average('gameplayOtherMs'),
+                renderMs: average('renderMs'),
+                p95RenderMs: samples.summary('renderMs', latest).p95,
+                drawCalls: average('drawCalls'),
+                maxDrawCalls: maximum('drawCalls'),
+                triangles: average('triangles'),
+                maxTriangles: maximum('triangles'),
+                geometries: lastOr('geometries', renderer.info.memory.geometries),
+                textures: lastOr('textures', renderer.info.memory.textures),
+                maxGeometries: maximum('geometries'),
+                maxTextures: maximum('textures'),
+                sceneObjects: lastOr('sceneObjects', scene.children.length),
+                maxSceneObjects: maximum('sceneObjects'),
+                particles: effectStats.activeParticles,
+                maxParticles: maximum('particles'),
+                particleSlots: effectStats.particleSlots,
+                shockwaves: effectStats.activeShockwaves,
+                maxShockwaves: maximum('shockwaves'),
+                shockwaveSlots: effectStats.shockwaveSlots,
+                emitters: effectStats.activeEmitters,
+                maxEmitters: maximum('emitters'),
+                emitterSlots: effectStats.emitterSlots,
+                effectGeometries: effectStats.geometries,
+                effectMaterials: effectStats.materials,
+                projectiles: lastOr('projectiles', 0),
+                maxProjectiles: maximum('projectiles'),
+                cachedProjectiles: projectileStats.cached,
+                soldiers: lastOr('soldiers', 0),
+                maxSoldiers: maximum('soldiers'),
+                playerSoldiers: lastOr('playerSoldiers', playerUnits.length),
+                enemySoldiers: lastOr('enemySoldiers', enemyUnits.length),
+                ecsEntities: simulation ? census.total : null,
+                ecsProjectiles: simulation ? census.projectiles : null,
+                ...factionCounts('player'),
+                ...factionCounts('enemy'),
+                playerCombatPoints,
+                playerGold: getFactionGold(ECS_FACTIONS.player),
+                playerNexusHealth,
+                playerShieldRemainingMs: Math.max(0, defensiveShieldUntil - gameplayClockMs),
+                rewardScenarioHealth,
+                activeArtilleryStrikes: artilleryEffects.length,
+                activeAirStrikes: airStrikeEffects.length,
+                memoryBytes: (performance as PerformanceWithMemory).memory?.usedJSHeapSize ?? null
+            };
+        };
+        if (diagnosticsParams.get('overlay') !== '0') {
+            const overlay = new DiagnosticsOverlay(document.body);
+            diagnosticsOverlay = overlay;
+            // The overlay summarizes about the last two seconds so its own cost stays small.
+            diagnosticsOverlayRefresh = () => overlay.show(readDiagnostics(120));
+        }
+        /** A side's structure, built the way the enemy AI builds its own (scenario use only). */
+        const spawnScenarioStructure = (type: BuildingType, isPlayer: boolean, position: Position) => {
+            const mesh = instantiateBuildingMesh(type, isPlayer);
+            mesh.position.set(position.x, position.y, position.z);
+            const building: RuntimeStructure = {
+                mesh,
+                hp: 380,
+                maxHp: 380,
+                position: new THREE.Vector3(position.x, position.y, position.z),
+                type,
+                isPlayer,
+                healthBar: create3DHealthBar(isPlayer, type === 'turret' ? 2.8 : 2.5, 2.2)
+            };
+            const healthBar = building.healthBar;
+            if (healthBar) mesh.add(healthBar.group);
+            scene.add(mesh);
+            registerStructureTarget(building);
+            (isPlayer ? playerBuildings : enemyBuildings).push(building);
+        };
         window.__gameDiagnostics = {
-            read() {
-                const samples = diagnosticsSamples;
-                const effectStats = combatEffects.stats();
-                const projectileStats = projectilePool.stats();
-                const average = (key: string) => samples.reduce((sum, sample) => sum + sample[key], 0)
-                    / Math.max(1, samples.length);
-                const percentile = (key: string, ratio: number) => {
-                    const values = samples.map((sample) => sample[key]).sort((a, b) => a - b);
-                    return values[Math.min(values.length - 1, Math.floor(values.length * ratio))] || 0;
-                };
-                const maximum = (key: string) => samples.reduce((max, sample) => Math.max(max, sample[key]), 0);
-                const simulation = battleSimulation;
-                const playerNexusHealth = simulation?.world
-                    .getComponent(simulation.playerBase, ECS_COMPONENTS.health)?.current ?? null;
-                const rewardScenarioHealth = simulation
-                    ? rewardScenarioBuildings.reduce((total, building) => total + (
-                        building.ecsEntityId === undefined
-                            ? 0
-                            : simulation.world.getComponent(
-                                building.ecsEntityId,
-                                ECS_COMPONENTS.health
-                            )?.current ?? 0
-                    ), 0)
-                    : null;
+            read: readDiagnostics,
+            reset: resetSamples,
+            environment() {
+                const gl = renderer.getContext();
+                const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
                 return {
-                    sampleCount: samples.length,
-                    frameMs: average('frameMs'),
-                    p95FrameMs: percentile('frameMs', 0.95),
-                    fps: 1000 / Math.max(average('frameMs'), 0.001),
-                    workMs: average('workMs'),
-                    combatMs: average('combatMs'),
-                    simulationMs: average('simulationMs'),
-                    effectsMs: average('effectsMs'),
-                    renderMs: average('renderMs'),
-                    drawCalls: average('drawCalls'),
-                    geometries: samples.at(-1)?.geometries ?? renderer.info.memory.geometries,
-                    textures: samples.at(-1)?.textures ?? renderer.info.memory.textures,
-                    maxGeometries: maximum('geometries'),
-                    sceneObjects: samples.at(-1)?.sceneObjects ?? scene.children.length,
-                    maxSceneObjects: maximum('sceneObjects'),
-                    particles: effectStats.activeParticles,
-                    maxParticles: maximum('particles'),
-                    particleSlots: effectStats.particleSlots,
-                    shockwaves: effectStats.activeShockwaves,
-                    maxShockwaves: maximum('shockwaves'),
-                    shockwaveSlots: effectStats.shockwaveSlots,
-                    emitters: effectStats.activeEmitters,
-                    maxEmitters: maximum('emitters'),
-                    emitterSlots: effectStats.emitterSlots,
-                    effectGeometries: effectStats.geometries,
-                    effectMaterials: effectStats.materials,
-                    projectiles: samples.at(-1)?.projectiles ?? 0,
-                    cachedProjectiles: projectileStats.cached,
-                    soldiers: samples.at(-1)?.soldiers ?? 0,
-                    playerSoldiers: samples.at(-1)?.playerSoldiers ?? playerUnits.length,
-                    enemySoldiers: samples.at(-1)?.enemySoldiers ?? enemyUnits.length,
-                    playerCombatPoints,
-                    playerGold: getFactionGold(ECS_FACTIONS.player),
-                    playerNexusHealth,
-                    playerShieldRemainingMs: Math.max(0, defensiveShieldUntil - gameplayClockMs),
-                    rewardScenarioHealth,
-                    activeArtilleryStrikes: artilleryEffects.length,
-                    activeAirStrikes: airStrikeEffects.length,
-                    memoryBytes: (performance as PerformanceWithMemory).memory?.usedJSHeapSize ?? null
+                    userAgent: navigator.userAgent,
+                    gpuVendor: String(gl.getParameter(debugInfo ? debugInfo.UNMASKED_VENDOR_WEBGL : gl.VENDOR)),
+                    gpuRenderer: String(gl.getParameter(debugInfo ? debugInfo.UNMASKED_RENDERER_WEBGL : gl.RENDERER)),
+                    webgl: renderer.capabilities.isWebGL2 ? 'WebGL2' : 'WebGL1',
+                    devicePixelRatio: window.devicePixelRatio,
+                    rendererPixelRatio: renderer.getPixelRatio(),
+                    viewport: `${window.innerWidth}x${window.innerHeight}`,
+                    drawingBuffer: `${renderer.domElement.width}x${renderer.domElement.height}`,
+                    antialias: gl.getContextAttributes()?.antialias ?? false,
+                    shadows: renderer.shadowMap.enabled,
+                    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+                    overlay: diagnosticsOverlay !== null
                 };
+            },
+            async runMatchScenario({ difficulty = 'normal', warmupSeconds = 5, durationSeconds = 60 } = {}) {
+                startNewGame({ difficulty, mode: 'ai' });
+                await waitSeconds(warmupSeconds);
+                resetSamples();
+                await waitSeconds(durationSeconds);
+                return readDiagnostics();
+            },
+            async runCombatScenario({ barracksPerSide = 4, warmupSeconds = 10, durationSeconds = 30 } = {}) {
+                if (!Number.isInteger(barracksPerSide) || barracksPerSide < 1) {
+                    throw new RangeError('Combat scenario needs at least one barracks per side');
+                }
+                startNewGame({ difficulty: 'normal', mode: 'ai' });
+                enemyAIEnabled = false;
+                const simulation = battleSimulation;
+                if (!simulation) throw new Error('The battle simulation was not initialized');
+                for (const base of [simulation.playerBase, simulation.enemyBase]) {
+                    const economy = simulation.world.getComponent(base, ECS_COMPONENTS.economy);
+                    if (!economy) throw new Error('Combat scenario requires initialized faction economies');
+                    economy.gold = 1_000_000;
+                }
+                // Mirrored layout: generators behind the Nexus, barracks in front of it, turrets ahead.
+                for (const isPlayer of [true, false]) {
+                    const side = isPlayer ? 1 : -1;
+                    for (const x of [-12, 12]) {
+                        spawnScenarioStructure('generator', isPlayer, { x, y: 0, z: side * 68 });
+                        spawnScenarioStructure('turret', isPlayer, { x, y: 0, z: side * 30 });
+                    }
+                    for (let index = 0; index < barracksPerSide; index++) {
+                        const x = (index - (barracksPerSide - 1) / 2) * 10;
+                        spawnScenarioStructure('barracks', isPlayer, { x, y: 0, z: side * 42 });
+                    }
+                }
+                // Keep every barracks busy: three riflemen for every tank.
+                let ordersPlaced = 0;
+                const feeder = window.setInterval(() => {
+                    if (session.state !== 'PLAYING' || battleSimulation !== simulation) return;
+                    for (const building of [...playerBuildings, ...enemyBuildings]) {
+                        if (!isValidSoldierFactory(building)) continue;
+                        if (simulation.world.getComponent(building.ecsEntityId, ECS_COMPONENTS.production)?.order) {
+                            continue;
+                        }
+                        const accepted = requestUnitProduction(
+                            simulation.world,
+                            building.ecsEntityId,
+                            building.isPlayer ? simulation.playerBase : simulation.enemyBase,
+                            ordersPlaced % 4 === 3 ? 'tank' : 'rifleman'
+                        ).accepted;
+                        if (accepted) ordersPlaced++;
+                    }
+                }, 250);
+                try {
+                    await waitSeconds(warmupSeconds);
+                    resetSamples();
+                    await waitSeconds(durationSeconds);
+                } finally {
+                    window.clearInterval(feeder);
+                }
+                return readDiagnostics();
             },
             prepareRewardScenario(mode = 'ready') {
                 if (session.state !== 'PLAYING' || !battleSimulation) {
@@ -2902,8 +3159,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 for (const event of simulation.drainProductionEvents()) createTroopVisual(event);
                 for (const factory of testFactories) simulation.world.removeEntity(factory);
                 for (const x of [-5, 0, 5]) spawnAIBuilding('turret', { x, y: 0, z: 0 });
-                diagnosticsSamples.length = 0;
-                diagnosticsPreviousFrame = 0;
+                resetSamples();
                 let explosionIndex = 0;
                 await new Promise((resolve) => {
                     const timer = window.setInterval(() => {
@@ -2965,6 +3221,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             frameLoop?.stop();
             inputController?.detach();
             renderCoordinator?.dispose();
+            diagnosticsOverlay?.dispose();
             for (const unsubscribe of unlockSubscriptions.splice(0)) unsubscribe();
         },
         get state() {
