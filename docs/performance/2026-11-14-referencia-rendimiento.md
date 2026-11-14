@@ -368,6 +368,44 @@ Repetición en R1: tres combates seguidos terminan con 105 geometrías (escritor
 - **Lección para próximas fases:** en esta máquina, los tiempos absolutos varían hasta un 2× entre ejecuciones. Para decidir si una fase mejora o empeora, las métricas estructurales son fiables; los tiempos requieren al menos tres ejecuciones con la máquina en reposo.
 - **Nota de juego, no de rendimiento:** en una partida de escritorio el jugador inactivo perdió antes de los 30 s (al final ya no quedaba simulación). En R0 las cuatro partidas medidas seguían vivas. La IA depende de `Math.random`, así que la duración varía entre partidas.
 
+### 8.2 R2 — IA fase 1 (una ejecución por fotograma y decisión pura)
+
+Cambio medido:
+- la IA enemiga se ejecuta **una vez por fotograma** con `DecisionClock`, a intervalos de 1,25 / 0,7 / 0,35 s;
+- decide en `game/ai/` con `decideEnemyTurn`;
+- el recuento de estructuras ya no se hace en cada fotograma, solo cuando decide.
+
+Misma batería de §6 y mismos perfiles. Carga media del portátil durante la medición: ~5 (§8.1).
+
+| Escenario · perfil | Métrica | R0 (1 / 2) | R2 (1 / 2) |
+|---|---|---:|---:|
+| Partida · escritorio | IA llamadas/fotograma · decisiones/s | 2,00 · 1,40 / 2,00 · 1,40 | 1,00 · 1,40 / 1,00 · 1,40 |
+| | IA media / máx. (ms) | 0,0325 / 4,8 · 0,0330 / 3,4 | 0,0300 / 4,4 · 0,0223 / 7,7 |
+| | Fotograma · CPU (ms) | 23,21 · 2,45 / 20,79 · 2,25 | 26,51 · 3,09 / 20,59 · 2,58 |
+| | Draw calls · geometrías máx. | 16,2 · 23 / 15,8 · 23 | 11,7 · 22 / 12,3 · 22 |
+| Partida · móvil emulado | IA llamadas/fotograma · decisiones/s | 2,00 · 1,40 / 2,00 · 1,40 | 1,00 · 1,40 / 1,00 · 1,40 |
+| | IA media / máx. (ms) | 0,0389 / 5,8 · 0,0385 / 3,2 | 0,0212 / 3,5 · 0,0239 / 9,7 |
+| | Fotograma · CPU (ms) | 18,64 · 2,04 / 21,63 · 2,36 | 22,95 · 2,33 / 17,86 · 2,10 |
+| Combate · escritorio (IA desactivada) | Fotograma · CPU (ms) | 28,65 · 11,27 / 28,77 · 10,84 | 33,80 · 13,94 / 31,35 · 12,28 |
+| | Draw calls · geometrías máx. | 208 · 328 / 200 · 315 | 208 · 322 / 211 · 323 |
+| Combate · móvil emulado (IA desactivada) | Fotograma · CPU (ms) | 29,02 · 13,28 / 37,67 · 19,21 | 27,74 · 10,88 / 32,24 · 15,01 |
+| | Draw calls · geometrías máx. | 198 · 309 / 217 · 325 | 211 · 331 / 191 · 331 |
+| Estrés · escritorio / móvil emulado (IA desactivada) | Fotograma (ms) · draw calls · geometrías | 25,46 · 46,1 · 52 / 20,50 · 44,9 · 51 | 29,10 · 46,5 · 52 / 29,55 · 45,3 · 51 |
+| Menú · escritorio / móvil emulado (sin IA) | Fotograma (ms) · draw calls | 18,20 · 84 / 16,86 · 46,6 | 27,03 · 84 / 17,93 · 47,1 |
+
+Repetición en R2: tres combates seguidos terminan con 101-105 geometrías (escritorio) y 90 (móvil emulado), y la partida nueva posterior vuelve a 22-23, igual que en R0 y R1.
+
+Comprobación por dificultad (móvil emulado, partida de 25 s, una ejecución): 1,00 llamadas por fotograma en las tres. Las decisiones por segundo fueron 0,80 (Fácil), 1,40 (Normal) y 2,84 (Difícil), frente a los intervalos de 1,25 / 0,7 / 0,35 s. La IA construyó generadores, barracas y torretas y entrenó tropas, sin errores de consola.
+
+**Conclusión:**
+
+- **Corrección verificada:** la IA pasa de 2 a 1 ejecución por fotograma en escritorio, en el móvil emulado y en las tres dificultades.
+- **El ritmo de decisión se conserva:** 1,40 decisiones/s en Normal, igual que en R0. El +2 % previsto por conservar el sobrante del acumulador (§6.4 del diseño) queda dentro de la resolución de la medición y no se observa.
+- **Sin cambios estructurales:** draw calls, geometrías, unidades y repetición sin crecimiento coinciden con R0.
+- **El coste medio de la IA baja** (de 0,033-0,039 a 0,021-0,030 ms), coherente con quitar la segunda llamada y el recuento por fotograma. **No se presenta como una mejora significativa:** es menos de 0,02 ms por fotograma y los tiempos de esta medición son ruidosos.
+- **Los picos de la IA (3-10 ms) siguen.** Corresponden a los turnos en que construye, porque la ejecución de la orden crea mallas dentro del tiempo medido de la IA (§5.2). La decisión ya no crea mallas, pero `spawnAIBuilding` sí, y sale de la IA con R4 (comandos compartidos).
+- **Los tiempos de fotograma y de CPU variaron hasta un 45 %** también en escenarios que R2 no toca (menú, combate y estrés, con la IA desactivada o ausente), con el portátil cargado. Esas variaciones son ruido de la máquina, no efecto de R2.
+
 ## 9. Próximos pasos de medición
 
 - **Referencia definitiva en el Samsung Galaxy A05 de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):

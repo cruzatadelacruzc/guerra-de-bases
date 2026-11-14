@@ -279,7 +279,7 @@ R5 puede adelantarse si se quiere medir recompensas en el banco antes de la fase
 
 | Hallazgo | Ubicación | Efecto |
 |---|---|---|
-| IA ejecutada dos veces por fotograma | `animate`, 2674 y 2679 | IA al doble del ritmo configurado (la corrige la fase 1) |
+| IA ejecutada dos veces por fotograma | `animate`, 2674 y 2679 | IA al doble del ritmo configurado. **Corregido en R2** (`df4d18d`): una llamada por fotograma con `DecisionClock` |
 | La limitación de 250 ms de la UI de recompensas queda anulada | `updateCombat` → `updateResourceUI` → `updateRewardUI` | Recorrido de objetivos y escrituras DOM en cada fotograma |
 | `veteran_armor` inalcanzable; desbloqueos sin disparadores | §4.6 | Código muerto y eventos sin efecto |
 | `README_UNLOCKS.md` desactualizado | Raíz del repo | Documentación que no coincide con el comportamiento |
