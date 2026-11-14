@@ -153,7 +153,7 @@ Las geometrías y los objetos vuelven al valor de una partida recién iniciada (
 
 Dos lecturas del panel tomadas por el usuario durante una partida normal en su teléfono, en Chrome para Android, apuntando al servidor de desarrollo del portátil. Cada lectura resume unos 2 s, no un escenario controlado. Se conservan para compararlas con las mediciones posteriores; **no sustituyen a la referencia definitiva** del dispositivo (§8).
 
-**Dispositivo:** Samsung, indicado por el usuario como "A5", con 6 GB de RAM, 128 GB de almacenamiento y Android 14. El nombre comercial exacto está por confirmar en Ajustes > Acerca del teléfono.
+**Dispositivo:** Samsung Galaxy A05 (gama de entrada), con 6 GB de RAM, 128 GB de almacenamiento y Android 14, según el usuario.
 
 **Condiciones que empeoran o distorsionan el resultado:**
 - batería al 5 %, con posible ahorro de energía;
@@ -237,12 +237,12 @@ Esta referencia se tomó automatizando esos pasos con `playwright-cli` (herramie
 
 ## 8. Próximos pasos de medición (no incluidos en R0)
 
-- **Referencia definitiva en el teléfono Samsung de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):
+- **Referencia definitiva en el Samsung Galaxy A05 de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):
   - batería suficiente;
   - ahorro de energía desactivado;
   - sin compartir conexión;
   - temperatura normal del dispositivo.
 
-  Se registrará el modelo exacto y se compararán los resultados con las lecturas preliminares de §4.4.
+  Se compararán los resultados con las lecturas preliminares de §4.4.
 - Repetir los escenarios en al menos un Android de gama baja y uno de gama media, con el build de producción en Capacitor. Requiere permitir el panel fuera de `DEV`, una decisión que queda abierta.
 - Una sesión de 10 minutos del escenario de combate para confirmar la ausencia de crecimiento de memoria.
