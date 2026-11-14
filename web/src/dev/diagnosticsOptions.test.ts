@@ -9,17 +9,19 @@ test('without extra parameters every effect is on and nothing runs by itself', (
     shockwaves: true,
     smoke: true,
     blur: true,
+    bars: true,
     scenario: undefined
   });
 });
 
 test('the measurement switches are read from the query string', () => {
-  assert.deepEqual(parseDiagnosticsOptions('?diagnostics=1&dpr=0.75&shockwaves=0&smoke=0&blur=0&scenario=combat&overlay=0'), {
+  assert.deepEqual(parseDiagnosticsOptions('?diagnostics=1&dpr=0.75&shockwaves=0&smoke=0&blur=0&bars=0&scenario=combat&overlay=0'), {
     overlay: false,
     maxPixelRatio: 0.75,
     shockwaves: false,
     smoke: false,
     blur: false,
+    bars: false,
     scenario: 'combat'
   });
   assert.equal(parseDiagnosticsOptions('?scenario=match').scenario, 'match');

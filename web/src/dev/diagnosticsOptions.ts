@@ -11,6 +11,8 @@ export interface DiagnosticsOptions {
   smoke: boolean;
   /** `blur=0` removes the UI's backdrop blur over the 3D canvas. */
   blur: boolean;
+  /** `bars=0` hides the per-entity health bars of tanks, structures and Nexuses (soldiers' are instanced). */
+  bars: boolean;
   /** `scenario=combat|match` runs that scenario on load and shows its result in the panel. */
   scenario: DiagnosticsScenario | undefined;
 }
@@ -37,6 +39,7 @@ export function parseDiagnosticsOptions(search: string): DiagnosticsOptions {
     shockwaves: params.get('shockwaves') !== '0',
     smoke: params.get('smoke') !== '0',
     blur: params.get('blur') !== '0',
+    bars: params.get('bars') !== '0',
     scenario: readScenario(params.get('scenario'))
   };
 }

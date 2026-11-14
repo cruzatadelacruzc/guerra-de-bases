@@ -488,6 +488,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         const fillMesh = new THREE.Mesh(fillGeo, fillMat);
         fillMesh.position.z = 0.01;
         barGroup.add(fillMesh);
+        // `bars=0` diagnostics: hidden bars cost no draw calls; health itself is untouched.
+        if (diagnosticsOptions && !diagnosticsOptions.bars) barGroup.visible = false;
 
         return {
             group: barGroup,
@@ -3215,7 +3217,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     `Ajustes: dpr ${diagnosticsOptions.maxPixelRatio ?? 'por defecto'} → renderer `
                         + `${environment.rendererPixelRatio} (${environment.drawingBuffer}) · `
                         + `ondas ${diagnosticsOptions.shockwaves ? 'sí' : 'no'} · humo ${diagnosticsOptions.smoke ? 'sí' : 'no'} · `
-                        + `desenfoque ${diagnosticsOptions.blur ? 'sí' : 'no'}`,
+                        + `desenfoque ${diagnosticsOptions.blur ? 'sí' : 'no'} · barras ${diagnosticsOptions.bars ? 'sí' : 'no'}`,
                     `GPU: ${environment.gpuRenderer}`
                 ];
                 if (scenario === 'match') {

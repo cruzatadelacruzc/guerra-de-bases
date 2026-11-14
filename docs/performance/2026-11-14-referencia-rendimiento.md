@@ -272,7 +272,25 @@ Lo comprobado: GPU `ANGLE (ARM, Mali-G52 MC2, OpenGL ES 3.2)`, IA desactivada en
    - **Origen de esas llamadas (verificado en el código):** tanques, edificios y barras de vida usan mallas propias y no compartidas. Cada barra de vida son 3 mallas. Los soldados sí están instanciados (§5.3).
 4. **La simulación y la IA no son el problema:** 0,9-1,8 ms y 0,01 ms. Los más de 1 pasos fijos por fotograma son consecuencia de fotogramas largos, no su causa.
 
-**Siguiente comprobación posible**, sin hacer: un interruptor que oculte las barras de vida confirmaría directamente la hipótesis de las llamadas de dibujo. En este escenario hay unas 37 barras (tanques, edificios y Nexos), de 3 mallas cada una: hasta ~110 llamadas si todas están en cámara, menos con el recorte por cámara. Las correcciones que se derivan son trabajo de render y quedan fuera de las fases actuales: instanciar tanques, edificios y barras, y quizá una resolución adaptativa en móviles débiles.
+**Comprobación con `bars=0` (19:41 y 19:43, misma sesión, una ejecución cada una, batería al 24-25 %):**
+
+| Prueba | Draw calls | Fotograma medio / p95 (ms) | CPU total (ms) | Render CPU (ms) | Entidades |
+|---|---:|---:|---:|---:|---:|
+| `dpr=0.75` con barras (§4.5) | 203 | 38,6 / 79,3 | 18,67 | 14,55 | 56 |
+| `dpr=0.75&bars=0` | 154 | 37,0 / 77,6 | 16,87 | 12,68 | 59 |
+| Referencia dpr 1,5 con barras (§4.5) | 194 | 53,3 / 110,8 | 23,47 | 18,45 | 54 |
+| `bars=0` (dpr 1,5) | 150 | 60,8 / 118,9 | 24,76 | 18,44 | 59 |
+
+**Conclusión del diagnóstico:**
+
+1. **La hipótesis de las llamadas de dibujo no se confirma como causa principal.** Quitar las barras elimina un 23-24 % de las llamadas, pero el fotograma no cambia de forma apreciable: −4 % a dpr 0,75, y un aumento dentro del ruido a dpr 1,5, con más entidades y menos batería. Cada llamada cuesta CPU (unos 40 µs, según la bajada de 1,9 ms del render CPU a dpr 0,75), pero no lo bastante para explicar el coste fijo.
+2. **Ningún interruptor aislado explica el coste fijo:** ni ondas, ni humo, ni desenfoque, ni barras. Solo la resolución mueve el fotograma de forma clara (−17 % y −28 %).
+3. **Interpretación más probable (inferencia):**
+   - el teléfono está limitado en conjunto por su CPU: el JavaScript ocupa 17-25 ms por fotograma, con el envío del render como mayor parte, incluso con todo reducido;
+   - el refresco de pantalla redondea los fotogramas a múltiplos de 16,7 ms, así que un trabajo de ~17-20 ms se convierte en fotogramas de 33 ms o más. Encaja con los ~34-38 ms observados en las configuraciones más ligeras;
+   - con la resolución por defecto, la GPU añade su parte.
+4. **Qué implica:** no hay una corrección única y barata. Mejorar el teléfono pediría varias reducciones a la vez en CPU y en render: menos objetos y llamadas en general (instanciar tanques y edificios), menos trabajo de JavaScript por fotograma (la UI se actualiza en cada fotograma, ver la auditoría) y quizá una resolución adaptativa en móviles débiles. Queda como trabajo de render pendiente, fuera de las fases actuales.
+5. **Decisión del usuario:** el diagnóstico queda cerrado sin un culpable único y se continúa con las fases R. En este escenario hay unas 37 barras (tanques, edificios y Nexos), de 3 mallas cada una: hasta ~110 llamadas si todas están en cámara, menos con el recorte por cámara. Las correcciones que se derivan son trabajo de render y quedan fuera de las fases actuales: instanciar tanques, edificios y barras, y quizá una resolución adaptativa en móviles débiles.
 
 ## 5. Lectura de los resultados
 
@@ -372,6 +390,12 @@ Repetición en R1: tres combates seguidos terminan con 105 geometrías (escritor
   | Sin humo | `&scenario=combat&smoke=0` | ¿Pesa el humo? |
   | Sin desenfoque de la interfaz | `&scenario=combat&blur=0` | ¿Pesa el `backdrop-filter` de los paneles sobre el canvas? |
   | Todo reducido | `&scenario=combat&dpr=0.75&shockwaves=0&smoke=0&blur=0` | ¿Queda algo cuando se quita todo? |
+  | Sin barras de vida | `&scenario=combat&bars=0` | ¿Pesan las llamadas de dibujo? (§4.5) |
+  | Resolución 0,75 sin barras | `&scenario=combat&dpr=0.75&bars=0` | ¿Cuánto queda del coste fijo con menos llamadas? |
+
+  **Comprobación de `bars=0` en el portátil** (perfil móvil emulado, combate guionizado, una ejecución): las llamadas de dibujo bajan de 205 a 157 (−23 %) y las geometrías de 316 a 235, con una carga parecida (54-57 entidades). El fotograma apenas cambia (25,3 → 24,5 ms), lo esperable en una máquina que no está limitada por llamadas.
+
+  **Cómo leerlo en el teléfono:** si `bars=0` reduce el fotograma de forma clara (del orden de una cuarta parte del coste fijo de ~33-36 ms), la hipótesis de las llamadas de dibujo queda confirmada. Si apenas cambia, hay que buscar el coste fijo en otra parte.
 
   **Lectura del resultado:**
   - Si el fotograma baja casi en proporción a los píxeles, el cuello de botella es el relleno de píxeles de la GPU.
