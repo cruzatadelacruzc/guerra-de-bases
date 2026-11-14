@@ -1,4 +1,5 @@
 import { uiIconMarkup } from './uiIcons.ts';
+import { NEXUS_HEALTH, STRUCTURE_DEFINITIONS } from '../game/definitions/structures.ts';
 
 export const canvasTemplate = `<!-- 3D Canvas Container -->
     <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
@@ -79,7 +80,7 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
             <section class="game-faction-status game-faction-player cyber-panel" aria-label="Estado del Nexo aliado">
                 <div class="game-faction-heading">
                     <span class="game-faction-name"><span class="game-faction-prefix">NEXO </span><b>ALIADO</b></span>
-                    <span id="player-hq-hp-text" class="game-hp-value">1200 / 1200 HP</span>
+                    <span id="player-hq-hp-text" class="game-hp-value">${NEXUS_HEALTH} / ${NEXUS_HEALTH} HP</span>
                 </div>
                 <div class="game-health-track"><div id="player-hq-bar" class="game-health-fill w-full"></div></div>
                 <div class="game-faction-meta">
@@ -98,7 +99,7 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
             <section class="game-faction-status game-faction-enemy cyber-panel-red" aria-label="Estado del Nexo enemigo">
                 <div class="game-faction-heading">
                     <span class="game-faction-name"><span class="game-faction-prefix">NEXO </span><b>HOSTIL</b></span>
-                    <span id="enemy-hq-hp-text" class="game-hp-value">1200 / 1200 HP</span>
+                    <span id="enemy-hq-hp-text" class="game-hp-value">${NEXUS_HEALTH} / ${NEXUS_HEALTH} HP</span>
                 </div>
                 <div class="game-health-track"><div id="enemy-hq-bar" class="game-health-fill w-full"></div></div>
                 <div class="game-faction-meta">
@@ -130,17 +131,17 @@ export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-
                     <button id="build-generator" class="cyber-button p-2.5 flex flex-col items-center min-w-[105px] text-left">
                         <span class="text-xs font-bold text-yellow-300">Generador</span>
                         <span class="text-[10px] text-slate-300">+12 Oro/sec</span>
-                        <span class="text-xs font-mono text-yellow-400 font-bold mt-1">⚡ 100 ORO</span>
+                        <span class="text-xs font-mono text-yellow-400 font-bold mt-1">⚡ ${STRUCTURE_DEFINITIONS.generator.cost} ORO</span>
                     </button>
                     <button id="build-barracks" class="cyber-button p-2.5 flex flex-col items-center min-w-[105px] text-left">
                         <span class="text-xs font-bold text-cyan-300">Barracas</span>
                         <span class="text-[10px] text-slate-300">Entrena Tropas</span>
-                        <span class="text-xs font-mono text-yellow-400 font-bold mt-1">⚡ 150 ORO</span>
+                        <span class="text-xs font-mono text-yellow-400 font-bold mt-1">⚡ ${STRUCTURE_DEFINITIONS.barracks.cost} ORO</span>
                     </button>
                     <button id="build-turret" class="cyber-button p-2.5 flex flex-col items-center min-w-[105px] text-left">
                         <span class="text-xs font-bold text-indigo-300">Torreta Láser</span>
                         <span class="text-[10px] text-slate-300">Defensa Base</span>
-                        <span class="text-xs font-mono text-yellow-400 font-bold mt-1">⚡ 125 ORO</span>
+                        <span class="text-xs font-mono text-yellow-400 font-bold mt-1">⚡ ${STRUCTURE_DEFINITIONS.turret.cost} ORO</span>
                     </button>
                     <button id="demolish-mode" class="cyber-button p-2.5 flex flex-col items-center min-w-[100px] text-left border-red-500/60 hover:border-red-400">
                         <span class="text-xs font-bold text-red-400">🗑️ Borrar / Vender</span>

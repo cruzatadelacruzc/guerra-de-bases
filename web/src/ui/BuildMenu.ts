@@ -4,17 +4,12 @@ import type {
   GameActions,
   UnitType
 } from './contracts.ts';
+import { STRUCTURE_DEFINITIONS } from '../game/definitions/structures.ts';
 
 const BUILDING_IDS: Record<BuildingType, string> = {
   generator: 'build-generator',
   barracks: 'build-barracks',
   turret: 'build-turret',
-};
-
-const BUILDING_COSTS: Record<BuildingType, number> = {
-  generator: 100,
-  barracks: 150,
-  turret: 125,
 };
 
 const TRAIN_UNIT_IDS: ReadonlySet<string> = new Set(['train-rifleman', 'train-tank']);
@@ -41,7 +36,7 @@ export class BuildMenu {
     production: readonly BarracksProductionView[]
   ): void {
     for (const type of Object.keys(BUILDING_IDS) as BuildingType[]) {
-      this.#button(BUILDING_IDS[type]).disabled = gold < BUILDING_COSTS[type];
+      this.#button(BUILDING_IDS[type]).disabled = gold < STRUCTURE_DEFINITIONS[type].cost;
     }
 
     const status = this.#element<HTMLElement>('barracks-status');

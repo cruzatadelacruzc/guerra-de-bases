@@ -1,8 +1,8 @@
 import { COMPONENTS, FACTIONS } from './components.ts';
 import type { Entity, Faction, Position, SoldierKind, Weapon } from './components.ts';
 import { World } from './World.ts';
+import { NEXUS_HEALTH, STRUCTURE_DEFINITIONS } from '../definitions/structures.ts';
 
-const BASE_HEALTH = 1200;
 const SOLDIER_SPEED = 8;
 const SOLDIER_RANGE = 14;
 export interface SoldierProductionDefinition {
@@ -94,7 +94,7 @@ export function createBase(
   world.addComponent(entity, COMPONENTS.targetable, true);
   world.addComponent(entity, COMPONENTS.faction, faction);
   world.addComponent(entity, COMPONENTS.transform, { ...position });
-  world.addComponent(entity, COMPONENTS.health, { current: BASE_HEALTH, max: BASE_HEALTH });
+  world.addComponent(entity, COMPONENTS.health, { current: NEXUS_HEALTH, max: NEXUS_HEALTH });
   world.addComponent(entity, COMPONENTS.economy, { gold: 200 });
   world.addComponent(entity, COMPONENTS.resourceGenerator, { incomePerSecond });
   return entity;
@@ -133,7 +133,7 @@ export function createSoldierFactory(
   world: World,
   faction: Faction,
   position: Position,
-  health = 380
+  health = STRUCTURE_DEFINITIONS.barracks.health
 ): Entity {
   const entity = createStructure(world, faction, position, health);
   world.addComponent(entity, COMPONENTS.building, { kind: 'barracks' });

@@ -21,6 +21,7 @@ import type {
     ProjectileImpact,
     WeaponFireEvent
 } from './game/ecs/systems.ts';
+import { NEXUS_HEALTH, STRUCTURE_DEFINITIONS } from './game/definitions/structures.ts';
 import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
 import { exceedsTapTolerance, GameInputController, isDoubleTap, type TapSample } from './game/GameInputController.ts';
@@ -1062,8 +1063,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         // Player Nexus (HQ)
         playerHQ = {
             mesh: createHQMesh(0x00f0ff),
-            hp: 1200,
-            maxHp: 1200,
+            hp: NEXUS_HEALTH,
+            maxHp: NEXUS_HEALTH,
             position: new THREE.Vector3(PLAYER_BASE_POSITION.x, PLAYER_BASE_POSITION.y, PLAYER_BASE_POSITION.z),
             type: 'hq',
             isPlayer: true
@@ -1080,8 +1081,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         // Enemy Nexus (HQ)
         enemyHQ = {
             mesh: createHQMesh(0xff3344),
-            hp: 1200,
-            maxHp: 1200,
+            hp: NEXUS_HEALTH,
+            maxHp: NEXUS_HEALTH,
             position: new THREE.Vector3(ENEMY_BASE_POSITION.x, ENEMY_BASE_POSITION.y, ENEMY_BASE_POSITION.z),
             type: 'hq',
             isPlayer: false
@@ -1364,8 +1365,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ui.setPlacementActive(false);
     }
 
-    function getBuildingCost(type: BuildingType | 'hq'): number {
-        return type === 'generator' ? 100 : (type === 'barracks' ? 150 : 125);
+    function getBuildingCost(type: BuildingType): number {
+        return STRUCTURE_DEFINITIONS[type].cost;
     }
 
     function onPointerMove(event: PointerEvent) {
@@ -1475,6 +1476,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 const buildingIndex = playerBuildings.findIndex(b => b.mesh === hitMesh);
                 if (buildingIndex !== -1) {
                     const b = playerBuildings[buildingIndex];
+                    // Only non-Nexus meshes are hit-tested above, so the Nexus never gets here.
+                    if (b.type === 'hq') return;
                     const refund = Math.floor(getBuildingCost(b.type) * 0.7);
                     creditFactionGold(ECS_FACTIONS.player, refund);
 
@@ -1520,8 +1523,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
                 const newB = {
                     mesh: realMesh,
-                    hp: 380,
-                    maxHp: 380,
+                    hp: STRUCTURE_DEFINITIONS[type].health,
+                    maxHp: STRUCTURE_DEFINITIONS[type].health,
                     position: pos.clone(),
                     type,
                     isPlayer: true,
@@ -1660,8 +1663,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         const newB = {
             mesh: mesh,
-            hp: 380,
-            maxHp: 380,
+            hp: STRUCTURE_DEFINITIONS[type].health,
+            maxHp: STRUCTURE_DEFINITIONS[type].health,
             position: new THREE.Vector3(position.x, position.y, position.z),
             type: type,
             isPlayer: false,
@@ -1698,20 +1701,20 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
             // AI places random structures until satisfied
             if (!hasReachedGenTarget
-                && getFactionGold(ECS_FACTIONS.enemy) >= 100 && Math.random() < 0.6) {
-                spendFactionGold(ECS_FACTIONS.enemy, 100);
+                && getFactionGold(ECS_FACTIONS.enemy) >= getBuildingCost('generator') && Math.random() < 0.6) {
+                spendFactionGold(ECS_FACTIONS.enemy, getBuildingCost('generator'));
                 const rx = (Math.random() - 0.5) * 44;
                 const rz = -38 - Math.random() * 32;
                 spawnAIBuilding('generator', { x: rx, y: 0, z: rz });
             } else if (!hasReachedBarracksTarget
-                && getFactionGold(ECS_FACTIONS.enemy) >= 150 && Math.random() < 0.65) {
-                spendFactionGold(ECS_FACTIONS.enemy, 150);
+                && getFactionGold(ECS_FACTIONS.enemy) >= getBuildingCost('barracks') && Math.random() < 0.65) {
+                spendFactionGold(ECS_FACTIONS.enemy, getBuildingCost('barracks'));
                 const rx = (Math.random() - 0.5) * 40;
                 const rz = -25 - Math.random() * 30;
                 spawnAIBuilding('barracks', { x: rx, y: 0, z: rz });
             } else if (!hasReachedTurretTarget
-                && getFactionGold(ECS_FACTIONS.enemy) >= 125 && Math.random() < 0.7) {
-                spendFactionGold(ECS_FACTIONS.enemy, 125);
+                && getFactionGold(ECS_FACTIONS.enemy) >= getBuildingCost('turret') && Math.random() < 0.7) {
+                spendFactionGold(ECS_FACTIONS.enemy, getBuildingCost('turret'));
                 const rx = (Math.random() - 0.5) * 42;
                 const rz = -12 - Math.random() * 20;
                 spawnAIBuilding('turret', { x: rx, y: 0, z: rz });
@@ -2955,8 +2958,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             mesh.position.set(position.x, position.y, position.z);
             const building: RuntimeStructure = {
                 mesh,
-                hp: 380,
-                maxHp: 380,
+                hp: STRUCTURE_DEFINITIONS[type].health,
+                maxHp: STRUCTURE_DEFINITIONS[type].health,
                 position: new THREE.Vector3(position.x, position.y, position.z),
                 type,
                 isPlayer,

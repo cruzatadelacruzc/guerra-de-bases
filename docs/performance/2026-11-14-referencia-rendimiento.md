@@ -151,7 +151,7 @@ Las geometrías y los objetos vuelven al valor de una partida recién iniciada (
 
 ### 4.4 Observación preliminar en un teléfono Android real (no es referencia definitiva)
 
-Dos lecturas del panel tomadas por el usuario durante una partida normal en su teléfono, en Chrome para Android, apuntando al servidor de desarrollo del portátil. Cada lectura resume unos 2 s, no un escenario controlado. Se conservan para compararlas con las mediciones posteriores; **no sustituyen a la referencia definitiva** del dispositivo (§8).
+Dos lecturas del panel tomadas por el usuario durante una partida normal en su teléfono, en Chrome para Android, apuntando al servidor de desarrollo del portátil. Cada lectura resume unos 2 s, no un escenario controlado. Se conservan para compararlas con las mediciones posteriores; **no sustituyen a la referencia definitiva** del dispositivo (§9).
 
 **Dispositivo:** Samsung Galaxy A05 (gama de entrada), con 6 GB de RAM, 128 GB de almacenamiento y Android 14, según el usuario.
 
@@ -186,6 +186,31 @@ El usuario observó **congelaciones breves** de la pantalla.
 - **El render CPU** (7-20 ms) es entre 5 y 10 veces el del portátil con escenas parecidas.
 - **Los emisores llegan a su tope** (12 de 12) en la lectura más lenta, que también es la de más draw calls (75).
 - **206 geometrías con solo 36 draw calls** sugieren muchos objetos vivos fuera de cámara, como restos y barras de vida. Hay que vigilarlo en sesiones largas; la prueba de repetición del portátil no mostró crecimiento.
+
+**Segunda tanda de lecturas (18:45, mismo teléfono, código de R1).** Condiciones también preliminares: batería al 23 % y el teléfono seguía compartiendo internet. Combates más grandes que en la primera tanda.
+
+| Métrica | Combate grande | Combate medio | Menú tras la partida |
+|---|---:|---:|---:|
+| FPS | 14,0 | 19,7 | 48,0 |
+| Fotograma medio / p95 (ms) | 71,7 / 156,3 | 50,7 / 117,1 | 20,8 / 33,6 |
+| CPU total (ms) | 18,38 | 12,58 | 9,10 |
+| Simulación (ms) / pasos fijos por fotograma | 1,84 / 1,9 | 1,10 / 1,5 | 0 / 0 |
+| IA (ms) / llamadas por fotograma / decisiones/s | 0,14 / 2,0 / 1,4 | 0,10 / 2,0 / 1,3 | — |
+| Efectos / resto gameplay / render CPU (ms) | 0,91 / 2,82 / 12,45 | 0,57 / 1,76 / 8,86 | 0 / 0 / 9,02 |
+| ECS: consultas · objetivos · movimiento · armas (ms) | 0,35 · 0,56 · 0,50 · 0,17 | 0,21 · 0,34 · 0,31 · 0,09 | — |
+| Draw calls / triángulos / geometrías | 85 / 18,1k / 185 | 71 / 16,9k / 183 | 67 / 3,4k / 113 |
+| Entidades / proyectiles | 44 / 8 | 35 / 3 | — |
+| Partículas / emisores | 224 de 260 / 12 de 12 | 223 de 248 / 12 de 12 | 0 de 267 / 0 de 12 |
+| Heap JS | 17,4 MB | 17,4 MB | 17,4 MB |
+
+**Lectura (inferencia salvo donde se indica):**
+
+- **El fotograma excede al trabajo de CPU en 38-53 ms.** Las capturas muestran grandes efectos semitransparentes que cubren buena parte de la pantalla (onda de choque amarilla y humo oscuro), con los emisores al tope (12 de 12).
+- **Hipótesis principal:** el teléfono está limitado por la GPU por el sobredibujado de esos efectos. No está verificado. Para confirmarlo haría falta comparar la misma escena variando el pixel ratio o desactivando efectos, una herramienta de diagnóstico que aún no existe.
+- **Picos de fotograma.** Con fotogramas de más de 100 ms (p95 de 117-156 ms), el tope de 0,1 s por fotograma y de 3 pasos fijos (verificado en `GameFrameLoop` y `BattleSimulation`) hace que la batalla avance más despacio que el tiempo real durante esos picos. Es coherente con las congelaciones percibidas.
+- **En la CPU del teléfono** la búsqueda de objetivos cuesta 0,56 ms con 44 entidades, frente a 0,23 ms con 54 en el portátil. Es unas 3 veces más lento por entidad, y el render CPU unas 5-8 veces.
+- **El menú renderiza la escena 3D a pleno ritmo** (9 ms de render CPU, 48 FPS). `AGENTS.md` pide evitarlo; queda para las fases de render.
+- **Las 113 geometrías del menú no indican una fuga.** Verificado en el portátil con el perfil móvil emulado: tras tres partidas seguidas, volviendo al menú cada vez, el menú tuvo 80, 76, 71 y 38 geometrías. El pico dentro de cada partida fue 117-119. El valor del menú depende de qué objetos ya se han dibujado con el giro de la cámara.
 
 **La doble ejecución de `updateEnemyAI` se confirma también en el dispositivo real** (2,0 llamadas por fotograma). Se corregirá en R2, en un cambio aislado con pruebas de los intervalos de decisión.
 
@@ -235,7 +260,37 @@ Esta referencia se tomó automatizando esos pasos con `playwright-cli` (herramie
 - **Medido en modo desarrollo.** Vite sin minificar y sin el build de producción, que es lo que ejecuta Capacitor. La referencia compara versiones entre sí en las mismas condiciones; no es un valor absoluto.
 - **Sesiones cortas.** No se han ejecutado sesiones de 10 minutos, pruebas térmicas ni cambios de orientación.
 
-## 8. Próximos pasos de medición (no incluidos en R0)
+## 8. Comparaciones posteriores
+
+### 8.1 R1 — tabla única de edificios
+
+Cambio medido: el coste y la vida de los edificios y del Nexo pasan a una tabla compartida (`game/definitions/structures.ts`). No cambia ningún valor. Se repitió la batería de §6 con los mismos perfiles. La única diferencia es que la partida mide 25 s, igual que la referencia final.
+
+| Escenario · perfil | Métrica | R0 (1 / 2) | R1 (1 / 2 / 3) |
+|---|---|---:|---:|
+| Combate · escritorio | Fotograma (ms) | 28,65 / 28,77 | 46,43 / 29,01 / 34,77 |
+| | CPU (ms) | 11,27 / 10,84 | 24,82 / 11,64 / 14,62 |
+| | Render CPU (ms) | 9,22 / 8,87 | 20,57 / 9,61 / 12,11 |
+| | Draw calls · geometrías máx. | 208 · 328 / 200 · 315 | 220 · 327 / 211 · 321 / 202 · 328 |
+| Combate · móvil emulado | Fotograma (ms) | 29,02 / 37,67 | 26,30 / 24,85 |
+| | CPU (ms) | 13,28 / 19,21 | 11,17 / 10,65 |
+| | Draw calls · geometrías máx. | 198 · 309 / 217 · 325 | 215 · 328 / 216 · 337 |
+| Partida · escritorio | Fotograma · CPU (ms) | 23,21 · 2,45 / 20,79 · 2,25 | 34,15 · 3,28 / 19,97 · 2,75 / 24,35 · 2,43 |
+| Partida · móvil emulado | Fotograma · CPU (ms) | 18,64 · 2,04 / 21,63 · 2,36 | 19,43 · 2,14 / 21,67 · 2,10 |
+| Partida · ambos perfiles | IA llamadas/fotograma · decisiones/s | 2,00 · 1,40 | 1,95-2,00 · 1,40-1,44 |
+| Estrés · escritorio / móvil emulado | Fotograma (ms) · draw calls · geometrías | 25,46 · 46,1 · 52 / 20,50 · 44,9 · 51 | 25,55 · 46,1 · 52 / 21,17 · 44,5 · 51 |
+
+Repetición en R1: tres combates seguidos terminan con 105 geometrías (escritorio) y 90-92 (móvil emulado), y la partida nueva posterior vuelve a 22-23, igual que en R0.
+
+**Conclusión:**
+
+- **Sin cambios atribuibles a R1.** Las métricas estructurales (draw calls, geometrías, unidades, llamadas y decisiones de la IA) coinciden con R0 dentro de la variación de la propia batalla.
+- **Los tiempos de escritorio tuvieron un valor atípico** en la primera ejecución de combate y de partida. Al repetirlas (ejecución 3) los valores quedaron cerca de R0. El portátil tenía una carga media de ~6 durante la medición.
+- **Por qué no puede ser R1:** el cambio solo sustituye constantes por la misma constante leída de una tabla, sin coste por fotograma.
+- **Lección para próximas fases:** en esta máquina, los tiempos absolutos varían hasta un 2× entre ejecuciones. Para decidir si una fase mejora o empeora, las métricas estructurales son fiables; los tiempos requieren al menos tres ejecuciones con la máquina en reposo.
+- **Nota de juego, no de rendimiento:** en una partida de escritorio el jugador inactivo perdió antes de los 30 s (al final ya no quedaba simulación). En R0 las cuatro partidas medidas seguían vivas. La IA depende de `Math.random`, así que la duración varía entre partidas.
+
+## 9. Próximos pasos de medición
 
 - **Referencia definitiva en el Samsung Galaxy A05 de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):
   - batería suficiente;
