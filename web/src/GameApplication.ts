@@ -21,6 +21,8 @@ import type {
     ProjectileImpact,
     WeaponFireEvent
 } from './game/ecs/systems.ts';
+import { DecisionClock } from './game/ai/DecisionClock.ts';
+import { getEnemyAiProfile } from './game/ai/enemyAiProfile.ts';
 import { NEXUS_HEALTH, STRUCTURE_DEFINITIONS } from './game/definitions/structures.ts';
 import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
@@ -458,7 +460,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         startTime: 0
     };
 
-    let enemyAITimer = 0;
+    let enemyAiClock: DecisionClock | null = null;
     let enemyAIEnabled = true;
     function showToast(msg: string) {
         ui.showToast(msg);
@@ -1038,7 +1040,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         stats.soldiersTrained = 0;
         stats.buildingsConstructed = 0;
         stats.startTime = Date.now();
-        enemyAITimer = 0;
+        enemyAiClock = new DecisionClock(getEnemyAiProfile(aiDifficulty).decisionIntervalSeconds);
         playerKillStreak = 0;
         enemyKillStreak = 0;
         playerUnitsDestroyed = 0;
@@ -1695,11 +1697,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         if (diagnosticsEnabled) diagnosticsAiCalls++;
         const enemyGens = enemyBuildings.filter(b => isBuildingKind(b, 'generator') && isBuildingAlive(b)).length;
 
-        const decisionCooldown = aiDifficulty === 'easy' ? 2.5 : (aiDifficulty === 'normal' ? 1.4 : 0.7);
-
-        enemyAITimer += delta;
-        if (enemyAITimer > decisionCooldown) {
-            enemyAITimer = 0;
+        if (enemyAiClock?.advance(delta)) {
             if (diagnosticsEnabled) diagnosticsAiDecisions++;
 
             const enemyBarracks = enemyBuildings.filter(isValidSoldierFactory);
@@ -2808,7 +2806,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             updateActiveArtillery(delta);
             updateActiveAirStrikes(delta);
             updateNexusShieldVisuals();
-            runEnemyAIUpdate(delta);
             updateCombat(delta);
             if (gameplayClockMs - lastRewardUiUpdateMs >= 250) {
                 lastRewardUiUpdateMs = gameplayClockMs;
