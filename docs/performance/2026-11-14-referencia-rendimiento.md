@@ -149,12 +149,13 @@ Valores medios por fotograma salvo que se indique "máx." o "p95". "CPU total" e
 
 Las geometrías y los objetos vuelven al valor de una partida recién iniciada (22-23 geometrías). El heap varía sin tendencia en tres repeticiones; para afirmar que no hay fugas de memoria JS harían falta sesiones de 10 minutos o más (`AGENTS.md` §7.1).
 
-### 4.4 Observación en un teléfono Android real (no comparable con las tablas anteriores)
+### 4.4 Observación preliminar en un teléfono Android real (no es referencia definitiva)
 
-Dos lecturas del panel tomadas por el usuario durante una partida normal en su teléfono, en Chrome para Android, apuntando al servidor de desarrollo del portátil. Cada lectura resume unos 2 s, no un escenario controlado.
+Dos lecturas del panel tomadas por el usuario durante una partida normal en su teléfono, en Chrome para Android, apuntando al servidor de desarrollo del portátil. Cada lectura resume unos 2 s, no un escenario controlado. Se conservan para compararlas con las mediciones posteriores; **no sustituyen a la referencia definitiva** del dispositivo (§8).
+
+**Dispositivo:** Samsung, indicado por el usuario como "A5", con 6 GB de RAM, 128 GB de almacenamiento y Android 14. El nombre comercial exacto está por confirmar en Ajustes > Acerca del teléfono.
 
 **Condiciones que empeoran o distorsionan el resultado:**
-- modelo del teléfono sin registrar;
 - batería al 5 %, con posible ahorro de energía;
 - el teléfono compartía internet con el portátil;
 - panel visible;
@@ -186,7 +187,7 @@ El usuario observó **congelaciones breves** de la pantalla.
 - **Los emisores llegan a su tope** (12 de 12) en la lectura más lenta, que también es la de más draw calls (75).
 - **206 geometrías con solo 36 draw calls** sugieren muchos objetos vivos fuera de cámara, como restos y barras de vida. Hay que vigilarlo en sesiones largas; la prueba de repetición del portátil no mostró crecimiento.
 
-Para que esta medición sea comparable hace falta repetir el procedimiento de §6 en ese teléfono, con batería suficiente y sin compartir internet, y registrar el modelo.
+**La doble ejecución de `updateEnemyAI` se confirma también en el dispositivo real** (2,0 llamadas por fotograma). Se corregirá en R2, en un cambio aislado con pruebas de los intervalos de decisión.
 
 ## 5. Lectura de los resultados
 
@@ -236,5 +237,12 @@ Esta referencia se tomó automatizando esos pasos con `playwright-cli` (herramie
 
 ## 8. Próximos pasos de medición (no incluidos en R0)
 
+- **Referencia definitiva en el teléfono Samsung de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):
+  - batería suficiente;
+  - ahorro de energía desactivado;
+  - sin compartir conexión;
+  - temperatura normal del dispositivo.
+
+  Se registrará el modelo exacto y se compararán los resultados con las lecturas preliminares de §4.4.
 - Repetir los escenarios en al menos un Android de gama baja y uno de gama media, con el build de producción en Capacitor. Requiere permitir el panel fuera de `DEV`, una decisión que queda abierta.
 - Una sesión de 10 minutos del escenario de combate para confirmar la ausencia de crecimiento de memoria.
