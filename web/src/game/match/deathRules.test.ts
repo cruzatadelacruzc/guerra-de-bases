@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createInitialBattle, createSoldier } from '../ecs/initialBattle.ts';
+import { DeathResolver } from './DeathResolver.ts';
+import { createMatchState } from './MatchState.ts';
 import { MatchHarness } from './matchHarness.ts';
 import type { ProcessorKind } from './matchHarness.ts';
 
-const PROCESSORS: readonly ProcessorKind[] = ['legacy'];
+const PROCESSORS: readonly ProcessorKind[] = ['legacy', 'current'];
 
 for (const kind of PROCESSORS) {
   const harness = () => new MatchHarness(kind);
@@ -152,3 +155,47 @@ for (const kind of PROCESSORS) {
     ]);
   });
 }
+
+function resolverSetup() {
+  const battle = createInitialBattle();
+  const state = createMatchState();
+  const resolver = new DeathResolver();
+  const bases = { player: battle.playerBase, enemy: battle.enemyBase };
+  const resolve = () => resolver.resolve(battle.world, state, 'normal', bases);
+  const kill = (entity: number) => {
+    const health = battle.world.getComponent(entity, 'health');
+    if (health) health.current = 0;
+  };
+  return { battle, state, resolve, kill };
+}
+
+test('[current] the result is reported once', () => {
+  const { battle, resolve, kill } = resolverSetup();
+  kill(battle.enemyBase);
+  const first = resolve();
+  assert.equal(first.outcome, 'victory');
+  assert.equal(first.outcomeIsNew, true);
+  const second = resolve();
+  assert.equal(second.outcome, 'victory');
+  assert.equal(second.outcomeIsNew, false);
+});
+
+test('[current] nothing is processed after the match ended', () => {
+  const { battle, state, resolve, kill } = resolverSetup();
+  kill(battle.enemyBase);
+  resolve();
+  const before = structuredClone(state);
+  const soldier = createSoldier(battle.world, 'enemy', { x: 0, y: 0, z: -20 });
+  kill(soldier);
+  const after = resolve();
+  assert.deepEqual(after.events, []);
+  assert.deepEqual(state, before);
+  assert.notEqual(battle.world.getComponent(soldier, 'health'), undefined);
+});
+
+test('[current] one event per death', () => {
+  const { battle, resolve, kill } = resolverSetup();
+  kill(createSoldier(battle.world, 'enemy', { x: 0, y: 0, z: -20 }));
+  assert.equal(resolve().events.length, 1);
+  assert.deepEqual(resolve().events, []);
+});

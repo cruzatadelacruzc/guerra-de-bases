@@ -6,10 +6,13 @@ import { createSoldier, createSoldierFactory, createStructure, SOLDIER_PRODUCTIO
 import { applyDamageSystem } from '../ecs/systems.ts';
 import { STRUCTURE_DEFINITIONS } from '../definitions/structures.ts';
 import type { Difficulty } from '../rewardSystem.ts';
+import { DeathResolver } from './DeathResolver.ts';
 import { legacyProcessDeaths } from './legacyDeathReference.ts';
 import type { LegacyCounters, LegacyLists, LegacyRuntimeObject, UnlockCall } from './legacyDeathReference.ts';
+import { createMatchState } from './MatchState.ts';
+import { unlockEventsFor } from './unlockEvents.ts';
 
-export type ProcessorKind = 'legacy';
+export type ProcessorKind = 'legacy' | 'current';
 
 export interface FrameResult {
   combatPoints: Record<Faction, number>;
@@ -35,6 +38,8 @@ export class MatchHarness {
     playerUnitsLost: 0
   };
   #ended = false;
+  readonly #state = createMatchState();
+  readonly #resolver = new DeathResolver();
 
   constructor(kind: ProcessorKind, difficulty: Difficulty = 'normal') {
     this.#kind = kind;
@@ -109,10 +114,34 @@ export class MatchHarness {
 
   /** One frame of death handling. After the match ended nothing runs, as the app left PLAYING. */
   processFrame(): FrameResult {
+    if (this.#kind === 'current') return this.#processCurrent();
     if (this.#ended) return this.#result([], [], null);
     const frame = legacyProcessDeaths(this.simulation.world, this.#lists, this.#counters, this.#difficulty);
     if (frame.matchEnding) this.#ended = true;
     return this.#result(frame.unlockCalls, frame.removed, frame.matchEnding);
+  }
+
+  /** The extracted rules: DeathResolver plus the unlock translation the app uses. */
+  #processCurrent(): FrameResult {
+    const resolution = this.#resolver.resolve(this.simulation.world, this.#state, this.#difficulty, {
+      player: this.simulation.playerBase,
+      enemy: this.simulation.enemyBase
+    });
+    if (this.#state.outcome !== null) this.#ended = true;
+    const unlockCalls: UnlockCall[] = [];
+    for (const event of resolution.events) {
+      for (const call of unlockEventsFor(event)) unlockCalls.push({ name: call.name, payload: { ...call.payload } });
+    }
+    const state = this.#state;
+    return {
+      combatPoints: { ...state.combatPoints },
+      killStreak: { ...state.killStreak },
+      playerUnitsDestroyed: state.playerUnitsDestroyed,
+      playerUnitsLost: state.playerUnitsLost,
+      unlockCalls,
+      removed: resolution.events.map((event) => event.entity),
+      ending: resolution.outcomeIsNew ? resolution.outcome : null
+    };
   }
 
   get kind(): ProcessorKind {
