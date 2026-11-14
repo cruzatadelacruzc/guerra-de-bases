@@ -169,7 +169,7 @@ interface EnemyAiSnapshot {
 
 ### 6.4 Ejecución y ritmo
 
-- `EnemyAiController.update(deltaSeconds)` se llama **una vez por fotograma** en estado `PLAYING`, después de `advanceBattleSimulation`, y decide cuando su acumulador supera el intervalo (`acumulador -= intervalo`, no reinicio a 0).
+- `EnemyAiController.update(deltaSeconds)` se llama **una vez por fotograma** en estado `PLAYING`, antes de `advanceBattleSimulation`, en la posición de la primera de las dos llamadas que existían antes de R2 (decisión del plan de R2 aprobado; antes el orden se alternaba entre ambas posiciones), y decide cuando su acumulador supera el intervalo (`acumulador -= intervalo`, no reinicio a 0).
 - **Eliminar la doble llamada sin cambiar el ritmo percibido (propuesta):** los intervalos configurados pasan de 2,5 / 1,4 / 0,7 s a **1,25 / 0,7 / 0,35 s**, el ritmo efectivo actual. Cambiar el ritmo real es una decisión de la fase de estrategia.
 - Los comandos se ejecutan en el mismo fotograma, en orden: construir → entrenar → recompensas → orden de ejército.
 - `ui.setAiStatus` deja de llamarse desde la IA; `GameApplication` muestra la postura devuelta (ver §8).

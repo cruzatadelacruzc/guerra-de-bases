@@ -31,7 +31,7 @@ La partida arranca con dos Nexos opuestos y sin soldados gratuitos. El Nexo es e
   - `enemyAi.ts`: `decideEnemyTurn`, una decisión pura sobre un resumen de la partida, con azar inyectable, que devuelve órdenes y el estado para el HUD;
   - `EnemyAiController.ts`: une las tres piezas en cada partida.
 
-  `GameApplication.ts` construye el resumen, ejecuta las órdenes con las mismas funciones del juego que usa el jugador y muestra el estado en el HUD.
+  `GameApplication.ts` construye el resumen, ejecuta las órdenes y muestra el estado en el HUD. El entrenamiento (`requestUnitProduction`) y las recompensas (`activateRewardForFaction`) usan las mismas funciones que el jugador. La construcción todavía va por `spawnAIBuilding`, propia de la IA, hasta que la fase de comandos compartidos (R4) unifique ese camino.
 - `web/src/game/definitions/structures.ts` es la única fuente del coste y la vida de Generadores, Barracas y Torretas, y de la vida del Nexo. La usan el ECS, la construcción y venta del jugador, la IA enemiga y la interfaz (botones y etiquetas de coste).
 - `web/src/rendering/` contiene adaptadores Three.js: los fusileros compatibles comparten geometría/materiales mediante `InstancedMesh`; las mallas de proyectiles se sincronizan con entidades ECS y se reutilizan en un pool; los efectos visuales también reutilizan recursos con límites de actividad y ciclos de vida finitos.
 - `web/index.html` es el shell del documento; `web/src/main.ts` crea las dependencias de UI y desbloqueos y arranca la aplicación.
