@@ -155,7 +155,11 @@ export function resolveDeaths(
   - Las variables sueltas `playerCombatPoints`, `enemyCombatPoints`, `playerKillStreak`, `enemyKillStreak`, `playerUnitsDestroyed` y `playerUnitsLost` pasan a ser `matchState.*`.
 - **Puntos de combate en otros sitios:** UI de recompensas, resumen de la IA, validación y gasto de recompensas, diagnóstico y escenario de recompensas leen o escriben `matchState.combatPoints`. `awardCombatPointsForDestruction` desaparece, porque lo hace `resolveDeaths`.
 
-**Fronteras:** `game/match/**` solo importa `game/ecs/**` y `game/rewardSystem.ts`, sin Three.js, UI ni plataforma. Sin asignaciones por fotograma: la lista de eventos y la de entidades se reutilizan.
+**Fronteras:** `game/match/**` solo importa `game/ecs/**` y `game/rewardSystem.ts`, sin Three.js, UI ni plataforma. Sin asignaciones por entidad en el recorrido: la lista de eventos y las de entidades se reutilizan. Lo que sí se crea es pequeño:
+- en cada fotograma, el objeto de resultado y el de las bases;
+- en cada muerte, el evento con su posición y las llamadas de desbloqueo.
+
+Las muertes son pocas por fotograma.
 
 ### 4.1 Diferencia conocida: solo herramientas de desarrollo (decisión 3, aceptada con documentación)
 
@@ -363,7 +367,7 @@ Las reglas que antes estaban en `updateUnitGroup`, `updateBuildingList`, `awardC
 
 **Pruebas nuevas:**
 
-- **`deathRules.test.ts` (14 pruebas):**
+- **`deathRules.test.ts` (16 pruebas):**
   - CP por baja y por estructura, sin CP por el Nexo;
   - rachas;
   - orden entre bandos;
@@ -375,7 +379,11 @@ Las reglas que antes estaban en `updateUnitGroup`, `updateBuildingList`, `awardC
   - orden de los eventos y datos de desbloqueo;
   - el resultado se informa una vez;
   - nada se procesa tras el final;
-  - un evento por muerte.
+  - un evento por muerte;
+  - orden de las estructuras, de la más nueva a la más antigua, con cada Nexo al final de su facción, y puntuación completa del fotograma que decide la partida;
+  - el Nexo caído se informa como estructura `hq` destruida en su posición.
+
+  Las dos últimas se añadieron tras la revisión independiente. Dos mutaciones las hacen fallar: recorrer las estructuras de la más antigua a la más nueva, y dejar de puntuar en el fotograma del resultado.
 - **`MatchState.test.ts` (2 pruebas):** estado inicial y gasto por facción.
 
 **Mientras existió la referencia temporal:**
@@ -386,7 +394,9 @@ Las reglas que antes estaban en `updateUnitGroup`, `updateBuildingList`, `awardC
 
 **Resultado final:**
 
-- `npm test`: 185 de 185. Son 12 menos que con la referencia temporal: las 11 ejecuciones duplicadas y la diferencial.
+- `npm test`: 187 de 187.
+  - Al retirar la referencia temporal quedaron 185, 12 menos: las 11 ejecuciones duplicadas y la diferencial.
+  - Después se añadieron las 2 pruebas de la revisión.
 - `npm run typecheck` y `npm run build` correctos, con los códigos de salida comprobados.
 - `setNexusHealth`, `__gameDiagnostics` y los escenarios no aparecen en `dist`.
 
@@ -421,10 +431,12 @@ Detalle y medición en §8.3 del informe de rendimiento: sin cambios estructural
 - **R5:**
   - el daño de recompensas en el reloj de simulación;
   - después, se podrá valorar mover la resolución de muertes al paso fijo, con su propia medición (decisión 1).
-- **Diferencia de un fotograma, sin efecto visible:**
-  - las estructuras muertas salen ahora del ECS al principio de `updateCombat`, antes de orientar las torretas (antes, después);
-  - una torreta que apuntaba a una estructura que cae ese fotograma conserva un fotograma su orientación anterior;
-  - las estructuras no se mueven, así que no se aprecia.
+- **Diferencia de un fotograma en la orientación, sin efecto visible:** todas las entidades muertas salen ahora del ECS al principio de `updateCombat`. Antes las unidades salían al recorrer su lista y las estructuras después de orientar las torretas. Por eso, durante ese único fotograma:
+  - una unidad cuyo objetivo es una unidad muerta ese fotograma y que va después en el recorrido no recibe su `lookAt`;
+  - una unidad o torreta cuyo objetivo es una estructura que cae ese fotograma conserva su orientación anterior;
+  - una torreta que muere ya no se orienta en su último fotograma, pero su visual se quita en ese mismo fotograma.
+
+  Al fotograma siguiente la simulación ya ha elegido otro objetivo, así que no se aprecia.
 - **Sin cambios, como se acordó:**
   - `enemyAIEnabled` sigue sin restablecerse (auditoría §9). Los escenarios de combate lo dejan desactivado, y para medir una partida contra la IA tras ellos hay que recargar.
   - el sistema de desbloqueos;

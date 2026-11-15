@@ -112,6 +112,34 @@ test('match result', () => {
   assert.equal(harness().processFrame().ending, null);
 });
 
+test('structures are processed newest first, each Nexus last in its faction, with the result frame fully scored', () => {
+  const match = harness();
+  const playerGenerator = match.addStructure('player', 'generator');
+  const playerBarracks = match.addStructure('player', 'barracks');
+  const enemyTurret = match.addStructure('enemy', 'turret');
+  const enemyGenerator = match.addStructure('enemy', 'generator');
+  const enemyRifleman = match.addSoldier('enemy', 'rifleman');
+  const enemyBase = match.simulation.enemyBase;
+  for (const entity of [playerGenerator, playerBarracks, enemyTurret, enemyGenerator, enemyRifleman, enemyBase]) {
+    match.setHealth(entity, 0);
+  }
+  const frame = match.processFrame();
+  assert.equal(frame.ending, 'victory');
+  assert.deepEqual(frame.removed, [enemyRifleman, playerBarracks, playerGenerator, enemyGenerator, enemyTurret, enemyBase]);
+  // Deaths in the frame that decides the match still score: rifleman 1 + generator 4 + turret 4; barracks 6 + generator 4.
+  assert.deepEqual(frame.combatPoints, { player: 9, enemy: 10 });
+  assert.equal(frame.playerUnitsDestroyed, 1);
+});
+
+test('a fallen Nexus is reported as a destroyed hq structure at its position', () => {
+  const { battle, resolve, kill } = resolverSetup();
+  const position = { ...battle.world.getComponent(battle.enemyBase, 'transform') };
+  kill(battle.enemyBase);
+  assert.deepEqual(resolve().events, [
+    { type: 'structureDestroyed', entity: battle.enemyBase, faction: 'enemy', kind: 'hq', position }
+  ]);
+});
+
 test('exactly zero health is a death; positive health is not', () => {
   const match = harness();
   const dead = match.addSoldier('enemy', 'rifleman');

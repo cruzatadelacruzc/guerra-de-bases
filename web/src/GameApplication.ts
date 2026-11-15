@@ -1783,7 +1783,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         if (index < 0) return;
         const building = buildings[index];
         const isHQ = event.kind === 'hq';
-        if (!isHQ) createBuildingRuin(building.position, building.type);
+        if (!isHQ) createBuildingRuin(building.position, event.kind);
         createCinematicExplosion(building.position, isHQ ? 3.0 : 1.2, isHQ);
         scene.remove(building.mesh);
         disposeObjectResources(building.mesh);
@@ -2013,7 +2013,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         updateBuildingList(playerBuildings);
         updateBuildingList(enemyBuildings);
 
-        // HQ Nuclear Explosion Trigger
+        // HQ Nuclear Explosion Trigger. The result is reported as new only once, so this
+        // relies on beginMatchEnding succeeding: updateCombat only runs while PLAYING.
         if (resolution?.outcomeIsNew && !hqExplodingSequence) {
             beginMatchEnding(resolution.outcome === 'victory');
         }

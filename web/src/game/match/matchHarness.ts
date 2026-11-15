@@ -32,10 +32,6 @@ export class MatchHarness {
     this.simulation = new BattleSimulation();
   }
 
-  get ended(): boolean {
-    return this.#state.outcome !== null;
-  }
-
   addSoldier(faction: Faction, kind: SoldierKind, position?: Position): Entity {
     const definition = SOLDIER_PRODUCTION[kind];
     return createSoldier(
@@ -66,15 +62,6 @@ export class MatchHarness {
 
   damage(entity: Entity, amount: number): void {
     applyDamageSystem(this.simulation.world, entity, amount);
-  }
-
-  /** Advances the simulation and drains its events, as advanceBattleSimulation does. */
-  advance(deltaSeconds: number): void {
-    this.simulation.advance(deltaSeconds);
-    this.simulation.drainGeneratedIncome();
-    this.simulation.drainWeaponEvents();
-    this.simulation.drainProjectileImpacts();
-    this.simulation.drainProductionEvents();
   }
 
   /** One frame of death handling: DeathResolver plus the unlock translation the app uses. */
