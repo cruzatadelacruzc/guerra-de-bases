@@ -32,10 +32,16 @@ La partida arranca con dos Nexos opuestos y sin soldados gratuitos. El Nexo es e
   - `EnemyAiController.ts`: une las tres piezas en cada partida.
 
   `GameApplication.ts` construye el resumen, ejecuta las órdenes y muestra el estado en el HUD. El entrenamiento (`requestUnitProduction`) y las recompensas (`activateRewardForFaction`) usan las mismas funciones que el jugador. La construcción todavía va por `spawnAIBuilding`, propia de la IA, hasta que la fase de comandos compartidos (R4) unifique ese camino.
+- `web/src/game/match/` contiene las reglas de la partida que dependen de las muertes, sin Three.js, DOM ni UI:
+  - `MatchState.ts`: puntos de combate y rachas por facción, unidades destruidas y perdidas, y el resultado;
+  - `DeathResolver.ts`: una vez por fotograma busca en el ECS las unidades y estructuras con vida ≤ 0, puntúa cada muerte una sola vez, borra la entidad, devuelve eventos ordenados y detecta victoria o derrota (si caen ambos Nexos a la vez, derrota). El resultado es terminal: después no se procesa nada más;
+  - `matchEvents.ts` y `unlockEvents.ts`: los eventos de muerte y su traducción a los eventos de desbloqueo.
+
+  El ECS sigue siendo la única fuente de verdad de la vida y la existencia de las entidades. `GameApplication.ts` solo representa los eventos: explosiones, restos, sonido, quitar los visuales, desbloqueos y la secuencia de fin.
 - `web/src/game/definitions/structures.ts` es la única fuente del coste y la vida de Generadores, Barracas y Torretas, y de la vida del Nexo. La usan el ECS, la construcción y venta del jugador, la IA enemiga y la interfaz (botones y etiquetas de coste).
 - `web/src/rendering/` contiene adaptadores Three.js: los fusileros compatibles comparten geometría/materiales mediante `InstancedMesh`; las mallas de proyectiles se sincronizan con entidades ECS y se reutilizan en un pool; los efectos visuales también reutilizan recursos con límites de actividad y ciclos de vida finitos.
 - `web/index.html` es el shell del documento; `web/src/main.ts` crea las dependencias de UI y desbloqueos y arranca la aplicación.
-- `web/src/GameApplication.ts` compone una partida: conecta los comandos de UI, las órdenes de la IA enemiga (que decide en `web/src/game/ai/`), el ECS y los adaptadores visuales. Los meshes, barras de salud, audio, efectos, colocación por raycast y animación de torretas permanecen en la capa de aplicación/rendering; no determinan targeting, cooldowns, vuelo de proyectiles ni daño. La UI no accede al almacenamiento interno del ECS.
+- `web/src/GameApplication.ts` compone una partida: conecta los comandos de UI, las órdenes de la IA enemiga (que decide en `web/src/game/ai/`), los eventos de la partida (que se deciden en `web/src/game/match/`), el ECS y los adaptadores visuales. Los meshes, barras de salud, audio, efectos, colocación por raycast y animación de torretas permanecen en la capa de aplicación/rendering; no determinan targeting, cooldowns, vuelo de proyectiles ni daño. La UI no accede al almacenamiento interno del ECS.
 - `web/src/game/GameSession.ts`, `GameFrameLoop.ts` y `GameInputController.ts` separan transiciones de partida, scheduling con delta acotado y ciclo de vida idempotente de listeners.
 - `web/src/rendering/ThreeRenderCoordinator.ts` posee la escena, cámara, renderer, controles y recursos visuales de Three.js; sincroniza soldados instanciados y delega efectos y proyectiles a los módulos existentes.
 - La UI del jugador y la estrategia de la IA envían órdenes unitarias a la misma API ECS, que valida facción, disponibilidad y recursos y los deduce al aceptar. La simulación actualiza el progreso y crea la entidad del soldado al completar; la aplicación solo enlaza el evento de finalización con las visuales existentes. El saldo ECS también es la autoridad para construcción, ingresos y reembolsos.
@@ -107,6 +113,7 @@ API de consola, en `window.__gameDiagnostics`:
 | `runCombatScenario({ barracksPerSide, warmupSeconds, durationSeconds })` | Combate simétrico guionizado: IA desactivada, oro ilimitado y producción continua de 3 soldados por cada tanque |
 | `runStressScenario(count, intervalMs)` | Escenario de estrés de explosiones existente |
 | `prepareRewardScenario(mode)` | Escenario de recompensas existente |
+| `setNexusHealth(faction, value)` | Escribe solo la vida ECS de un Nexo. Con `0`, la resolución normal de muertes del siguiente fotograma produce la victoria (`'enemy'`) o la derrota (`'player'`) |
 
 Parámetros de experimento, solo junto a `?diagnostics=1`. No cambian nada sin el parámetro:
 

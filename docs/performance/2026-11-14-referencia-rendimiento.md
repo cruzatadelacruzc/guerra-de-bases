@@ -406,6 +406,60 @@ Comprobación por dificultad (móvil emulado, partida de 25 s, una ejecución): 
 - **Los picos de la IA (3-10 ms) siguen.** Corresponden a los turnos en que construye, porque la ejecución de la orden crea mallas dentro del tiempo medido de la IA (§5.2). La decisión ya no crea mallas, pero `spawnAIBuilding` sí, y sale de la IA con R4 (comandos compartidos).
 - **Los tiempos de fotograma y de CPU variaron hasta un 45 %** también en escenarios que R2 no toca (menú, combate y estrés, con la IA desactivada o ausente), con el portátil cargado. Esas variaciones son ruido de la máquina, no efecto de R2.
 
+### 8.3 R3 — capa de partida (muertes, CP, rachas y resultado fuera de la vista)
+
+Cambio medido:
+- `DeathResolver` (`game/match/`) recorre una vez por fotograma las entidades ECS con vida, en lugar de las cuatro listas visuales;
+- puntúa, borra y emite eventos;
+- `GameApplication` solo representa esos eventos.
+
+Misma batería de §6 y mismos perfiles, con el Chrome del sistema (`channel: chrome`, Chrome 155 headless, la misma GPU Intel UHD 620 por Vulkan). Carga media del portátil: ~2,5-3,1, menor que en R2 (~5).
+
+| Escenario · perfil | Métrica | R0 (1 / 2) | R2 (1 / 2) | R3 (1 / 2) |
+|---|---|---:|---:|---:|
+| Partida · escritorio | Fotograma · CPU (ms) | 23,21 · 2,45 / 20,79 · 2,25 | 26,51 · 3,09 / 20,59 · 2,58 | 23,32 · 2,79 / 22,70 · 2,66 |
+| | Simulación · resto gameplay (ms) | 0,105 · 0,407 / 0,084 · 0,392 | – | 0,120 · 0,489 / 0,107 · 0,489 |
+| | IA llamadas/fotograma · decisiones/s | 2,00 · 1,40 / 2,00 · 1,40 | 1,00 · 1,40 / 1,00 · 1,40 | 1,00 · 1,40 / 1,00 · 1,40 |
+| | Draw calls · geometrías máx. | 16,2 · 23 / 15,8 · 23 | 11,7 · 22 / 12,3 · 22 | 18,1 · 23 / 18,4 · 23 |
+| Partida · móvil emulado | Fotograma · CPU (ms) | 18,64 · 2,04 / 21,63 · 2,36 | 22,95 · 2,33 / 17,86 · 2,10 | 17,84 · 1,88 / 17,71 · 1,75 |
+| | Simulación · resto gameplay (ms) | 0,074 · 0,413 / 0,103 · 0,494 | – | 0,086 · 0,432 / 0,073 · 0,383 |
+| | Draw calls · geometrías máx. | 11,6 · 21 / 15,3 · 22 | – | 14,6 · 22 / 17,6 · 22 |
+| Combate · escritorio (IA desactivada) | Fotograma · CPU (ms) | 28,65 · 11,27 / 28,77 · 10,84 | 33,80 · 13,94 / 31,35 · 12,28 | 31,13 · 11,16 / 30,60 · 10,75 |
+| | Simulación · resto gameplay (ms) | 0,551 · 1,128 / 0,506 · 1,133 | – | 0,564 · 1,099 / 0,587 · 1,105 |
+| | Draw calls · geometrías máx. | 208 · 328 / 200 · 315 | 208 · 322 / 211 · 323 | 210 · 322 / 215 · 327 |
+| Combate · móvil emulado (IA desactivada) | Fotograma · CPU (ms) | 29,02 · 13,28 / 37,67 · 19,21 | 27,74 · 10,88 / 32,24 · 15,01 | 25,28 · 8,28 / 25,18 · 7,98 |
+| | Simulación · resto gameplay (ms) | 0,522 · 1,167 / 0,861 · 1,729 | – | 0,503 · 1,048 / 0,476 · 0,977 |
+| | Draw calls · geometrías máx. | 198 · 309 / 217 · 325 | 211 · 331 / 191 · 331 | 210 · 325 / 210 · 325 |
+| Estrés · escritorio / móvil emulado | Fotograma (ms) · draw calls · geometrías | 25,46 · 46,1 · 52 / 20,50 · 44,9 · 51 | 29,10 · 46,5 · 52 / 29,55 · 45,3 · 51 | 25,71 · 46,2 · 52 / 20,23 · 45,0 · 51 |
+| Menú · escritorio / móvil emulado | Fotograma (ms) · draw calls | 18,20 · 84 / 16,86 · 46,6 | 27,03 · 84 / 17,93 · 47,1 | 20,75 · 84 / 16,80 · 43,9 |
+
+Repetición en R3: tres combates seguidos terminan con 105 geometrías (escritorio) y 88-90 (móvil emulado), y la partida nueva posterior vuelve a 23 y 22, igual que en R0, R1 y R2.
+
+**La partida 2 de escritorio terminó con derrota antes de los 30 s.** Ocurrió durante la medición, así que mezcla un poco de la secuencia final. Para descartar que R3 haga la partida más corta, se compararon cuatro partidas de 25 s en escritorio, alternando R3 y R2 (`5b988a8`, en un worktree temporal). La vida final del Nexo del jugador fue:
+
+- **R3:** 708, 1140, 936 y caído;
+- **R2:** 1200, caído, 1068 y 228.
+
+La IA usa `Math.random`, y el desenlace varía igual en las dos versiones. No es un efecto de R3.
+
+**Comprobación funcional en el navegador** (móvil emulado, sin errores de consola):
+
+- **Combate guionizado tres veces:** CP del jugador 15, 14 y 13; geometrías 207, 205 y 195; restos y explosiones visibles.
+- **Derrota forzada con `setNexusHealth('player', 0)` tras el combate:** 26 soldados entrenados y 12 vivos justo antes. El resumen muestra **14 bajas** (26 − 12).
+- **Jugador inactivo contra la IA:** derrota con el resumen de 0 soldados y 0 bajas.
+  - Hay que recargar la página antes, porque los escenarios de combate dejan `enemyAIEnabled` desactivado: es el hallazgo §9 de la auditoría, que no se toca.
+- **Victoria forzada con `setNexusHealth('enemy', 0)`:** secuencia de fin y resumen «VICTORIA».
+
+**Conclusión:**
+
+- **Sin cambios estructurales:** draw calls, geometrías, ritmo de la IA (1,00 llamadas por fotograma; 1,40 decisiones/s) y repetición sin crecimiento coinciden con R0 y R2.
+- **Simulación sin aumento:** 0,07-0,12 ms en partida y 0,48-0,59 ms en combate, dentro del rango de R0.
+- **Resto gameplay** (donde se procesan las muertes):
+  - sin aumento en combate, el escenario con más muertes (escritorio 1,10 frente a 1,13; móvil 0,98-1,05 frente a 1,17-1,73), ni en partida en móvil;
+  - en partida en escritorio pasa de 0,39-0,41 a 0,49 ms en las dos ejecuciones;
+  - esa subida no aparece en los otros tres casos y es menor de 0,1 ms por fotograma, así que no se atribuye a R3 con seguridad.
+- **Los fotogramas y la CPU del combate en móvil emulado salen más bajos que en R0 y R2.** No se presenta como una mejora de R3: el portátil estaba menos cargado y la variación entre sesiones (§8.2) es mayor que esa diferencia.
+
 ## 9. Próximos pasos de medición
 
 - **Referencia definitiva en el Samsung Galaxy A05 de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):

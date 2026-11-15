@@ -139,6 +139,11 @@ interface GameDiagnostics {
         durationSeconds?: number;
     }): Promise<Record<string, number | null>>;
     prepareRewardScenario(mode?: 'ready' | 'insufficient-gold' | 'no-target'): void;
+    /**
+     * Writes a Nexus's ECS health only; the next frame's death resolution
+     * decides the result, so 0 forces the normal victory or defeat flow.
+     */
+    setNexusHealth(faction: 'player' | 'enemy', value: number): void;
 }
 
 declare global {
@@ -3028,6 +3033,18 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 }
                 updateResourceUI();
                 updateRewardUI();
+            },
+            setNexusHealth(faction, value) {
+                if (session.state !== 'PLAYING' || !battleSimulation) {
+                    throw new Error('Start a match before setting a Nexus health');
+                }
+                if (!Number.isFinite(value) || value < 0) {
+                    throw new RangeError('Nexus health must be a finite number of zero or more');
+                }
+                const base = faction === ECS_FACTIONS.player ? battleSimulation.playerBase : battleSimulation.enemyBase;
+                const health = battleSimulation.world.getComponent(base, ECS_COMPONENTS.health);
+                if (!health) throw new Error('That Nexus has already been destroyed');
+                health.current = Math.min(value, health.max);
             },
             async runStressScenario(explosionCount = 30, intervalMs = 200) {
                 if (!Number.isInteger(explosionCount) || explosionCount < 1
