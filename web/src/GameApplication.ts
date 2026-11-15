@@ -29,6 +29,10 @@ import { GameFrameLoop } from './game/GameFrameLoop.ts';
 import type { FrameTiming } from './game/GameFrameLoop.ts';
 import { exceedsTapTolerance, GameInputController, isDoubleTap, type TapSample } from './game/GameInputController.ts';
 import { GameSession } from './game/GameSession.ts';
+import { DeathResolver } from './game/match/DeathResolver.ts';
+import type { MatchEvent } from './game/match/matchEvents.ts';
+import { createMatchState, spendCombatPoints } from './game/match/MatchState.ts';
+import { unlockEventsFor } from './game/match/unlockEvents.ts';
 import { createNexusDamageAlert } from './game/nexusDamageAlert.ts';
 import { createHapticFeedback, createPlatformVibrate } from './platform/HapticFeedback.ts';
 import {
@@ -42,7 +46,6 @@ import {
     applyShieldReduction,
     artilleryStrikeDurationSeconds,
     getDifficultyProfile,
-    getCombatPointsFor,
     getRewardDefinitionForDifficulty,
     getStrikePattern,
     selectStrikeAim,
@@ -191,11 +194,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let pendingVictoryState = false;
     let matchEndTimeout: number | undefined;
 
-    // Kill streaks and simple progression counters (used by UnlockManager)
-    let playerKillStreak = 0;
-    let enemyKillStreak = 0;
-    let playerUnitsDestroyed = 0;
-    let playerUnitsLost = 0;
+    // Combat points, kill streaks, counters and the result: decided by the match layer
+    let matchState = createMatchState();
+    const deathResolver = new DeathResolver();
 
     const haptics = createHapticFeedback({ vibrate: createPlatformVibrate(), now: () => performance.now() });
     const nexusDamageAlert = createNexusDamageAlert();
@@ -436,8 +437,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let terrainFloor: THREE.Mesh | null = null;
     let cameraShake = 0;
     let aiDifficulty: 'easy' | 'normal' | 'hard' = 'normal';
-    let playerCombatPoints = 0;
-    let enemyCombatPoints = 0;
     let gameplayClockMs = 0;
     let rewardCooldownUntil = 0;
     let enemyRewardCooldownUntil = 0;
@@ -1036,12 +1035,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         stats.soldiersTrained = 0;
         stats.buildingsConstructed = 0;
         stats.startTime = Date.now();
-        playerKillStreak = 0;
-        enemyKillStreak = 0;
-        playerUnitsDestroyed = 0;
-        playerUnitsLost = 0;
-        playerCombatPoints = 0;
-        enemyCombatPoints = 0;
+        matchState = createMatchState();
         gameplayClockMs = 0;
         rewardCooldownUntil = 0;
         enemyRewardCooldownUntil = 0;
@@ -1237,7 +1231,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             let status: RewardStatus;
             if (activeRemaining > 0) {
                 status = 'ACTIVE';
-            } else if (playerCombatPoints < definition.pointsCost) {
+            } else if (matchState.combatPoints.player < definition.pointsCost) {
                 status = 'LOCKED';
             } else if (getFactionGold(ECS_FACTIONS.player) < definition.goldCost) {
                 status = 'INSUFFICIENT GOLD';
@@ -1257,7 +1251,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         }
         ui.updateRewardState({
             difficulty: aiDifficulty,
-            combatPoints: playerCombatPoints,
+            combatPoints: matchState.combatPoints.player,
             gold: getFactionGold(ECS_FACTIONS.player),
             rewards
         });
@@ -1696,7 +1690,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     entity: barracks.ecsEntityId,
                     position: { x: barracks.position.x, y: barracks.position.y, z: barracks.position.z }
                 })),
-            combatPoints: enemyCombatPoints,
+            combatPoints: matchState.combatPoints.enemy,
             rewardCooldownUntilMs: enemyRewardCooldownUntil,
             shieldActive: isShieldActiveForFaction(ECS_FACTIONS.enemy),
             validRewardTargetCount: getRewardTargetCandidates(ECS_FACTIONS.enemy).length,
@@ -1754,7 +1748,44 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         combatEffects.createExplosion(position, scale);
     }
 
-    function updateUnitGroup(units: RuntimeUnit[], isPlayer: boolean) {
+    function representUnitDeath(event: Extract<MatchEvent, { type: 'unitDied' }>) {
+        for (const call of unlockEventsFor(event)) unlocks.recordEvent(call.name, call.payload);
+        targetObjects.delete(event.entity);
+        const units = event.faction === ECS_FACTIONS.player ? playerUnits : enemyUnits;
+        const index = units.findIndex((unit) => unit.ecsEntityId === event.entity);
+        if (index < 0) return;
+        const unit = units[index];
+        unit.mesh.position.set(event.position.x, event.position.y, event.position.z);
+        createCinematicExplosion(unit.mesh.position, event.kind === 'tank' ? 1.2 : 0.6, false);
+        if (event.kind === 'tank') {
+            createTankWreck(unit.mesh.position, event.faction === ECS_FACTIONS.player ? 0x00f0ff : 0xff3344);
+        } else {
+            createSoldierCorpse(unit.mesh.position);
+        }
+        if (unit.type === 'rifleman') {
+            soldierRenderer.remove(event.entity);
+        } else if (unit.mesh instanceof THREE.Object3D) {
+            scene.remove(unit.mesh);
+            disposeObjectResources(unit.mesh);
+        }
+        units.splice(index, 1);
+    }
+
+    function representStructureDestruction(event: Extract<MatchEvent, { type: 'structureDestroyed' }>) {
+        targetObjects.delete(event.entity);
+        const buildings = event.faction === ECS_FACTIONS.player ? playerBuildings : enemyBuildings;
+        const index = buildings.findIndex((building) => building.ecsEntityId === event.entity);
+        if (index < 0) return;
+        const building = buildings[index];
+        const isHQ = event.kind === 'hq';
+        if (!isHQ) createBuildingRuin(building.position, building.type);
+        createCinematicExplosion(building.position, isHQ ? 3.0 : 1.2, isHQ);
+        scene.remove(building.mesh);
+        disposeObjectResources(building.mesh);
+        buildings.splice(index, 1);
+    }
+
+    function updateUnitGroup(units: RuntimeUnit[]) {
         const simulation = battleSimulation;
         if (!simulation) return;
         for (let i = units.length - 1; i >= 0; i--) {
@@ -1773,59 +1804,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 unit.healthBar.billboard(camera);
             } else {
                 soldierRenderer.setHealth(entity, unit.hp, unit.maxHp);
-            }
-
-            if (unit.hp <= 0) {
-                if (!isPlayer) {
-                    playerKillStreak++;
-                    enemyKillStreak = 0;
-                    playerUnitsDestroyed++;
-                    unlocks.recordEvent('unit_killed', {
-                        byPlayer: true,
-                        killStreak: playerKillStreak,
-                        unitType: unit.type
-                    });
-                    unlocks.recordEvent('kill_streak', { killStreak: playerKillStreak });
-                    if (playerUnitsDestroyed === 20) {
-                        unlocks.recordEvent('achievement', { achievement: 'destroy_20_units' });
-                    }
-                } else {
-                    enemyKillStreak++;
-                    playerKillStreak = 0;
-                    playerUnitsLost++;
-                    unlocks.recordEvent('unit_killed', {
-                        byPlayer: false,
-                        killStreak: enemyKillStreak,
-                        unitType: unit.type
-                    });
-                }
-
-                if (!isPlayer) {
-                    const rewardValue = getCombatPointsFor(unit.type === 'tank' ? 'tank' : 'rifleman', aiDifficulty);
-                    playerCombatPoints += rewardValue;
-                } else {
-                    const rewardValue = getCombatPointsFor(unit.type === 'tank' ? 'tank' : 'rifleman', aiDifficulty);
-                    enemyCombatPoints += rewardValue;
-                }
-
-                createCinematicExplosion(unit.mesh.position, unit.type === 'tank' ? 1.2 : 0.6, false);
-
-                if (unit.type === 'tank') {
-                    createTankWreck(unit.mesh.position, isPlayer ? 0x00f0ff : 0xff3344);
-                } else {
-                    createSoldierCorpse(unit.mesh.position);
-                }
-
-                simulation.world.removeEntity(entity);
-                targetObjects.delete(entity);
-                if (unit.type === 'rifleman') {
-                    soldierRenderer.remove(entity);
-                } else if (unit.mesh instanceof THREE.Object3D) {
-                    scene.remove(unit.mesh);
-                    disposeObjectResources(unit.mesh);
-                }
-                units.splice(i, 1);
-                continue;
             }
 
             const targetEntity = simulation.getTarget(entity);
@@ -1987,9 +1965,19 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             );
         }
 
+        const resolution = battleSimulation
+            ? deathResolver.resolve(battleSimulation.world, matchState, aiDifficulty, {
+                player: battleSimulation.playerBase,
+                enemy: battleSimulation.enemyBase
+            })
+            : undefined;
+        for (const event of resolution?.events ?? []) {
+            if (event.type === 'unitDied') representUnitDeath(event);
+        }
+
         // Update Units with identical billboard camera health bars
-        updateUnitGroup(playerUnits, true);
-        updateUnitGroup(enemyUnits, false);
+        updateUnitGroup(playerUnits);
+        updateUnitGroup(enemyUnits);
 
         updateTurrets();
 
@@ -1997,10 +1985,13 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         combatEffects.update(delta);
         if (diagnosticsEnabled) diagnosticsEffectsMs = performance.now() - effectsStart;
 
-        // Building Health Bars & Destruction Ruins
+        for (const event of resolution?.events ?? []) {
+            if (event.type === 'structureDestroyed') representStructureDestruction(event);
+        }
+
+        // Building Health Bars
         const updateBuildingList = (bList: RuntimeStructure[]) => {
-            for (let i = bList.length - 1; i >= 0; i--) {
-                const b = bList[i];
+            for (const b of bList) {
                 if (battleSimulation && b.ecsEntityId !== undefined) {
                     const health = battleSimulation.world.getComponent(b.ecsEntityId, ECS_COMPONENTS.health);
                     if (health) {
@@ -2012,35 +2003,14 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     b.healthBar.update(b.hp, b.maxHp);
                     b.healthBar.billboard(camera);
                 }
-                if (b.hp <= 0) {
-                    const isHQ = b.type === 'hq';
-                    if (!isHQ && b.type !== 'hq') {
-                        const scorerFaction = b.isPlayer ? ECS_FACTIONS.enemy : ECS_FACTIONS.player;
-                        awardCombatPointsForDestruction(scorerFaction, b.type);
-                        createBuildingRuin(b.position, b.type);
-                    }
-                    createCinematicExplosion(b.position, isHQ ? 3.0 : 1.2, isHQ);
-
-                    scene.remove(b.mesh);
-                    disposeObjectResources(b.mesh);
-                    if (battleSimulation && b.ecsEntityId !== undefined) {
-                        battleSimulation.world.removeEntity(b.ecsEntityId);
-                        targetObjects.delete(b.ecsEntityId);
-                    }
-                    bList.splice(i, 1);
-                }
             }
         };
         updateBuildingList(playerBuildings);
         updateBuildingList(enemyBuildings);
 
         // HQ Nuclear Explosion Trigger
-        if (!hqExplodingSequence) {
-            if (playerHQ && playerHQ.hp <= 0) {
-                beginMatchEnding(false);
-            } else if (enemyHQ && enemyHQ.hp <= 0) {
-                beginMatchEnding(true);
-            }
+        if (resolution?.outcomeIsNew && !hqExplodingSequence) {
+            beginMatchEnding(resolution.outcome === 'victory');
         }
     }
 
@@ -2050,18 +2020,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function isShieldActiveForFaction(faction: 'player' | 'enemy', now = gameplayClockMs): boolean {
         return getFactionShieldUntil(faction) > now;
-    }
-
-    function awardCombatPointsForDestruction(
-        faction: 'player' | 'enemy',
-        kind: 'rifleman' | 'tank' | 'turret' | 'generator' | 'barracks'
-    ) {
-        const points = getCombatPointsFor(kind, aiDifficulty);
-        if (faction === ECS_FACTIONS.player) {
-            playerCombatPoints += points;
-        } else {
-            enemyCombatPoints += points;
-        }
     }
 
     function applyDamage(target: RuntimeTarget, amount: number) {
@@ -2119,7 +2077,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     }
 
     function validateRewardForFaction(faction: 'player' | 'enemy', id: RewardId) {
-        const points = faction === ECS_FACTIONS.player ? playerCombatPoints : enemyCombatPoints;
+        const points = matchState.combatPoints[faction];
         const goldBalance = getFactionGold(faction);
         const cooldownUntil = faction === ECS_FACTIONS.player ? rewardCooldownUntil : enemyRewardCooldownUntil;
         const shieldActive = isShieldActiveForFaction(faction);
@@ -2143,11 +2101,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         if (!spendFactionGold(faction, definition.goldCost)) return false;
 
+        spendCombatPoints(matchState, faction, definition.pointsCost);
         if (faction === ECS_FACTIONS.player) {
-            playerCombatPoints -= definition.pointsCost;
             rewardCooldownUntil = gameplayClockMs + rewardCooldownMs;
         } else {
-            enemyCombatPoints -= definition.pointsCost;
             enemyRewardCooldownUntil = gameplayClockMs + rewardCooldownMs;
         }
         return true;
@@ -2659,7 +2616,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         const summary = {
             victory: isVictory,
             soldiersTrained: stats.soldiersTrained,
-            losses: playerUnitsLost,
+            losses: matchState.playerUnitsLost,
             buildingsConstructed: stats.buildingsConstructed,
             duration: `${mins}:${secs}`,
             enemyBaseDamagePercent: enemyHQDamage
@@ -2902,7 +2859,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 ecsProjectiles: simulation ? census.projectiles : null,
                 ...factionCounts('player'),
                 ...factionCounts('enemy'),
-                playerCombatPoints,
+                playerCombatPoints: matchState.combatPoints.player,
                 playerGold: getFactionGold(ECS_FACTIONS.player),
                 playerNexusHealth,
                 playerShieldRemainingMs: Math.max(0, defensiveShieldUntil - gameplayClockMs),
@@ -3060,7 +3017,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 if (!playerEconomy) throw new Error('Player economy is unavailable in the reward scenario');
                 playerEconomy.gold = mode === 'insufficient-gold' ? 0 : 1200;
                 gold = playerEconomy.gold;
-                playerCombatPoints = 100;
+                matchState.combatPoints.player = 100;
                 const previousBuildings = enemyBuildings.length;
                 if (mode !== 'no-target') {
                     for (const x of [-56, -25, 7, 38]) {
