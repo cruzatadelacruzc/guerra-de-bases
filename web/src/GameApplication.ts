@@ -64,6 +64,16 @@ import type {
 } from './ui/contracts.ts';
 import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createTerrainGrid } from './rendering/TerrainGrid.ts';
+import { BattlefieldRemains } from './rendering/BattlefieldRemains.ts';
+import {
+    createHQMesh,
+    createNexusShieldVisual,
+    createSoldierMesh,
+    createTankMesh,
+    disposeObjectResources,
+    instantiateBuildingMesh
+} from './rendering/battlefieldMeshes.ts';
+import { createHealthBar, type HealthBar } from './rendering/HealthBar.ts';
 import { muzzleOrigin, RewardEffectsView } from './rendering/RewardEffectsView.ts';
 import type { SoldierVisualHandle } from './rendering/InstancedSoldierRenderer.ts';
 import { DiagnosticsOverlay, formatDiagnosticsResult } from './dev/DiagnosticsOverlay.ts';
@@ -71,14 +81,6 @@ import { parseDiagnosticsOptions } from './dev/diagnosticsOptions.ts';
 import { disableBackdropBlur } from './dev/backdropBlur.ts';
 import { countEntities, createEntityCensus } from './dev/entityCensus.ts';
 import { MetricRing } from './dev/MetricRing.ts';
-
-interface HealthBar {
-    group: THREE.Group;
-    fillMesh: THREE.Mesh;
-    maxWidth: number;
-    update(currentHp: number, maxHp: number): void;
-    billboard(camera: THREE.Camera): void;
-}
 
 interface RuntimeStructure {
     mesh: THREE.Group;
@@ -380,6 +382,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let cameraController: MapCameraController;
     let soldierRenderer: ThreeRenderCoordinator['soldiers'];
     let combatEffects: ThreeRenderCoordinator['effects'];
+    let remains: BattlefieldRemains;
     let projectilePool: ThreeRenderCoordinator['projectiles'];
     let rewardEffectsView: RewardEffectsView;
     const raycaster = new THREE.Raycaster();
@@ -394,8 +397,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let projectiles: RuntimeProjectile[] = [];
     const projectileVisuals = new Map<Entity, RuntimeProjectile>();
     let menuUnits: THREE.Group[] = [];
-    let ruinsAndCorpses: THREE.Group[] = [];
-    const MAX_BATTLEFIELD_REMAINS = 64;
     const diagnosticsEnabled = import.meta.env.DEV
         && new URLSearchParams(window.location.search).get('diagnostics') === '1';
     const diagnosticsOptions = diagnosticsEnabled ? parseDiagnosticsOptions(window.location.search) : null;
@@ -458,49 +459,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ui.showToast(msg);
     }
 
-    function create3DHealthBar(isPlayer: boolean, heightOffset = 2.0, width = 1.6): HealthBar {
-        const barGroup = new THREE.Group();
-        barGroup.position.y = heightOffset;
-
-        // Background dark bar
-        const bgGeo = new THREE.PlaneGeometry(width, 0.22);
-        const bgMat = new THREE.MeshBasicMaterial({ color: 0x0f172a, side: THREE.DoubleSide });
-        const bgMesh = new THREE.Mesh(bgGeo, bgMat);
-        barGroup.add(bgMesh);
-
-        // Border outline frame
-        const borderGeo = new THREE.PlaneGeometry(width + 0.06, 0.28);
-        const borderMat = new THREE.MeshBasicMaterial({ color: 0x334155, side: THREE.DoubleSide });
-        const borderMesh = new THREE.Mesh(borderGeo, borderMat);
-        borderMesh.position.z = -0.005;
-        barGroup.add(borderMesh);
-
-        // Health Fill Bar (Cyan for player, Red for enemy)
-        const colorHex = isPlayer ? 0x00f0ff : 0xff3344;
-        const fillGeo = new THREE.PlaneGeometry(width, 0.18);
-        const fillMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide });
-        const fillMesh = new THREE.Mesh(fillGeo, fillMat);
-        fillMesh.position.z = 0.01;
-        barGroup.add(fillMesh);
-        // `bars=0` diagnostics: hidden bars cost no draw calls; health itself is untouched.
-        if (diagnosticsOptions && !diagnosticsOptions.bars) barGroup.visible = false;
-
-        return {
-            group: barGroup,
-            fillMesh: fillMesh,
-            maxWidth: width,
-            update: function(currentHp: number, maxHp: number) {
-                const ratio = Math.max(0, Math.min(1, currentHp / maxHp));
-                this.fillMesh.scale.x = ratio;
-                this.fillMesh.position.x = - (this.maxWidth * (1 - ratio)) / 2;
-            },
-            billboard: function(cam: THREE.Camera) {
-                // Exact uniform angle matching camera view for both player and enemy
-                barGroup.quaternion.copy(cam.quaternion);
-            }
-        };
-    }
-
     function initEngine() {
         renderCoordinator = new ThreeRenderCoordinator(
             ui.getCanvasContainer(),
@@ -524,6 +482,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         cameraController.onAutoZoomChange = (enabled) => ui.setAutoZoom(enabled);
         soldierRenderer = renderCoordinator.soldiers;
         combatEffects = renderCoordinator.effects;
+        remains = new BattlefieldRemains(scene, combatEffects);
         projectilePool = renderCoordinator.projectiles;
         rewardEffectsView = new RewardEffectsView({ scene, shellOrigin: strikeShellOrigin });
         createTerrain();
@@ -624,374 +583,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         }
     }
 
-    function createSoldierMesh(colorHex: number): THREE.Group {
-        const group = new THREE.Group();
-
-        const bodyGeo = new THREE.CylinderGeometry(0.3, 0.2, 1.2, 8);
-        const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex, metalness: 0.5, roughness: 0.3 });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.6;
-        body.castShadow = true;
-        group.add(body);
-
-        const headGeo = new THREE.SphereGeometry(0.25, 8, 8);
-        const headMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.2 });
-        const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 1.35;
-        group.add(head);
-
-        const visorGeo = new THREE.BoxGeometry(0.2, 0.08, 0.15);
-        const visorMat = new THREE.MeshBasicMaterial({ color: colorHex });
-        const visor = new THREE.Mesh(visorGeo, visorMat);
-        visor.position.set(0, 1.35, 0.18);
-        group.add(visor);
-
-        const gunGeo = new THREE.BoxGeometry(0.12, 0.12, 0.8);
-        const gunMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 });
-        const gun = new THREE.Mesh(gunGeo, gunMat);
-        gun.position.set(0.25, 0.8, 0.3);
-        group.add(gun);
-
-        const muzzleGeo = new THREE.SphereGeometry(0.15, 6, 6);
-        const muzzleMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0 });
-        const muzzle = new THREE.Mesh(muzzleGeo, muzzleMat);
-        muzzle.position.set(0.25, 0.8, 0.75);
-        group.add(muzzle);
-        group.userData.muzzleMesh = muzzle;
-
-        return group;
-    }
-
-    function createTankMesh(colorHex: number): THREE.Group {
-        const group = new THREE.Group();
-
-        const baseGeo = new THREE.BoxGeometry(2.2, 0.7, 3.2);
-        const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 });
-        const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = 0.35;
-        base.castShadow = true;
-        group.add(base);
-
-        const turretGeo = new THREE.CylinderGeometry(0.85, 0.95, 0.65, 8);
-        const turretMat = new THREE.MeshStandardMaterial({ color: colorHex, metalness: 0.6 });
-        const turret = new THREE.Mesh(turretGeo, turretMat);
-        turret.position.y = 0.9;
-        group.add(turret);
-
-        const barrelGeo = new THREE.CylinderGeometry(0.14, 0.14, 1.8, 8);
-        const barrelMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9 });
-        const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-        barrel.rotation.x = Math.PI / 2;
-        barrel.position.set(0, 0.9, 1.0);
-        group.add(barrel);
-
-        return group;
-    }
-
-    function createHQMesh(colorHex: number): THREE.Group {
-        const group = new THREE.Group();
-
-        const baseGeo = new THREE.CylinderGeometry(3.8, 4.4, 2.8, 8);
-        const baseMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.7, roughness: 0.3 });
-        const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = 1.4;
-        base.castShadow = true;
-        base.receiveShadow = true;
-        group.add(base);
-
-        const domeGeo = new THREE.SphereGeometry(2.2, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
-        const domeMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.6 });
-        const dome = new THREE.Mesh(domeGeo, domeMat);
-        dome.position.y = 2.6;
-        group.add(dome);
-
-        const antGeo = new THREE.CylinderGeometry(0.08, 0.12, 3.5);
-        const antMat = new THREE.MeshBasicMaterial({ color: colorHex });
-        const ant = new THREE.Mesh(antGeo, antMat);
-        ant.position.set(0, 4.5, 0);
-        group.add(ant);
-
-        return group;
-    }
-
-    function createNexusShieldVisual(color: number): THREE.Mesh {
-        const mesh = new THREE.Mesh(
-            new THREE.SphereGeometry(9, 18, 12),
-            new THREE.MeshBasicMaterial({
-                color,
-                transparent: true,
-                opacity: 0.24,
-                wireframe: true,
-                depthWrite: false
-            })
-        );
-        mesh.visible = false;
-        mesh.name = 'nexus-defensive-shield';
-        return mesh;
-    }
-
-    function createGeneratorMesh(colorHex = 0xeab308): THREE.Group {
-        const group = new THREE.Group();
-        const baseGeo = new THREE.BoxGeometry(2.6, 1.3, 2.6);
-        const baseMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.5 });
-        const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = 0.65;
-        group.add(base);
-
-        const ringGeo = new THREE.TorusGeometry(1.0, 0.16, 8, 20);
-        const ringMat = new THREE.MeshBasicMaterial({ color: colorHex });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.x = Math.PI / 2;
-        ring.position.y = 1.6;
-        group.add(ring);
-        group.userData.ring = ring;
-
-        return group;
-    }
-
-    function createBarracksMesh(colorHex = 0x00f0ff): THREE.Group {
-        const group = new THREE.Group();
-        const mainGeo = new THREE.BoxGeometry(3.5, 2.2, 3.5);
-        const mainMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6 });
-        const main = new THREE.Mesh(mainGeo, mainMat);
-        main.position.y = 1.1;
-        group.add(main);
-
-        const doorGeo = new THREE.BoxGeometry(1.8, 1.4, 0.2);
-        const doorMat = new THREE.MeshBasicMaterial({ color: colorHex });
-        const door = new THREE.Mesh(doorGeo, doorMat);
-        door.position.set(0, 0.7, 1.77);
-        group.add(door);
-
-        return group;
-    }
-
-    function createTurretMesh(colorHex = 0x3b82f6): THREE.Group {
-        const group = new THREE.Group();
-        const baseGeo = new THREE.CylinderGeometry(1.3, 1.6, 1.2, 8);
-        const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 });
-        const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = 0.6;
-        group.add(base);
-
-        const headGeo = new THREE.SphereGeometry(0.9, 12, 12);
-        const headMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9, roughness: 0.2 });
-        const head = new THREE.Mesh(headGeo, headMat);
-        head.position.y = 1.4;
-
-        const barrelGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.4);
-        const barrelMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.4 });
-        const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-        barrel.rotation.x = Math.PI / 2;
-        barrel.position.set(0, 0, 0.7);
-        head.add(barrel);
-
-        group.add(head);
-        group.userData.head = head;
-
-        return group;
-    }
-
-    function instantiateBuildingMesh(type: BuildingType, isPlayer = true): THREE.Group {
-        const colorHex = isPlayer ? 0x00f0ff : 0xff3344;
-        switch (type) {
-            case 'generator':
-                return createGeneratorMesh(isPlayer ? 0xeab308 : 0xff2244);
-            case 'barracks':
-                return createBarracksMesh(colorHex);
-            case 'turret':
-                return createTurretMesh(colorHex);
-        }
-    }
-
-    function spawnFireAndSmokeEmitter(position: THREE.Vector3, scale = 1.0) {
-        combatEffects.addBurningEmitter(position, scale);
-    }
-
-    function disposeObjectResources(root: THREE.Object3D) {
-        root.traverse((object) => {
-            if (!(object instanceof THREE.Mesh)) return;
-            object.geometry.dispose();
-            const materials = Array.isArray(object.material) ? object.material : [object.material];
-            for (const material of materials) material.dispose();
-        });
-    }
-
-    function trackBattlefieldRemains(group: THREE.Group) {
-        if (ruinsAndCorpses.length >= MAX_BATTLEFIELD_REMAINS) {
-            const oldest = ruinsAndCorpses.shift();
-            if (oldest) {
-                scene.remove(oldest);
-                disposeObjectResources(oldest);
-            }
-        }
-        scene.add(group);
-        ruinsAndCorpses.push(group);
-    }
-
-    function clearBattlefieldRemains() {
-        for (const remains of ruinsAndCorpses) {
-            scene.remove(remains);
-            disposeObjectResources(remains);
-        }
-        ruinsAndCorpses = [];
-    }
-
-    function createBuildingRuin(position: THREE.Vector3, type: BuildingType | 'hq') {
-        const group = new THREE.Group();
-
-        if (type === 'generator') {
-            // Generator Ruin: Compact base, broken energy coils, glowing core ember
-            const baseGeo = new THREE.BoxGeometry(2.8, 0.3, 2.8);
-            const baseMat = new THREE.MeshStandardMaterial({ color: 0x111115, roughness: 0.95 });
-            const base = new THREE.Mesh(baseGeo, baseMat);
-            base.position.y = 0.15;
-            group.add(base);
-
-            const ringGeo = new THREE.TorusGeometry(0.9, 0.12, 6, 12);
-            const ringMat = new THREE.MeshStandardMaterial({ color: 0x332211, roughness: 0.8 });
-            const ring = new THREE.Mesh(ringGeo, ringMat);
-            ring.rotation.x = Math.PI / 3;
-            ring.position.set(0.2, 0.4, 0.1);
-            group.add(ring);
-
-            const coreGeo = new THREE.SphereGeometry(0.4, 8, 8);
-            const coreMat = new THREE.MeshBasicMaterial({ color: 0xff3300 });
-            const core = new THREE.Mesh(coreGeo, coreMat);
-            core.position.set(0, 0.3, 0);
-            group.add(core);
-
-            spawnFireAndSmokeEmitter(position, 0.9);
-
-        } else if (type === 'barracks') {
-            // Barracks Ruin: Large wide foundation, tall broken wall chunks & metal doors
-            const baseGeo = new THREE.BoxGeometry(4.2, 0.4, 4.2);
-            const baseMat = new THREE.MeshStandardMaterial({ color: 0x0c0c10, roughness: 0.95 });
-            const base = new THREE.Mesh(baseGeo, baseMat);
-            base.position.y = 0.2;
-            group.add(base);
-
-            const wall1Geo = new THREE.BoxGeometry(3.6, 1.4, 0.5);
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x181820, roughness: 0.9 });
-            const wall1 = new THREE.Mesh(wall1Geo, wallMat);
-            wall1.position.set(0, 0.7, -1.6);
-            wall1.rotation.z = 0.15;
-            group.add(wall1);
-
-            const doorGeo = new THREE.BoxGeometry(1.4, 0.2, 1.2);
-            const doorMat = new THREE.MeshStandardMaterial({ color: 0x101520, roughness: 0.8 });
-            const door = new THREE.Mesh(doorGeo, doorMat);
-            door.position.set(0.8, 0.3, 1.0);
-            door.rotation.y = 0.4;
-            group.add(door);
-
-            for (let i = 0; i < 4; i++) {
-                const chunkGeo = new THREE.BoxGeometry(0.8, 0.5, 0.8);
-                const chunk = new THREE.Mesh(chunkGeo, wallMat);
-                chunk.position.set((Math.random() - 0.5) * 3.2, 0.3 + Math.random() * 0.3, (Math.random() - 0.5) * 3.2);
-                chunk.rotation.set(Math.random(), Math.random(), Math.random());
-                group.add(chunk);
-            }
-
-            spawnFireAndSmokeEmitter(position, 1.5);
-
-        } else if (type === 'turret') {
-            // Turret Ruin: Cylindrical jagged pedestal stump with detached cannon barrel
-            const baseGeo = new THREE.CylinderGeometry(1.1, 1.5, 0.9, 8);
-            const baseMat = new THREE.MeshStandardMaterial({ color: 0x141418, roughness: 0.95 });
-            const base = new THREE.Mesh(baseGeo, baseMat);
-            base.position.y = 0.45;
-            group.add(base);
-
-            const headGeo = new THREE.SphereGeometry(0.7, 8, 8);
-            const headMat = new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.8 });
-            const head = new THREE.Mesh(headGeo, headMat);
-            head.position.set(0.9, 0.3, 0.6);
-            group.add(head);
-
-            const barrelGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.3);
-            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x0a0a0d, metalness: 0.9 });
-            const barrel = new THREE.Mesh(barrelGeo, barrelMat);
-            barrel.rotation.z = Math.PI / 2;
-            barrel.rotation.y = 0.6;
-            barrel.position.set(-0.8, 0.15, 0.4);
-            group.add(barrel);
-
-            spawnFireAndSmokeEmitter(position, 1.1);
-
-        } else {
-            // HQ Ruin: Massive crater base with twisted structural girders
-            const baseGeo = new THREE.CylinderGeometry(4.2, 4.8, 0.5, 12);
-            const baseMat = new THREE.MeshStandardMaterial({ color: 0x08080a, roughness: 0.98 });
-            const base = new THREE.Mesh(baseGeo, baseMat);
-            base.position.y = 0.25;
-            group.add(base);
-
-            for (let i = 0; i < 6; i++) {
-                const girderGeo = new THREE.BoxGeometry(0.3, 2.5, 0.3);
-                const girderMat = new THREE.MeshStandardMaterial({ color: 0x1c1c24, metalness: 0.8 });
-                const girder = new THREE.Mesh(girderGeo, girderMat);
-                const angle = (i / 6) * Math.PI * 2;
-                girder.position.set(Math.cos(angle) * 2.5, 1.0, Math.sin(angle) * 2.5);
-                girder.rotation.set((Math.random() - 0.5) * 0.8, Math.random(), (Math.random() - 0.5) * 0.8);
-                group.add(girder);
-            }
-
-            spawnFireAndSmokeEmitter(position, 2.2);
-        }
-
-        group.position.copy(position);
-        trackBattlefieldRemains(group);
-    }
-
-    function createTankWreck(position: THREE.Vector3, _colorHex: number) {
-        const group = new THREE.Group();
-
-        const baseGeo = new THREE.BoxGeometry(2.2, 0.7, 3.2);
-        const baseMat = new THREE.MeshStandardMaterial({ color: 0x121214, roughness: 0.95 });
-        const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = 0.35;
-        group.add(base);
-
-        const turretGeo = new THREE.CylinderGeometry(0.85, 0.95, 0.65, 8);
-        const turretMat = new THREE.MeshStandardMaterial({ color: 0x1c1c20, roughness: 0.9 });
-        const turret = new THREE.Mesh(turretGeo, turretMat);
-        turret.position.set(0.3, 0.8, -0.2);
-        turret.rotation.set(0.2, 0.5, -0.3);
-        group.add(turret);
-
-        group.position.copy(position);
-        group.rotation.y = Math.random() * Math.PI * 2;
-        group.rotation.z = 0.12;
-        trackBattlefieldRemains(group);
-
-        spawnFireAndSmokeEmitter(position, 0.8);
-    }
-
-    function createSoldierCorpse(position: THREE.Vector3) {
-        const group = new THREE.Group();
-
-        const stainGeo = new THREE.CircleGeometry(0.8, 12);
-        const stainMat = new THREE.MeshBasicMaterial({ color: 0x08080a, side: THREE.DoubleSide });
-        const stain = new THREE.Mesh(stainGeo, stainMat);
-        stain.rotation.x = -Math.PI / 2;
-        stain.position.y = 0.02;
-        group.add(stain);
-
-        const bodyGeo = new THREE.CylinderGeometry(0.28, 0.2, 1.2, 8);
-        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c1c22, roughness: 0.9 });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.rotation.z = Math.PI / 2;
-        body.position.y = 0.2;
-        group.add(body);
-
-        group.position.copy(position);
-        group.rotation.y = Math.random() * Math.PI * 2;
-        trackBattlefieldRemains(group);
-
-        spawnFireAndSmokeEmitter(position, 0.4);
-    }
-
     function startNewGame(settings = ui.getMissionSettings()) {
         SFX.init();
         nexusDamageAlert.reset();
@@ -1054,7 +645,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             isPlayer: true
         };
         playerHQ.mesh.position.copy(playerHQ.position);
-        playerHQ.healthBar = create3DHealthBar(true, 5.2, 4.0);
+        playerHQ.healthBar = createHealthBar(true, 5.2, 4.0, !diagnosticsOptions || diagnosticsOptions.bars);
         playerHQ.mesh.add(playerHQ.healthBar.group);
         playerShieldVisual = createNexusShieldVisual(0x22d3ee);
         playerHQ.mesh.add(playerShieldVisual);
@@ -1072,7 +663,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             isPlayer: false
         };
         enemyHQ.mesh.position.copy(enemyHQ.position);
-        enemyHQ.healthBar = create3DHealthBar(false, 5.2, 4.0);
+        enemyHQ.healthBar = createHealthBar(false, 5.2, 4.0, !diagnosticsOptions || diagnosticsOptions.bars);
         enemyHQ.mesh.add(enemyHQ.healthBar.group);
         enemyShieldVisual = createNexusShieldVisual(0xfb7185);
         enemyHQ.mesh.add(enemyShieldVisual);
@@ -1139,7 +730,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             window.clearTimeout(matchEndTimeout);
             matchEndTimeout = undefined;
         }
-        clearBattlefieldRemains();
+        remains.clear();
         rewardEffectsView.clear();
         disposeNexusShieldVisuals();
         for (const building of [...playerBuildings, ...enemyBuildings]) {
@@ -1508,7 +1099,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             position: new THREE.Vector3(position.x, position.y, position.z),
             type,
             isPlayer,
-            healthBar: create3DHealthBar(isPlayer, type === 'turret' ? 2.8 : 2.5, 2.2),
+            healthBar: createHealthBar(isPlayer, type === 'turret' ? 2.8 : 2.5, 2.2, !diagnosticsOptions || diagnosticsOptions.bars),
             ecsEntityId: entity
         };
         if (building.healthBar) mesh.add(building.healthBar.group);
@@ -1547,7 +1138,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         };
 
         if (kind !== 'rifleman') {
-            const healthBar = create3DHealthBar(isPlayer, 1.8, 1.4);
+            const healthBar = createHealthBar(isPlayer, 1.8, 1.4, !diagnosticsOptions || diagnosticsOptions.bars);
             unitObj.healthBar = healthBar;
             if (mesh instanceof THREE.Group) {
                 mesh.add(healthBar.group);
@@ -1667,9 +1258,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         unit.mesh.position.set(event.position.x, event.position.y, event.position.z);
         createCinematicExplosion(unit.mesh.position, event.kind === 'tank' ? 1.2 : 0.6, false);
         if (event.kind === 'tank') {
-            createTankWreck(unit.mesh.position, event.faction === ECS_FACTIONS.player ? 0x00f0ff : 0xff3344);
+            remains.addTankWreck(unit.mesh.position);
         } else {
-            createSoldierCorpse(unit.mesh.position);
+            remains.addSoldierCorpse(unit.mesh.position);
         }
         if (unit.type === 'rifleman') {
             soldierRenderer.remove(event.entity);
@@ -1687,7 +1278,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         if (index < 0) return;
         const building = buildings[index];
         const isHQ = event.kind === 'hq';
-        if (!isHQ) createBuildingRuin(building.position, event.kind);
+        if (!isHQ) remains.addBuildingRuin(building.position, event.kind);
         createCinematicExplosion(building.position, isHQ ? 3.0 : 1.2, isHQ);
         scene.remove(building.mesh);
         disposeObjectResources(building.mesh);
