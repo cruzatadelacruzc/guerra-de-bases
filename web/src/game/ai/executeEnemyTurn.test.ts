@@ -8,11 +8,13 @@ import { trainUnit } from '../commands/trainCommand.ts';
 import { createCommandTestContext, goldOf, setGold, snapshotCommandState } from '../commands/commandTestState.ts';
 import type { CommandContext } from '../commands/CommandContext.ts';
 import { buildEnemyAiSnapshot } from './aiSnapshot.ts';
+import type { EnemyAiTurn } from './enemyAi.ts';
 import { EnemyAiController } from './EnemyAiController.ts';
 import { executeEnemyTurn } from './executeEnemyTurn.ts';
 import { getEnemyAiProfile } from './enemyAiProfile.ts';
 import { LEGACY_STRATEGY } from './legacyEnemyExecutor.ts';
 import { sequenceRng } from './testRng.ts';
+import { ENEMY_AIR_STRIKE_HEADING } from '../rewardSystem.ts';
 
 function enemyBarracks(ctx: CommandContext, x: number, z: number) {
   setGold(ctx, 'enemy', 10000);
@@ -88,4 +90,17 @@ test('the snapshot reads the same values as the old one from the ECS and the mat
   assert.deepEqual(snapshot.idleFactories.map(({ entity }) => entity), [idle]);
   assert.equal(snapshot.validRewardTargetCount, 1);
   assert.equal(snapshot.nexusHealthRatio, 900 / 1200);
+});
+
+test('enemy air strikes use ENEMY_AIR_STRIKE_HEADING', () => {
+  const ctx = createCommandTestContext({ difficulty: 'hard' });
+  ctx.match.combatPoints.enemy = 100;
+  setGold(ctx, 'enemy', 1000);
+  createStructure(ctx.world, 'player', { x: 10, y: 0, z: 30 }, 380, 'turret');
+  const turn: EnemyAiTurn = { status: 'satisfied', commands: [{ type: 'activateReward', reward: 'air_strike' }] };
+  const outcomes = executeEnemyTurn(ctx, turn);
+  assert.equal(outcomes[0].result.accepted, true);
+  const [strike] = ctx.match.strikes.active;
+  assert.ok(strike && strike.kind === 'air_strike');
+  assert.deepEqual(strike.heading, ENEMY_AIR_STRIKE_HEADING);
 });

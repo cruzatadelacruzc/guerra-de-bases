@@ -3,6 +3,8 @@ import type { Faction } from '../ecs/components.ts';
 import { trySpendResources } from '../ecs/systems.ts';
 import type { World } from '../ecs/World.ts';
 import { spendCombatPoints } from '../match/MatchState.ts';
+import { scheduleStrike } from '../match/rewardExecution.ts';
+import { isStrikeTarget } from '../match/strikeTargets.ts';
 import {
   getRewardDefinitionForDifficulty,
   getStrikePattern,
@@ -19,14 +21,12 @@ export type RewardRejection = MatchNotPlaying | 'insufficient-points' | 'insuffi
 
 /** What a faction's strikes can hit: live, targetable enemies other than the Nexus. */
 export function rewardTargetCandidates(world: World, faction: Faction): StrikeCandidate[] {
-  const enemy: Faction = faction === 'player' ? 'enemy' : 'player';
   const candidates: StrikeCandidate[] = [];
   for (const entity of world.query(COMPONENTS.targetable, COMPONENTS.faction, COMPONENTS.transform, COMPONENTS.health)) {
-    if (world.getComponent(entity, COMPONENTS.faction) !== enemy) continue;
-    if (world.getComponent(entity, COMPONENTS.building)?.kind === 'hq') continue;
+    if (!isStrikeTarget(world, entity, faction)) continue;
     const health = world.getComponent(entity, COMPONENTS.health);
     const position = world.getComponent(entity, COMPONENTS.transform);
-    if (!health || health.current <= 0 || !position) continue;
+    if (!health || !position) continue;
     candidates.push({
       x: position.x,
       z: position.z,
@@ -37,15 +37,26 @@ export function rewardTargetCandidates(world: World, faction: Faction): StrikeCa
   return candidates;
 }
 
+function assertUnitHeading(heading: Readonly<StrikeAim> | undefined): void {
+  if (heading === undefined) throw new Error('An air strike needs a heading');
+  const length = Math.hypot(heading.x, heading.z);
+  if (!Number.isFinite(length) || Math.abs(length - 1) > 1e-6) {
+    throw new Error(`An air strike heading must be a unit vector, got (${heading.x}, ${heading.z})`);
+  }
+}
+
 /**
  * Validates, aims and pays for a reward, then starts its cooldown and, for the shield,
- * its protection. The strike itself is still played and applied by the view (R5).
+ * its protection. A strike is scheduled on the gameplay clock with the caller's heading;
+ * an air strike without a unit heading is a programming error and throws before anything changes.
  */
 export function activateReward(
   ctx: CommandContext,
   faction: Faction,
-  id: RewardId
-): CommandResult<{ aim?: StrikeAim; definition: RewardDefinition }, RewardRejection> {
+  id: RewardId,
+  options?: { readonly heading?: Readonly<StrikeAim> }
+): CommandResult<{ aim?: StrikeAim; definition: RewardDefinition; strikeId?: number }, RewardRejection> {
+  if (id === 'air_strike') assertUnitHeading(options?.heading);
   const playing = checkMatchPlaying(ctx);
   if (!playing.ok) return { accepted: false, reason: playing.reason };
   const { world, match, nowMs, difficulty } = ctx;
@@ -79,5 +90,7 @@ export function activateReward(
     rewards.shieldUntilMs = nowMs + definition.durationSeconds * 1000;
     return { accepted: true, definition };
   }
-  return { accepted: true, aim, definition };
+  if (!aim) throw new Error(`Validated reward ${id} has no aim point`);
+  const strike = scheduleStrike(match, faction, id, aim, options?.heading, difficulty, nowMs);
+  return { accepted: true, aim, definition, strikeId: strike.id };
 }

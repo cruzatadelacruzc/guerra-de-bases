@@ -48,6 +48,7 @@ import {
     ARTILLERY_SALVO_INTERVAL_SECONDS,
     ARTILLERY_SHELL_FLIGHT_SECONDS,
     artilleryStrikeDurationSeconds,
+    ENEMY_AIR_STRIKE_HEADING,
     getDifficultyProfile,
     getRewardDefinitionForDifficulty,
     type RewardId,
@@ -2338,7 +2339,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     function activateRewardForFaction(faction: 'player' | 'enemy', id: RewardId): boolean {
         const simulation = battleSimulation;
         if (!simulation || session.state !== 'PLAYING') return false;
-        const result = activateReward(commandContext(simulation), faction, id);
+        const heading = id === 'air_strike'
+            ? (faction === ECS_FACTIONS.player ? cameraGroundHeading() : ENEMY_AIR_STRIKE_HEADING)
+            : undefined;
+        const result = activateReward(commandContext(simulation), faction, id, heading ? { heading } : undefined);
         if (!result.accepted) {
             const outsidePlay = result.reason === 'match-over' || result.reason === 'not-playing';
             if (faction === ECS_FACTIONS.player && !outsidePlay) showToast(getRewardFailureMessage(result.reason));
@@ -2369,8 +2373,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 if (faction === ECS_FACTIONS.player) playArtilleryCinematic(aim);
                 durationSeconds = artilleryStrikeDurationSeconds(ARTILLERY_IMPACT_OFFSETS.length);
             } else {
-                // The enemy's aircraft keeps crossing the field along x.
-                const heading = faction === ECS_FACTIONS.player ? cameraGroundHeading() : { x: -1, z: 0 };
+                // The command froze the heading in the scheduled strike; the legacy visual uses exactly that.
+                const scheduled = matchState.strikes.active.find((strike) => strike.id === result.strikeId);
+                if (!scheduled || scheduled.kind !== 'air_strike') throw new Error('The activated air strike was not scheduled');
+                const heading = scheduled.heading;
                 triggerAirStrikeForFaction(faction, aim, heading);
                 if (faction === ECS_FACTIONS.player) playAirStrikeCinematic(aim, heading);
                 durationSeconds = AIR_STRIKE_FLIGHT_SECONDS;

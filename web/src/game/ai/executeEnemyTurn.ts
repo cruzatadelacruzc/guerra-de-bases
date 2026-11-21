@@ -2,6 +2,7 @@ import type { CommandContext } from '../commands/CommandContext.ts';
 import { activateReward } from '../commands/rewardCommand.ts';
 import { buildStructure } from '../commands/structureCommands.ts';
 import { trainUnit } from '../commands/trainCommand.ts';
+import { ENEMY_AIR_STRIKE_HEADING } from '../rewardSystem.ts';
 import type { EnemyAiCommand, EnemyAiTurn } from './enemyAi.ts';
 
 export type EnemyCommandOutcome =
@@ -21,6 +22,6 @@ export function executeEnemyTurn(ctx: CommandContext, turn: EnemyAiTurn): readon
     if (command.type === 'train') {
       return { command, result: trainUnit(ctx, 'enemy', command.factory, command.unit, command.spawnPosition) };
     }
-    return { command, result: activateReward(ctx, 'enemy', command.reward) };
+    return { command, result: activateReward(ctx, 'enemy', command.reward, { heading: ENEMY_AIR_STRIKE_HEADING }) };
   });
 }

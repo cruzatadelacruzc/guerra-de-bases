@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ENEMY_AIR_STRIKE_HEADING } from '../rewardSystem.ts';
 import { COMPONENTS } from '../ecs/components.ts';
 import { createSoldier, createStructure } from '../ecs/initialBattle.ts';
 import { applyDamageSystem } from '../ecs/systems.ts';
@@ -54,9 +55,10 @@ test('a reward outside an active match changes nothing, however valid', () => {
     ctx.match.outcome = outcome;
     ctx.match.combatPoints.player = 100;
     setGold(ctx, 'player', 1000);
-    for (const id of ['defensive_shield', 'artillery_strike'] as const) {
+    for (const id of ['defensive_shield', 'artillery_strike', 'air_strike'] as const) {
       createStructure(ctx.world, 'enemy', { x: 0, y: 0, z: -40 }, 380, 'turret');
-      assertUnchanged(ctx, () => activateReward(ctx, 'player', id), { accepted: false, reason }, `${sessionPhase} ${id}`);
+      assertUnchanged(ctx, () => activateReward(ctx, 'player', id, { heading: { x: 0, z: -1 } }), { accepted: false, reason }, `${sessionPhase} ${id}`);
+      assert.equal(ctx.match.strikes.active.length, 0, `${sessionPhase} ${id} schedules nothing`);
     }
   }
 });
@@ -92,7 +94,7 @@ test('an accepted attack aims where the strike pattern hits most', () => {
   createSoldier(ctx.world, 'enemy', { x: -20, y: 0, z: -10 });
   createSoldier(ctx.world, 'enemy', { x: -21, y: 0, z: -11 });
   const expected = selectStrikeAim(rewardTargetCandidates(ctx.world, 'player'), getStrikePattern('air_strike', 'hard'));
-  const result = activateReward(ctx, 'player', 'air_strike');
+  const result = activateReward(ctx, 'player', 'air_strike', { heading: { x: 0, z: -1 } });
   assert.ok(result.accepted);
   assert.ok(expected);
   assert.deepEqual(result.aim, expected);
@@ -114,4 +116,56 @@ test('reward targets are live enemy targets other than the Nexus, read from the 
     { x: 10, z: -30, health: 300, kind: 'structure' },
     { x: -20, z: -10, health: soldierHealth, kind: 'unit' }
   ]);
+});
+
+function readyStrikeContext() {
+  const ctx = createCommandTestContext({ difficulty: 'hard', nowMs: 1000 });
+  ctx.match.combatPoints.player = 100;
+  setGold(ctx, 'player', 1000);
+  createStructure(ctx.world, 'enemy', { x: 10, y: 0, z: -30 }, 380, 'turret');
+  return ctx;
+}
+
+test('an accepted strike schedules exactly one strike with the aim and the caller\'s heading', () => {
+  const ctx = readyStrikeContext();
+  const heading = { x: 0.6, z: -0.8 };
+  const result = activateReward(ctx, 'player', 'air_strike', { heading });
+  assert.ok(result.accepted && result.strikeId !== undefined && result.aim);
+  assert.equal(ctx.match.strikes.active.length, 1);
+  const [strike] = ctx.match.strikes.active;
+  assert.equal(strike.id, result.strikeId);
+  assert.equal(strike.kind, 'air_strike');
+  assert.equal(strike.aimX, result.aim.x);
+  assert.equal(strike.aimZ, result.aim.z);
+  assert.ok(strike.kind === 'air_strike');
+  assert.deepEqual(strike.heading, heading);
+  const artillery = readyStrikeContext();
+  const shelling = activateReward(artillery, 'player', 'artillery_strike');
+  assert.ok(shelling.accepted);
+  assert.equal(artillery.match.strikes.active.length, 1);
+  assert.equal(artillery.match.strikes.active[0].id, shelling.strikeId);
+});
+
+test('the shield schedules no strike', () => {
+  const ctx = readyStrikeContext();
+  const result = activateReward(ctx, 'player', 'defensive_shield');
+  assert.ok(result.accepted);
+  assert.equal(result.strikeId, undefined);
+  assert.equal(ctx.match.strikes.active.length, 0);
+});
+
+test('an air strike without a heading or with a non-unit heading throws before charging', () => {
+  for (const heading of [undefined, { x: 2, z: 0 }, { x: Number.NaN, z: 0 }, { x: 1 + 2e-6, z: 0 }]) {
+    const ctx = readyStrikeContext();
+    const before = snapshotCommandState(ctx);
+    assert.throws(() => activateReward(ctx, 'player', 'air_strike', heading ? { heading } : undefined));
+    assert.deepEqual(snapshotCommandState(ctx), before);
+  }
+  const paused = { ...readyStrikeContext(), sessionPhase: 'PAUSED' as const };
+  assert.throws(() => activateReward(paused, 'player', 'air_strike'));
+});
+
+test('the camera fallback heading and the enemy heading are accepted', () => {
+  assert.ok(activateReward(readyStrikeContext(), 'player', 'air_strike', { heading: { x: 0, z: -1 } }).accepted);
+  assert.ok(activateReward(readyStrikeContext(), 'player', 'air_strike', { heading: ENEMY_AIR_STRIKE_HEADING }).accepted);
 });
