@@ -31,19 +31,16 @@ import { GameSession } from './game/GameSession.ts';
 import { DeathResolver } from './game/match/DeathResolver.ts';
 import type { MatchEvent } from './game/match/matchEvents.ts';
 import { createMatchState } from './game/match/MatchState.ts';
-import { applyFactionShield, applyRewardDamage } from './game/match/shield.ts';
+import { advanceStrikes, clearStrikes } from './game/match/rewardExecution.ts';
+import type { StrikeEvent } from './game/match/rewardExecution.ts';
+import { applyFactionShield } from './game/match/shield.ts';
 import { unlockEventsFor } from './game/match/unlockEvents.ts';
 import { createNexusDamageAlert } from './game/nexusDamageAlert.ts';
 import { createHapticFeedback, createPlatformVibrate } from './platform/HapticFeedback.ts';
 import {
-    AIR_STRIKE_BOMB_FALL_SECONDS,
     AIR_STRIKE_BOMB_OFFSETS,
-    AIR_STRIKE_EFFECTIVE_RADIUS,
     AIR_STRIKE_FLIGHT_SECONDS,
-    AIR_STRIKE_RUN_HALF_LENGTH,
-    AIR_STRIKE_SPEED,
     ARTILLERY_IMPACT_OFFSETS,
-    ARTILLERY_IMPACT_RADIUS,
     ARTILLERY_LAUNCH_DELAY_SECONDS,
     ARTILLERY_SALVO_INTERVAL_SECONDS,
     ARTILLERY_SHELL_FLIGHT_SECONDS,
@@ -51,6 +48,7 @@ import {
     ENEMY_AIR_STRIKE_HEADING,
     getDifficultyProfile,
     getRewardDefinitionForDifficulty,
+    nominalBombLandingSeconds,
     type RewardId,
     type StrikeAim
 } from './game/rewardSystem.ts';
@@ -66,7 +64,7 @@ import type {
 } from './ui/contracts.ts';
 import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createTerrainGrid } from './rendering/TerrainGrid.ts';
-import { apexHeightFor, ballisticPoint } from './rendering/ballisticArc.ts';
+import { muzzleOrigin, RewardEffectsView } from './rendering/RewardEffectsView.ts';
 import type { SoldierVisualHandle } from './rendering/InstancedSoldierRenderer.ts';
 import { DiagnosticsOverlay, formatDiagnosticsResult } from './dev/DiagnosticsOverlay.ts';
 import { parseDiagnosticsOptions } from './dev/diagnosticsOptions.ts';
@@ -383,6 +381,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let soldierRenderer: ThreeRenderCoordinator['soldiers'];
     let combatEffects: ThreeRenderCoordinator['effects'];
     let projectilePool: ThreeRenderCoordinator['projectiles'];
+    let rewardEffectsView: RewardEffectsView;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -443,8 +442,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let cameraShake = 0;
     let aiDifficulty: 'easy' | 'normal' | 'hard' = 'normal';
     let gameplayClockMs = 0;
-    let playerActiveRewardUntil: Partial<Record<RewardId, number>> = {};
-    let enemyActiveRewardUntil: Partial<Record<RewardId, number>> = {};
     let lastRewardUiUpdateMs = -Infinity;
     let playerShieldVisual: THREE.Mesh | null = null;
     let enemyShieldVisual: THREE.Mesh | null = null;
@@ -528,6 +525,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         soldierRenderer = renderCoordinator.soldiers;
         combatEffects = renderCoordinator.effects;
         projectilePool = renderCoordinator.projectiles;
+        rewardEffectsView = new RewardEffectsView({ scene, shellOrigin: strikeShellOrigin });
         createTerrain();
 
         inputController = new GameInputController(renderCoordinator.canvas, {
@@ -1037,8 +1035,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         stats.startTime = Date.now();
         matchState = createMatchState();
         gameplayClockMs = 0;
-        playerActiveRewardUntil = {};
-        enemyActiveRewardUntil = {};
         lastRewardUiUpdateMs = -Infinity;
         playerShieldVisual = null;
         enemyShieldVisual = null;
@@ -1144,7 +1140,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             matchEndTimeout = undefined;
         }
         clearBattlefieldRemains();
-        clearActiveRewardEffects();
+        rewardEffectsView.clear();
         disposeNexusShieldVisuals();
         for (const building of [...playerBuildings, ...enemyBuildings]) {
             scene.remove(building.mesh);
@@ -1212,7 +1208,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             const definition = getRewardDefinitionForDifficulty(id, aiDifficulty);
             const activeUntil = id === 'defensive_shield'
                 ? matchState.rewards.player.shieldUntilMs
-                : playerActiveRewardUntil[id] ?? 0;
+                : matchState.rewards.player.strikeActiveUntilMs[id] ?? 0;
             const activeRemaining = Math.max(0, (activeUntil - gameplayClockMs) / 1000);
             const cooldownRemaining = Math.max(0, (matchState.rewards.player.cooldownUntilMs - gameplayClockMs) / 1000);
             let status: RewardStatus;
@@ -1932,173 +1928,61 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         return matchState.rewards[faction].shieldUntilMs > now;
     }
 
-    /** Visual strike impacts still apply their damage here when they land (R5). */
-    function getRewardTargetCandidates(faction: 'player' | 'enemy' = ECS_FACTIONS.player) {
-        if (!battleSimulation) return [] as Array<{ runtime: RuntimeTarget; position: Position; entity: Entity }>;
-        const world = battleSimulation.world;
-        const enemyFaction = faction === ECS_FACTIONS.player ? ECS_FACTIONS.enemy : ECS_FACTIONS.player;
-        const candidates: Array<{ runtime: RuntimeTarget; position: Position; entity: Entity }> = [];
-        for (const entity of world.query(
-            ECS_COMPONENTS.targetable,
-            ECS_COMPONENTS.faction,
-            ECS_COMPONENTS.transform,
-            ECS_COMPONENTS.health
-        )) {
-            if (world.getComponent(entity, ECS_COMPONENTS.faction) !== enemyFaction) continue;
-            const health = world.getComponent(entity, ECS_COMPONENTS.health);
-            const position = world.getComponent(entity, ECS_COMPONENTS.transform);
-            const runtime = targetObjects.get(entity);
-            if (health && health.current > 0 && position && runtime && runtime.type !== 'hq') {
-                candidates.push({ runtime, position, entity });
-            }
-        }
-        return candidates;
+    const ARTILLERY_CAMERA_NEXUS_DISTANCE = 38;
+    const ARTILLERY_CAMERA_IMPACT_DISTANCE = 50;
+    const AIR_STRIKE_CAMERA_LEAD_SECONDS = 1;
+    const AIR_STRIKE_CAMERA_DISTANCE = 45;
+    /** Filled by advanceStrikes each frame and read right after; one array for the whole app. */
+    const strikeEvents: StrikeEvent[] = [];
+
+    /** Where shell `index` leaves the faction's Nexus (only visual; the domain never reads it). */
+    function strikeShellOrigin(faction: 'player' | 'enemy', index: number, shellCount: number) {
+        const nexus = faction === ECS_FACTIONS.player ? playerHQ : enemyHQ;
+        const base = nexus?.position ?? (faction === ECS_FACTIONS.player ? PLAYER_BASE_POSITION : ENEMY_BASE_POSITION);
+        return muzzleOrigin(base, index, shellCount);
     }
 
-    function applyDamage(target: RuntimeTarget, amount: number) {
-        const entity = target.ecsEntityId;
+    /** Lands this frame's due strike impacts on the gameplay clock, then plays and draws them. */
+    function advanceRewardStrikes(delta: number): void {
         const simulation = battleSimulation;
-        if (!simulation || entity === undefined) {
-            throw new Error('Cannot apply gameplay damage without a registered ECS entity');
-        }
-        target.hp = applyRewardDamage(
+        if (!simulation) return;
+        advanceStrikes(
             simulation.world,
             matchState,
             { player: simulation.playerBase, enemy: simulation.enemyBase },
-            entity,
-            amount,
+            delta,
             gameplayClockMs,
-            aiDifficulty
-        ).current;
+            aiDifficulty,
+            strikeEvents
+        );
+        representStrikeEvents(strikeEvents);
+        rewardEffectsView.sync(matchState.strikes);
     }
 
-    type ArtilleryImpact = {
-        origin: THREE.Vector3;
-        point: THREE.Vector3;
-        apexHeight: number;
-        launchAt: number;
-        projectile: THREE.Mesh | null;
-        complete: boolean;
-    };
-    type ArtilleryEffect = {
-        faction: 'player' | 'enemy';
-        elapsed: number;
-        impacts: ArtilleryImpact[];
-    };
-    type AirStrikeBomb = {
-        mesh: THREE.Mesh;
-        x: number;
-        y: number;
-        z: number;
-        target: THREE.Vector3;
-        elapsed: number;
-        released: boolean;
-        landed: boolean;
-    };
-    type AirStrikeEffect = {
-        faction: 'player' | 'enemy';
-        mesh: THREE.Group;
-        target: THREE.Vector3;
-        start: THREE.Vector3;
-        end: THREE.Vector3;
-        elapsed: number;
-        duration: number;
-        bombs: AirStrikeBomb[];
-    };
-
-    const artilleryEffects: ArtilleryEffect[] = [];
-    // Shells share one geometry/material; they are only disposed with the scene.
-    const artilleryShellGeometry = new THREE.SphereGeometry(0.42, 8, 8);
-    const artilleryShellMaterial = new THREE.MeshBasicMaterial({ color: 0xffb020 });
-    /** Shells leave from just above the Nexus dome, side by side. */
-    const ARTILLERY_MUZZLE_HEIGHT = 5.5;
-    const ARTILLERY_MUZZLE_SPACING = 1.2;
-    const ARTILLERY_CAMERA_NEXUS_DISTANCE = 38;
-    const ARTILLERY_CAMERA_IMPACT_DISTANCE = 50;
-    const airStrikeEffects: AirStrikeEffect[] = [];
-    // Low enough to stay on screen when the camera frames the target, above the tallest buildings.
-    const AIR_STRIKE_CRUISE_HEIGHT = 8;
-    const AIR_STRIKE_FLIGHT_ARC_HEIGHT = 1.2;
-    const AIR_STRIKE_CAMERA_LEAD_SECONDS = 1;
-    const AIR_STRIKE_CAMERA_DISTANCE = 45;
-    // The fuselage and tail are laid out along local X, with the nose at +X.
-    const aircraftForwardAxis = new THREE.Vector3(1, 0, 0);
-    const aircraftFlightTangent = new THREE.Vector3();
-
-    function orientAircraftAlongFlightPath(
-        aircraft: THREE.Group,
-        start: THREE.Vector3,
-        end: THREE.Vector3,
-        progress: number
-    ): void {
-        const verticalTangent = progress < 1
-            ? AIR_STRIKE_FLIGHT_ARC_HEIGHT * Math.PI * Math.cos(progress * Math.PI)
-            : 0;
-        aircraftFlightTangent
-            .set(end.x - start.x, verticalTangent, end.z - start.z)
-            .normalize();
-        aircraft.quaternion.setFromUnitVectors(aircraftForwardAxis, aircraftFlightTangent);
-    }
-
-    function disposeVisualTree(root: THREE.Object3D): void {
-        root.traverse((object) => {
-            if (!(object instanceof THREE.Mesh)) return;
-            object.geometry.dispose();
-            const materials = Array.isArray(object.material) ? object.material : [object.material];
-            materials.forEach((material) => material.dispose());
-        });
-    }
-
-    function clearActiveRewardEffects(): void {
-        for (const strike of artilleryEffects) {
-            for (const impact of strike.impacts) {
-                if (impact.projectile) scene.remove(impact.projectile);
+    /** Plays this frame's launches and impacts; the domain already applied their damage. */
+    function representStrikeEvents(events: readonly StrikeEvent[]): void {
+        for (const event of events) {
+            if (event.type === 'shell-launched') {
+                const origin = strikeShellOrigin(event.faction, event.index, ARTILLERY_IMPACT_OFFSETS.length);
+                combatEffects.createExplosion(new THREE.Vector3(origin.x, origin.y, origin.z), 0.3);
+                SFX.playHeavyCannon();
+                SFX.playShellWhistle(ARTILLERY_SHELL_FLIGHT_SECONDS);
+            } else if (event.type === 'impact') {
+                createCinematicExplosion(
+                    new THREE.Vector3(event.x, 0, event.z),
+                    event.kind === 'artillery_strike' ? 0.85 : 0.82,
+                    false
+                );
+                haptics.strikeImpact();
             }
         }
-        artilleryEffects.length = 0;
-        for (const strike of airStrikeEffects) {
-            scene.remove(strike.mesh);
-            disposeVisualTree(strike.mesh);
-            for (const bomb of strike.bombs) {
-                scene.remove(bomb.mesh);
-                disposeVisualTree(bomb.mesh);
-            }
-        }
-        airStrikeEffects.length = 0;
     }
 
     function disposeNexusShieldVisuals(): void {
-        if (playerShieldVisual) disposeVisualTree(playerShieldVisual);
-        if (enemyShieldVisual) disposeVisualTree(enemyShieldVisual);
+        if (playerShieldVisual) disposeObjectResources(playerShieldVisual);
+        if (enemyShieldVisual) disposeObjectResources(enemyShieldVisual);
         playerShieldVisual = null;
         enemyShieldVisual = null;
-    }
-
-    /** Fires one shell per impact offset from the faction's Nexus toward the aim point. */
-    function triggerArtilleryStrike(faction: 'player' | 'enemy', aim: StrikeAim): void {
-        const nexus = faction === ECS_FACTIONS.player ? playerHQ : enemyHQ;
-        const base = nexus?.position ?? (faction === ECS_FACTIONS.player ? PLAYER_BASE_POSITION : ENEMY_BASE_POSITION);
-        const middle = (ARTILLERY_IMPACT_OFFSETS.length - 1) / 2;
-        artilleryEffects.push({
-            faction,
-            elapsed: 0,
-            impacts: ARTILLERY_IMPACT_OFFSETS.map((offset, index) => {
-                const origin = new THREE.Vector3(
-                    base.x + (index - middle) * ARTILLERY_MUZZLE_SPACING,
-                    ARTILLERY_MUZZLE_HEIGHT,
-                    base.z
-                );
-                const point = new THREE.Vector3(aim.x + offset.x, 0, aim.z + offset.z);
-                return {
-                    origin,
-                    point,
-                    apexHeight: apexHeightFor(origin, point),
-                    launchAt: ARTILLERY_LAUNCH_DELAY_SECONDS + index * ARTILLERY_SALVO_INTERVAL_SECONDS,
-                    projectile: null,
-                    complete: false
-                };
-            })
-        });
     }
 
     /** Player-only cinematic: show the salvo leaving the Nexus, then follow it to the impact zone. */
@@ -2127,74 +2011,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ]);
     }
 
-    function updateActiveArtillery(delta: number): void {
-        const damage = getRewardDefinitionForDifficulty('artillery_strike', aiDifficulty).damage ?? 120;
-        for (let effectIndex = artilleryEffects.length - 1; effectIndex >= 0; effectIndex--) {
-            const strike = artilleryEffects[effectIndex];
-            strike.elapsed += delta;
-            for (const impact of strike.impacts) {
-                const flightElapsed = strike.elapsed - impact.launchAt;
-                if (flightElapsed < 0 || impact.complete) continue;
-                if (!impact.projectile) {
-                    impact.projectile = new THREE.Mesh(artilleryShellGeometry, artilleryShellMaterial);
-                    scene.add(impact.projectile);
-                    combatEffects.createExplosion(impact.origin, 0.3);
-                    SFX.playHeavyCannon();
-                    SFX.playShellWhistle(ARTILLERY_SHELL_FLIGHT_SECONDS);
-                }
-                const flightProgress = Math.min(1, flightElapsed / ARTILLERY_SHELL_FLIGHT_SECONDS);
-                ballisticPoint(impact.origin, impact.point, impact.apexHeight, flightProgress, impact.projectile.position);
-                if (flightProgress < 1) continue;
-
-                impact.complete = true;
-                scene.remove(impact.projectile);
-                impact.projectile = null;
-                const candidates = getRewardTargetCandidates(strike.faction);
-                for (const candidate of candidates) {
-                    if (Math.hypot(candidate.position.x - impact.point.x, candidate.position.z - impact.point.z) <= ARTILLERY_IMPACT_RADIUS) {
-                        applyDamage(candidate.runtime, damage);
-                    }
-                }
-                createCinematicExplosion(impact.point, 0.85, false);
-                haptics.strikeImpact();
-            }
-            if (strike.impacts.every((impact) => impact.complete)) artilleryEffects.splice(effectIndex, 1);
-        }
-    }
-
-    function createAttackAircraft(faction: 'player' | 'enemy'): THREE.Group {
-        const aircraft = new THREE.Group();
-        const body = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.48, 0.85, 7.5, 10),
-            new THREE.MeshStandardMaterial({
-                color: faction === 'player' ? 0x67e8f9 : 0xfb7185,
-                metalness: 0.45,
-                roughness: 0.42
-            })
-        );
-        body.rotation.z = -Math.PI / 2;
-        aircraft.add(body);
-        const wings = new THREE.Mesh(
-            new THREE.BoxGeometry(1.7, 0.18, 7),
-            new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65 })
-        );
-        wings.position.x = -0.5;
-        aircraft.add(wings);
-        const tail = new THREE.Mesh(
-            new THREE.BoxGeometry(1.7, 0.15, 2.5),
-            new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 })
-        );
-        tail.position.x = -2.6;
-        aircraft.add(tail);
-        const fin = new THREE.Mesh(
-            new THREE.BoxGeometry(1.4, 1.25, 0.18),
-            new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 })
-        );
-        fin.position.set(-2.8, 0.6, 0);
-        aircraft.add(fin);
-        return aircraft;
-    }
-
     /** Unit ground direction the camera looks along; the player's aircraft flies this way to stay in view. */
     function cameraGroundHeading(): StrikeAim {
         const forward = camera.getWorldDirection(new THREE.Vector3());
@@ -2202,60 +2018,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         return length > 1e-6 ? { x: forward.x / length, z: forward.z / length } : { x: 0, z: -1 };
     }
 
-    /** `heading` is the unit ground direction of the run; the aircraft is over `target` halfway through. */
-    function triggerAirStrikeForFaction(faction: 'player' | 'enemy', target: StrikeAim, heading: StrikeAim): void {
-        const targetPoint = new THREE.Vector3(target.x, 0, target.z);
-        const aircraft = createAttackAircraft(faction);
-        const start = new THREE.Vector3(
-            target.x - heading.x * AIR_STRIKE_RUN_HALF_LENGTH,
-            AIR_STRIKE_CRUISE_HEIGHT,
-            target.z - heading.z * AIR_STRIKE_RUN_HALF_LENGTH
-        );
-        const end = new THREE.Vector3(
-            target.x + heading.x * AIR_STRIKE_RUN_HALF_LENGTH,
-            AIR_STRIKE_CRUISE_HEIGHT,
-            target.z + heading.z * AIR_STRIKE_RUN_HALF_LENGTH
-        );
-        aircraft.position.copy(start);
-        orientAircraftAlongFlightPath(aircraft, start, end, 0);
-        scene.add(aircraft);
-        SFX.playJetFlyby(AIR_STRIKE_FLIGHT_SECONDS);
-
-        const bombs = AIR_STRIKE_BOMB_OFFSETS.map((offset) => {
-            const mesh = new THREE.Mesh(
-                new THREE.SphereGeometry(0.5, 8, 8),
-                new THREE.MeshBasicMaterial({ color: 0xfbbf24 })
-            );
-            mesh.visible = false;
-            scene.add(mesh);
-            return {
-                mesh,
-                x: targetPoint.x + offset.x,
-                y: 0,
-                z: targetPoint.z + offset.z,
-                target: new THREE.Vector3(targetPoint.x + offset.x, 0, targetPoint.z + offset.z),
-                elapsed: 0,
-                released: false,
-                landed: false
-            };
-        });
-        airStrikeEffects.push({
-            faction,
-            mesh: aircraft,
-            target: targetPoint,
-            start,
-            end,
-            elapsed: 0,
-            duration: AIR_STRIKE_FLIGHT_SECONDS,
-            bombs
-        });
-    }
-
     /** Player-only cinematic: reach the target before the aircraft so its bombs are seen leaving it. */
     function playAirStrikeCinematic(target: StrikeAim, heading: StrikeAim): void {
-        // The bomb furthest along the run drops last.
-        const lastDrop = Math.max(...AIR_STRIKE_BOMB_OFFSETS.map((offset) => offset.x * heading.x + offset.z * heading.z));
-        const lastLandingAt = AIR_STRIKE_FLIGHT_SECONDS / 2 + lastDrop / AIR_STRIKE_SPEED + AIR_STRIKE_BOMB_FALL_SECONDS;
+        // The bomb furthest along the run drops, and lands, last.
+        const lastLandingAt = Math.max(...AIR_STRIKE_BOMB_OFFSETS.map((offset) => nominalBombLandingSeconds(offset, heading)));
         cameraController.playShots([
             {
                 x: target.x,
@@ -2265,66 +2031,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 distance: AIR_STRIKE_CAMERA_DISTANCE
             }
         ]);
-    }
-
-    function updateActiveAirStrikes(delta: number): void {
-        const damage = getRewardDefinitionForDifficulty('air_strike', aiDifficulty).damage ?? 220;
-        for (let index = airStrikeEffects.length - 1; index >= 0; index--) {
-            const strike = airStrikeEffects[index];
-            strike.elapsed += delta;
-            const progress = Math.min(1, strike.elapsed / strike.duration);
-            const x = THREE.MathUtils.lerp(strike.start.x, strike.end.x, progress);
-            const z = THREE.MathUtils.lerp(strike.start.z, strike.end.z, progress);
-            strike.mesh.position.set(
-                x,
-                AIR_STRIKE_CRUISE_HEIGHT + Math.sin(progress * Math.PI) * AIR_STRIKE_FLIGHT_ARC_HEIGHT,
-                z
-            );
-            orientAircraftAlongFlightPath(strike.mesh, strike.start, strike.end, progress);
-
-            for (const bomb of strike.bombs) {
-                // Each bomb drops as the aircraft passes over its impact point.
-                const overTarget = (x - bomb.target.x) * (strike.end.x - strike.start.x)
-                    + (z - bomb.target.z) * (strike.end.z - strike.start.z) >= 0;
-                if (!bomb.released && overTarget) {
-                    bomb.released = true;
-                    bomb.mesh.visible = true;
-                    bomb.x = x;
-                    bomb.y = strike.mesh.position.y - 0.6;
-                    bomb.z = z;
-                }
-                if (!bomb.released || bomb.landed) continue;
-                bomb.elapsed += delta;
-                const fallProgress = Math.min(1, bomb.elapsed / AIR_STRIKE_BOMB_FALL_SECONDS);
-                bomb.mesh.position.set(
-                    THREE.MathUtils.lerp(bomb.x, bomb.target.x, fallProgress),
-                    THREE.MathUtils.lerp(bomb.y, 0.6, fallProgress),
-                    THREE.MathUtils.lerp(bomb.z, bomb.target.z, fallProgress)
-                );
-                if (fallProgress < 1) continue;
-
-                bomb.landed = true;
-                const impact = new THREE.Vector3(bomb.target.x, 0, bomb.target.z);
-                createCinematicExplosion(impact, 0.82, false);
-                haptics.strikeImpact();
-                for (const candidate of getRewardTargetCandidates(strike.faction)) {
-                    if (Math.hypot(candidate.position.x - impact.x, candidate.position.z - impact.z) <= AIR_STRIKE_EFFECTIVE_RADIUS) {
-                        applyDamage(candidate.runtime, damage);
-                    }
-                }
-                bomb.mesh.visible = false;
-            }
-
-            if (progress >= 1 && strike.bombs.every((bomb) => bomb.landed)) {
-                scene.remove(strike.mesh);
-                disposeVisualTree(strike.mesh);
-                for (const bomb of strike.bombs) {
-                    scene.remove(bomb.mesh);
-                    disposeVisualTree(bomb.mesh);
-                }
-                airStrikeEffects.splice(index, 1);
-            }
-        }
     }
 
     function getRewardFailureMessage(reason: RewardRejection): string {
@@ -2362,27 +2068,19 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         syncGoldMirrors();
         const { definition, aim } = result;
         if (id === 'defensive_shield') {
-            (faction === ECS_FACTIONS.player ? playerActiveRewardUntil : enemyActiveRewardUntil)[id] =
-                matchState.rewards[faction].shieldUntilMs;
             if (faction === ECS_FACTIONS.player) showToast(`Escudo activado: daño al Nexo reducido durante ${definition.durationSeconds} s.`);
         } else {
             if (!aim) throw new Error(`Validated reward ${id} has no aim point`);
-            let durationSeconds: number;
+            // The command scheduled the strike; the domain advances it and the view draws it.
             if (id === 'artillery_strike') {
-                triggerArtilleryStrike(faction, aim);
                 if (faction === ECS_FACTIONS.player) playArtilleryCinematic(aim);
-                durationSeconds = artilleryStrikeDurationSeconds(ARTILLERY_IMPACT_OFFSETS.length);
             } else {
-                // The command froze the heading in the scheduled strike; the legacy visual uses exactly that.
+                // The command froze the heading in the scheduled strike; the cinematic frames exactly that run.
                 const scheduled = matchState.strikes.active.find((strike) => strike.id === result.strikeId);
                 if (!scheduled || scheduled.kind !== 'air_strike') throw new Error('The activated air strike was not scheduled');
-                const heading = scheduled.heading;
-                triggerAirStrikeForFaction(faction, aim, heading);
-                if (faction === ECS_FACTIONS.player) playAirStrikeCinematic(aim, heading);
-                durationSeconds = AIR_STRIKE_FLIGHT_SECONDS;
+                SFX.playJetFlyby(AIR_STRIKE_FLIGHT_SECONDS);
+                if (faction === ECS_FACTIONS.player) playAirStrikeCinematic(aim, scheduled.heading);
             }
-            (faction === ECS_FACTIONS.player ? playerActiveRewardUntil : enemyActiveRewardUntil)[id] =
-                gameplayClockMs + durationSeconds * 1000;
             if (faction === ECS_FACTIONS.player) {
                 showToast(id === 'artillery_strike'
                     ? 'Bombardeo de artillería activado: impactos en camino.'
@@ -2572,8 +2270,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             const combatStart = diagnosticsEnabled ? performance.now() : 0;
             runEnemyAIUpdate(delta);
             advanceBattleSimulation(delta, time);
-            updateActiveArtillery(delta);
-            updateActiveAirStrikes(delta);
+            advanceRewardStrikes(delta);
             updateNexusShieldVisuals();
             updateCombat(delta);
             if (gameplayClockMs - lastRewardUiUpdateMs >= 250) {
@@ -2720,8 +2417,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 playerNexusHealth,
                 playerShieldRemainingMs: Math.max(0, matchState.rewards.player.shieldUntilMs - gameplayClockMs),
                 rewardScenarioHealth,
-                activeArtilleryStrikes: artilleryEffects.length,
-                activeAirStrikes: airStrikeEffects.length,
+                activeArtilleryStrikes: matchState.strikes.active.filter((strike) => strike.kind === 'artillery_strike').length,
+                activeAirStrikes: matchState.strikes.active.filter((strike) => strike.kind === 'air_strike').length,
                 memoryBytes: (performance as PerformanceWithMemory).memory?.usedJSHeapSize ?? null
             };
         };
@@ -2825,9 +2522,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     throw new Error('Start a match before preparing the reward scenario');
                 }
                 enemyAIEnabled = false;
-                clearActiveRewardEffects();
+                clearStrikes(matchState);
+                matchState.rewards.player.strikeActiveUntilMs = {};
+                rewardEffectsView.clear();
                 matchState.rewards.player.cooldownUntilMs = gameplayClockMs;
-                playerActiveRewardUntil = {};
                 matchState.rewards.player.shieldUntilMs = 0;
                 if (playerShieldVisual) playerShieldVisual.visible = false;
                 for (const building of enemyBuildings.filter((candidate) => candidate.type !== 'hq')) {
@@ -3043,6 +2741,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         dispose() {
             frameLoop?.stop();
             inputController?.detach();
+            rewardEffectsView?.dispose();
             renderCoordinator?.dispose();
             diagnosticsOverlay?.dispose();
             for (const unsubscribe of unlockSubscriptions.splice(0)) unsubscribe();
