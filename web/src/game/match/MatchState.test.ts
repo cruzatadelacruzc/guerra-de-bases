@@ -8,7 +8,11 @@ test('a match starts with no points, streaks, losses or result', () => {
     killStreak: { player: 0, enemy: 0 },
     playerUnitsDestroyed: 0,
     playerUnitsLost: 0,
-    outcome: null
+    outcome: null,
+    rewards: {
+      player: { cooldownUntilMs: 0, shieldUntilMs: 0 },
+      enemy: { cooldownUntilMs: 0, shieldUntilMs: 0 }
+    }
   });
 });
 

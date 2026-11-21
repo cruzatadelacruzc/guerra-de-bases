@@ -2,9 +2,15 @@ import type { Faction } from '../ecs/components.ts';
 
 export type MatchOutcome = 'victory' | 'defeat';
 
+/** Reward timers of one faction, on the gameplay clock. */
+export interface FactionRewardState {
+  cooldownUntilMs: number;
+  shieldUntilMs: number;
+}
+
 /**
- * Per-match scoring state. Entity health, existence and lifecycle stay in the
- * ECS; this only keeps what the rules derive from deaths.
+ * Per-match state. Entity health, existence and lifecycle stay in the ECS; this
+ * keeps what the rules derive from deaths and each faction's reward timers.
  */
 export interface MatchState {
   combatPoints: Record<Faction, number>;
@@ -15,6 +21,7 @@ export interface MatchState {
   playerUnitsLost: number;
   /** Terminal once set: deaths are no longer resolved after it. */
   outcome: MatchOutcome | null;
+  rewards: Record<Faction, FactionRewardState>;
 }
 
 export function createMatchState(): MatchState {
@@ -23,7 +30,11 @@ export function createMatchState(): MatchState {
     killStreak: { player: 0, enemy: 0 },
     playerUnitsDestroyed: 0,
     playerUnitsLost: 0,
-    outcome: null
+    outcome: null,
+    rewards: {
+      player: { cooldownUntilMs: 0, shieldUntilMs: 0 },
+      enemy: { cooldownUntilMs: 0, shieldUntilMs: 0 }
+    }
   };
 }
 

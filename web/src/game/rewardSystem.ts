@@ -27,6 +27,9 @@ export interface RewardDefinition {
   reduction?: number;
 }
 
+/** After any reward, the same faction waits this long before activating another. */
+export const REWARD_COOLDOWN_MS = 15000;
+
 export const AIR_STRIKE_EFFECTIVE_RADIUS = 12;
 
 /** Artillery shells are fired from the activating faction's Nexus and arc to their impact points. */
