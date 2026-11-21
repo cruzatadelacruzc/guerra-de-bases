@@ -2,6 +2,7 @@ import { COMPONENTS, FACTIONS } from './components.ts';
 import type { Entity, Faction, Position, SoldierKind, Weapon } from './components.ts';
 import { World } from './World.ts';
 import { NEXUS_HEALTH, STRUCTURE_DEFINITIONS } from '../definitions/structures.ts';
+import type { BuildableStructureKind } from '../definitions/structures.ts';
 
 const SOLDIER_SPEED = 8;
 const SOLDIER_RANGE = 14;
@@ -140,6 +141,23 @@ export function createSoldierFactory(
   world.addComponent(entity, COMPONENTS.factory, true);
   world.addComponent(entity, COMPONENTS.production, { order: undefined });
   return entity;
+}
+
+/**
+ * Composes a placeable structure with its defined health. It neither validates nor
+ * charges: gameplay builds through `buildStructure`, development scenarios through
+ * `placeDiagnosticStructure`.
+ */
+export function createBuildableStructure(
+  world: World,
+  faction: Faction,
+  kind: BuildableStructureKind,
+  position: Position
+): Entity {
+  const { health } = STRUCTURE_DEFINITIONS[kind];
+  return kind === 'barracks'
+    ? createSoldierFactory(world, faction, { ...position }, health)
+    : createStructure(world, faction, { ...position }, health, kind);
 }
 
 export function createSoldier(
