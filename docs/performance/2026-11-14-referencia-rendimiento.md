@@ -460,6 +460,56 @@ La IA usa `Math.random`, y el desenlace varía igual en las dos versiones. No es
   - esa subida no aparece en los otros tres casos y es menor de 0,1 ms por fotograma, así que no se atribuye a R3 con seguridad.
 - **Los fotogramas y la CPU del combate en móvil emulado salen más bajos que en R0 y R2.** No se presenta como una mejora de R3: el portátil estaba menos cargado y la variación entre sesiones (§8.2) es mayor que esa diferencia.
 
+### 8.4 R4 — comandos compartidos (construir, vender, entrenar y recompensas)
+
+Cambio medido:
+- el jugador y la IA construyen, venden, entrenan y activan recompensas con los comandos de `game/commands/`;
+- la IA lee un resumen construido desde el ECS y ejecuta sus órdenes con `executeEnemyTurn`;
+- el escudo se aplica en un solo sitio (`match/shield.ts`).
+
+Misma batería de §6 y mismos perfiles, con el Chrome del sistema (Chrome 155 headless, la misma GPU Intel UHD 620 por Vulkan). **Carga media del portátil: ~4,4-7,4**, más alta que en R3 (~2,5-3,1). En la primera ejecución de escritorio seguía abierta en paralelo la sesión del perfil móvil. Esa ejecución se descartó y se repitió con la sesión cerrada; la tabla muestra la repetición.
+
+| Escenario · perfil | Métrica | R3 (1 / 2) | R4 (1 / 2) |
+|---|---|---:|---:|
+| Partida · escritorio | Fotograma · CPU (ms) | 23,32 · 2,79 / 22,70 · 2,66 | 30,36 · 2,35 / 20,36 · 2,56 |
+| | Simulación · resto gameplay (ms) | 0,120 · 0,489 / 0,107 · 0,489 | 0,092 · 0,441 / 0,082 · 0,476 |
+| | IA llamadas/fotograma · decisiones/s | 1,00 · 1,40 / 1,00 · 1,40 | 1,00 · 1,40 / 0,98 · 1,43 |
+| | IA media · máx. (ms) | – | 0,022 · 1,9 / 0,012 · 0,8 |
+| | Draw calls · geometrías máx. | 18,1 · 23 / 18,4 · 23 | 10,7 · 23 / 18,5 · 23 |
+| Partida · móvil emulado | Fotograma · CPU (ms) | 17,84 · 1,88 / 17,71 · 1,75 | 20,80 · 1,79 / 21,48 · 1,81 |
+| | Simulación · resto gameplay (ms) | 0,086 · 0,432 / 0,073 · 0,383 | 0,068 · 0,357 / 0,079 · 0,403 |
+| | IA media · máx. (ms) | – | 0,018 · 1,9 / 0,021 · 4,9 |
+| | Draw calls · geometrías máx. | 14,6 · 22 / 17,6 · 22 | 11,6 · 21 / 15,6 · 22 |
+| Combate · escritorio (IA desactivada) | Fotograma · CPU (ms) | 31,13 · 11,16 / 30,60 · 10,75 | 28,34 · 9,74 / 28,43 · 10,13 |
+| | Simulación · resto gameplay (ms) | 0,564 · 1,099 / 0,587 · 1,105 | 0,512 · 1,007 / 0,549 · 1,082 |
+| | Draw calls · geometrías máx. | 210 · 322 / 215 · 327 | 212 · 321 / 207 · 325 |
+| Combate · móvil emulado (IA desactivada) | Fotograma · CPU (ms) | 25,28 · 8,28 / 25,18 · 7,98 | 29,66 · 10,86 / 29,93 · 11,99 |
+| | Simulación · resto gameplay (ms) | 0,503 · 1,048 / 0,476 · 0,977 | 0,499 · 1,190 / 0,540 · 1,206 |
+| | Draw calls · geometrías máx. | 210 · 325 / 210 · 325 | 212 · 325 / 211 · 325 |
+| Estrés · escritorio / móvil emulado | Fotograma (ms) · draw calls · geometrías | 25,71 · 46,2 · 52 / 20,23 · 45,0 · 51 | 22,60 · 46,2 · 52 / 25,11 · 44,5 · 51 |
+| Menú · escritorio / móvil emulado | Fotograma (ms) · draw calls | 20,75 · 84 / 16,80 · 43,9 | 25,56 · 84 / 19,71 · 45,4 |
+
+Repetición en R4: tres combates seguidos terminan con 105 geometrías (escritorio) y 92, 90 y 90 (móvil emulado), y la partida nueva posterior vuelve a 23 y 22, igual que en R0-R3.
+
+La partida 2 de escritorio terminó con derrota antes de los 30 s, como ya pasó en R3 (§8.3): la IA usa `Math.random` y el desenlace varía entre ejecuciones.
+
+**Conclusión:**
+
+- **Sin cambios estructurales:**
+  - draw calls, geometrías y la repetición sin crecimiento coinciden con R3;
+  - el ritmo de la IA no cambia: 1 llamada por fotograma y 1,40 decisiones/s.
+- **IA:**
+  - la media sigue en 0,01-0,02 ms por fotograma;
+  - el máximo va de 0,8 a 4,9 ms. Son los turnos en que construye: la malla del edificio se sigue creando en ese mismo fotograma, ahora en `representStructure` tras el comando aceptado. Está dentro del rango de 3-10 ms ya registrado (§8.2), sin empeorar.
+  - Mover la creación de mallas fuera del tiempo de la IA no era objetivo de R4. Corresponde a `BattlefieldView` (R6).
+- **Simulación sin aumento:** 0,07-0,09 ms en partida y 0,50-0,55 ms en combate.
+- **Resto gameplay:**
+  - en escritorio, igual o menor que en R3 (partida 0,44-0,48 frente a 0,49; combate 1,01-1,08 frente a 1,10);
+  - en móvil emulado, combate 1,19-1,21 frente a 0,98-1,05, y partida igual (0,36-0,40 frente a 0,38-0,43).
+  - La subida de ~0,2 ms del combate en móvil coincide con la carga más alta del portátil. Ese escenario no usa comandos durante la medición: la IA está desactivada y el jugador no actúa. No se atribuye a R4.
+- **Fotogramas y CPU:** el combate en móvil emulado sale más lento que en R3 y el de escritorio, más rápido. Las dos diferencias son menores que la variación entre sesiones (§8.2). No se presenta ninguna como efecto de R4.
+- **Sin dispositivo real:** no hay medición en el teléfono para R4.
+
 ## 9. Próximos pasos de medición
 
 - **Referencia definitiva en el Samsung Galaxy A05 de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):

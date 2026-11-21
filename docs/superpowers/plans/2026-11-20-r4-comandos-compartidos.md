@@ -52,7 +52,7 @@
 
 ---
 
-### Tarea 1: Línea base del ejecutor antiguo (solo pruebas, antes de tocar producción)
+### Task 1: Línea base del ejecutor antiguo (solo pruebas, antes de tocar producción)
 
 **Files:**
 - Modify: `web/src/game/ai/testRng.ts` (añadir `seededRng`)
@@ -99,7 +99,7 @@
   export const LEGACY_STRATEGY: AiStrategy;
   ```
 
-- [ ] **Paso 1: Utilidades.**
+- [x] **Paso 1: Utilidades.**
   - **`seededRng`:** mulberry32 (unas diez líneas, sin dependencias).
   - **`runAiMatch`** monta `new BattleSimulation({ enemyBaseIncome: getDifficultyProfile(d).enemyBaseIncome })`, `createMatchState()`, `new DeathResolver()` y `new EnemyAiController(getEnemyAiProfile(d), seededRng(seed))`. Cada fotograma de `1/60` s, en el orden de `animate`:
     1. `nowMs += 1000/60`;
@@ -121,7 +121,7 @@
       - `validRewardTargetCount` = enemigos del jugador atacables vivos que no son `hq`;
       - `nexusHealthRatio` = vida actual / máxima de la base, o `1` si falta.
 
-- [ ] **Paso 2: Escribir la prueba con la línea base vacía.** En `aiExecutor.comparison.test.ts`:
+- [x] **Paso 2: Escribir la prueba con la línea base vacía.** En `aiExecutor.comparison.test.ts`:
   - `const BASELINE: Record<Difficulty, AiRunMetrics>`, que se rellena en el paso 3;
   - `const CONTROL = { difficulty, seed, durationSeconds }`, que se elige en el paso 3.
 
@@ -130,7 +130,7 @@
   - `the control run has no overlapping builds`: `runAiMatch(CONTROL, LEGACY_STRATEGY)` da `overlappingAcceptedBuilds === 0` y `buildAttempts >= 3`;
   - `the run is deterministic`: dos ejecuciones iguales dan `log` y `metrics` idénticos.
 
-- [ ] **Paso 3: Fijar la línea base.**
+- [x] **Paso 3: Fijar la línea base.**
   Run: `npx tsx --test web/src/game/ai/aiExecutor.comparison.test.ts`. Falla e imprime las métricas reales.
   - Se copian a `BASELINE`.
   - Para `CONTROL` se elige la primera semilla de `1..50` (y, si hace falta, la duración más larga ≤ 300 s) con `overlappingAcceptedBuilds === 0` y al menos 3 intentos.
@@ -138,7 +138,7 @@
 
   Expected tras rellenar: PASS. La prueba debe tardar menos de ~15 s; si no, se baja la duración y se anota.
 
-- [ ] **Paso 4: Commit (solo pruebas).** `npm test` en verde y `git diff --stat` sin archivos de producción.
+- [x] **Paso 4: Commit (solo pruebas).** `npm test` en verde y `git diff --stat` sin archivos de producción.
   ```bash
   git add web/src/game/ai/testRng.ts web/src/game/ai/legacyEnemyExecutor.ts web/src/game/ai/aiMatchRunner.ts web/src/game/ai/aiExecutor.comparison.test.ts
   git commit -m "test(ai): pin the current enemy executor with a seeded baseline"
@@ -146,7 +146,7 @@
 
 ---
 
-### Tarea 2: Ubicación y contexto de comandos
+### Task 2: Ubicación y contexto de comandos
 
 **Files:**
 - Create: `web/src/game/commands/CommandContext.ts`, `web/src/game/commands/placement.ts`
@@ -175,7 +175,7 @@
     { readonly ok: true } | { readonly ok: false; readonly reason: PlacementRejection };
   ```
 
-- [ ] **Paso 1: Pruebas que fallan.**
+- [x] **Paso 1: Pruebas que fallan.**
   - **`CommandContext.test.ts`,** con la tabla de §5.6:
     - `PLAYING` + `null` → `ok`;
     - `PLAYING` + `'victory'` → `match-over`;
@@ -189,10 +189,10 @@
     - una torreta enemiga a 1 de distancia no bloquea;
     - el Nexo propio (`createInitialBattle`) bloquea a 2 de su posición;
     - zona antes que distancia: una posición fuera de zona y pegada a una estructura da `outside-zone`.
-- [ ] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/commands/*.test.ts` falla porque los módulos no existen.
-- [ ] **Paso 3: Implementar.** Para la distancia, `world.query(COMPONENTS.building, COMPONENTS.faction, COMPONENTS.transform)` filtrado por facción.
-- [ ] **Paso 4: Ver que pasan.** Mismo comando, todo PASS.
-- [ ] **Paso 5: Commit.**
+- [x] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/commands/*.test.ts` falla porque los módulos no existen.
+- [x] **Paso 3: Implementar.** Para la distancia, `world.query(COMPONENTS.building, COMPONENTS.faction, COMPONENTS.transform)` filtrado por facción.
+- [x] **Paso 4: Ver que pasan.** Mismo comando, todo PASS.
+- [x] **Paso 5: Commit.**
   ```bash
   git add web/src/game/commands/CommandContext.ts web/src/game/commands/CommandContext.test.ts web/src/game/commands/placement.ts web/src/game/commands/placement.test.ts
   git commit -m "feat(commands): validate placement and the match phase in the game domain"
@@ -200,7 +200,7 @@
 
 ---
 
-### Tarea 3: Construir y vender
+### Task 3: Construir y vender
 
 **Files:**
 - Modify: `web/src/game/ecs/initialBattle.ts` (añadir `createBuildableStructure` junto a `createStructure`)
@@ -230,7 +230,7 @@
   export function snapshotCommandState(ctx: CommandContext): CommandStateSnapshot;   // para deepEqual
   ```
 
-- [ ] **Paso 1: Pruebas que fallan** (`structureCommands.test.ts`):
+- [x] **Paso 1: Pruebas que fallan** (`structureCommands.test.ts`):
   - `building spends the cost and creates the structure`: con 1000 de oro, generador, barraca y torreta → oro −100 / −150 / −125. La entidad tiene `building.kind`, `faction`, `transform`, vida 380 / 380 y collider. La barraca tiene `factory` y `production`; el generador, `resourceGenerator` con 12; la torreta, `weapon` y `targeting`.
   - **Rechazos sin cambios** (`deepEqual(snapshotCommandState(ctx), antes)`), cada uno con un comando por lo demás válido:
     - `insufficient-gold` con 99 de oro y un generador;
@@ -240,8 +240,8 @@
   - `the AI and the player share the rule`: el enemigo con 1000 de oro y una torreta propia en `(0, 0, -40)` recibe `too-close` a 2 de distancia.
   - `selling refunds 70 % and removes the entity`: 70 / 105 / 87, la entidad sale del `World` y el resultado lleva `kind` y `position`.
   - `selling rejects`, sin cambios: el Nexo → `not-sellable`; una estructura enemiga vendida por el jugador → `not-owned`; una entidad borrada → `not-found`; partida no activa → `match-over` o `not-playing`.
-- [ ] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/commands/structureCommands.test.ts` falla porque los módulos no existen.
-- [ ] **Paso 3: Implementar.**
+- [x] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/commands/structureCommands.test.ts` falla porque los módulos no existen.
+- [x] **Paso 3: Implementar.**
   - **`buildStructure`,** en este orden: `checkMatchPlaying` → `validatePlacement` → oro ≥ coste → `trySpendResources` → `createBuildableStructure`.
   - **`sellStructure`:**
     - sin componente `faction` → `not-found`;
@@ -249,8 +249,8 @@
     - sin `building` o con `kind === 'hq'` → `not-sellable`;
     - si se acepta, abona al `economy` de `ctx.bases[faction]` y llama a `removeEntity`.
   - **`placeDiagnosticStructure`:** su primera línea es exactamente `if (!import.meta.env.DEV) throw new Error('placeDiagnosticStructure: development only');` y después llama a `createBuildableStructure`. No lleva prueba con `tsx`, porque `import.meta.env` solo existe con Vite. Se verifica en la Tarea 8.
-- [ ] **Paso 4: Ver que pasan.** `npx tsx --test web/src/game/commands/*.test.ts` y `npm run typecheck`, todo PASS.
-- [ ] **Paso 5: Commit.**
+- [x] **Paso 4: Ver que pasan.** `npx tsx --test web/src/game/commands/*.test.ts` y `npm run typecheck`, todo PASS.
+- [x] **Paso 5: Commit.**
   ```bash
   git add web/src/game/ecs/initialBattle.ts web/src/game/commands/structureCommands.ts web/src/game/commands/structureCommands.test.ts web/src/game/commands/commandTestState.ts web/src/dev/diagnosticStructures.ts
   git commit -m "feat(commands): build and sell structures through validated commands"
@@ -258,7 +258,7 @@
 
 ---
 
-### Tarea 4: Entrenar
+### Task 4: Entrenar
 
 **Files:**
 - Create: `web/src/game/commands/trainCommand.ts`
@@ -275,7 +275,7 @@
   export function idleFactories(world: World, faction: Faction): readonly Entity[];   // vivas y sin orden
   ```
 
-- [ ] **Paso 1: Pruebas que fallan.**
+- [x] **Paso 1: Pruebas que fallan.**
   - **Aceptado:** gasta el coste de `SOLDIER_PRODUCTION[unit]` y deja la orden con `spawnPosition`.
   - **Rechazos sin cambios:**
     - `factory-busy`;
@@ -284,10 +284,10 @@
     - `invalid-factory` para una barraca con vida 0;
     - `match-over` y `not-playing`.
   - **Consultas:** `liveFactories` e `idleFactories` en orden de creación. Excluyen barracas muertas y de la otra facción, y `idleFactories` excluye las ocupadas.
-- [ ] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/commands/trainCommand.test.ts` falla porque el módulo no existe.
-- [ ] **Paso 3: Implementar.** `checkMatchPlaying` y después `requestUnitProduction(ctx.world, factory, ctx.bases[faction], unit, spawnPosition, overrides)`, que ya rechaza una barraca de otra facción.
-- [ ] **Paso 4: Ver que pasan.** Mismo comando, PASS.
-- [ ] **Paso 5: Commit.**
+- [x] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/commands/trainCommand.test.ts` falla porque el módulo no existe.
+- [x] **Paso 3: Implementar.** `checkMatchPlaying` y después `requestUnitProduction(ctx.world, factory, ctx.bases[faction], unit, spawnPosition, overrides)`, que ya rechaza una barraca de otra facción.
+- [x] **Paso 4: Ver que pasan.** Mismo comando, PASS.
+- [x] **Paso 5: Commit.**
   ```bash
   git add web/src/game/commands/trainCommand.ts web/src/game/commands/trainCommand.test.ts
   git commit -m "feat(commands): train units through a shared command"
@@ -295,7 +295,7 @@
 
 ---
 
-### Tarea 5: Estado de recompensas, escudo único y activación
+### Task 5: Estado de recompensas, escudo único y activación
 
 **Files:**
 - Modify: `web/src/game/match/MatchState.ts` y `MatchState.test.ts`; `web/src/game/rewardSystem.ts` (`REWARD_COOLDOWN_MS`)
@@ -325,7 +325,7 @@
   ```
   `applyFactionShield` no recibe `world`, al contrario que el esbozo de §5.7, porque no lo necesita.
 
-- [ ] **Paso 1: Pruebas que fallan.**
+- [x] **Paso 1: Pruebas que fallan.**
   - **`MatchState.test.ts`:** el `deepEqual` de la partida nueva incluye `rewards: { player: { cooldownUntilMs: 0, shieldUntilMs: 0 }, enemy: { cooldownUntilMs: 0, shieldUntilMs: 0 } }`.
   - **`shield.test.ts`:**
     - **Proyectiles:** `BattleSimulation` con `modifyDamage: (t, a) => applyFactionShield(match, bases, t, a, nowMs, 'normal')`, el escudo del jugador hasta `nowMs + 10000` y un soldado enemigo junto a la base del jugador. Tras `advance` hasta el primer impacto en la base (`drainProjectileImpacts`), la base pierde exactamente `daño del arma × 0.5`, no `× 0.25`.
@@ -337,14 +337,14 @@
     - **Escudo aceptado:** `shieldUntilMs = nowMs + durationSeconds × 1000` y sin `aim`.
     - **Ataque aceptado:** el `aim` es igual a `selectStrikeAim(rewardTargetCandidates(world, faction), getStrikePattern(id, d))`.
     - **Candidatos:** solo enemigos atacables vivos que no son `hq`, con `health` del ECS tras aplicar daño, y `kind 'unit'` para entidades con `soldier`.
-- [ ] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/match/*.test.ts web/src/game/commands/*.test.ts` falla porque faltan `rewards`, `shield.ts` y `rewardCommand.ts`.
-- [ ] **Paso 3: Implementar.** `activateReward` sigue este orden, con todas las comprobaciones antes de la primera escritura:
+- [x] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/match/*.test.ts web/src/game/commands/*.test.ts` falla porque faltan `rewards`, `shield.ts` y `rewardCommand.ts`.
+- [x] **Paso 3: Implementar.** `activateReward` sigue este orden, con todas las comprobaciones antes de la primera escritura:
   1. `checkMatchPlaying`;
   2. `validateRewardActivation`, con `cooldownMs = max(0, cooldownUntilMs − nowMs)`, `expiresAt = cooldownUntilMs` y `activeShield = shieldUntilMs > nowMs`;
   3. el punto de mira (ataques) y, sin él, `no-valid-target`;
   4. `trySpendResources`, `spendCombatPoints`, la recarga y el escudo.
-- [ ] **Paso 4: Ver que pasan.** Mismo comando y `npm run typecheck`, todo PASS. `GameApplication.ts` todavía no usa nada nuevo; el campo añadido a `MatchState` no rompe a quien solo lo lee.
-- [ ] **Paso 5: Commit.**
+- [x] **Paso 4: Ver que pasan.** Mismo comando y `npm run typecheck`, todo PASS. `GameApplication.ts` todavía no usa nada nuevo; el campo añadido a `MatchState` no rompe a quien solo lo lee.
+- [x] **Paso 5: Commit.**
   ```bash
   git add web/src/game/match/MatchState.ts web/src/game/match/MatchState.test.ts web/src/game/rewardSystem.ts web/src/game/match/shield.ts web/src/game/match/shield.test.ts web/src/game/commands/rewardCommand.ts web/src/game/commands/rewardCommand.test.ts
   git commit -m "feat(commands): validate and spend rewards in the domain with a single shield path"
@@ -352,7 +352,7 @@
 
 ---
 
-### Tarea 6: Resumen y ejecutor de la IA en el dominio, comparación con la línea base
+### Task 6: Resumen y ejecutor de la IA en el dominio, comparación con la línea base
 
 **Files:**
 - Create: `web/src/game/ai/aiSnapshot.ts`, `web/src/game/ai/executeEnemyTurn.ts`
@@ -373,7 +373,7 @@
   ```
   Es una decisión del plan: el ejecutor vive en el dominio para que la comparación use el código real. `GameApplication` solo representa sus resultados (§5.8).
 
-- [ ] **Paso 1: Pruebas que fallan.**
+- [x] **Paso 1: Pruebas que fallan.**
   - **`executeEnemyTurn.test.ts`** (prueba de conexión):
     - con `EnemyAiController(getEnemyAiProfile('normal'), sequenceRng([...]))` y un mundo con oro, la decisión del primer turno produce exactamente las entidades, órdenes y gastos esperados;
     - el resultado tiene un `EnemyCommandOutcome` por comando, en orden;
@@ -385,12 +385,12 @@
     - `control run is identical end to end`: `deepEqual` de `log` y `metrics` de las dos estrategias sobre `CONTROL`;
     - `current never builds too close`: `overlappingAcceptedBuilds === 0` y `outsideZoneRejections === 0`;
     - `a rejected build changes nothing`: en cada turno, un `build` rechazado no tiene `entity` y su coste no figura en `goldBefore − goldAfter`.
-- [ ] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/ai/*.test.ts` falla porque los módulos no existen.
-- [ ] **Paso 3: Implementar** los dos módulos. La correspondencia de campos del resumen está en §5.8 y en el `LEGACY_STRATEGY` de la Tarea 1.
-- [ ] **Paso 4: Fijar `CURRENT`.** Se ejecuta y se copian las métricas impresas, igual que en la Tarea 1.
+- [x] **Paso 2: Ver que fallan.** `npx tsx --test web/src/game/ai/*.test.ts` falla porque los módulos no existen.
+- [x] **Paso 3: Implementar** los dos módulos. La correspondencia de campos del resumen está en §5.8 y en el `LEGACY_STRATEGY` de la Tarea 1.
+- [x] **Paso 4: Fijar `CURRENT`.** Se ejecuta y se copian las métricas impresas, igual que en la Tarea 1.
   - La línea base de la Tarea 1 **no se toca**. Si cambia, es un cambio accidental y se investiga.
   - Expected: todo PASS.
-- [ ] **Paso 5: Commit.**
+- [x] **Paso 5: Commit.**
   ```bash
   git add web/src/game/ai/aiSnapshot.ts web/src/game/ai/executeEnemyTurn.ts web/src/game/ai/executeEnemyTurn.test.ts web/src/game/ai/aiExecutor.comparison.test.ts
   git commit -m "feat(ai): execute enemy turns through the shared commands and compare with the baseline"
@@ -398,7 +398,7 @@
 
 ---
 
-### Tarea 7: `GameApplication` usa los comandos
+### Task 7: `GameApplication` usa los comandos
 
 **Files:**
 - Modify: `web/src/GameApplication.ts`:
@@ -418,18 +418,18 @@
 - Consumes: todo lo producido en las Tareas 2-6, más `placeDiagnosticStructure`.
 - Produces (dentro de `createGameRuntime`): `commandContext(): CommandContext` (nuevo en cada llamada, con `sessionPhase: session.state` y `nowMs: gameplayClockMs`), `representStructure(entity: Entity): RuntimeStructure` y `syncGoldMirrors(): void`.
 
-- [ ] **Paso 1: Prueba de frontera que falla** (`constructionBoundary.test.ts`):
+- [x] **Paso 1: Prueba de frontera que falla** (`constructionBoundary.test.ts`):
   - recorre `web/src` con `node:fs` (recursión manual), sin `*.test.ts` ni `matchHarness.ts`, `legacyEnemyExecutor.ts`, `aiMatchRunner.ts` ni `commandTestState.ts`;
   - falla si `createBuildableStructure`, `createStructure` o `createSoldierFactory` aparecen fuera de `game/ecs/initialBattle.ts`, `game/commands/structureCommands.ts` y `dev/diagnosticStructures.ts`.
 
   Run: `npx tsx --test web/src/game/commands/constructionBoundary.test.ts`
   Expected: FAIL, con `GameApplication.ts` como infractor.
-- [ ] **Paso 2: Estado y escudo.**
+- [x] **Paso 2: Estado y escudo.**
   - Se eliminan `rewardCooldownUntil`, `enemyRewardCooldownUntil`, `defensiveShieldUntil`, `enemyDefensiveShieldUntil` y `rewardCooldownMs`; se lee y escribe `matchState.rewards[faction]`.
   - `modifyDamage` llama a `applyFactionShield` y `applyDamage` llama a `applyRewardDamage`, y luego copia la vida en `target.hp`.
   - `isShieldActiveForFaction` lee `shieldUntilMs`.
   - `updateRewardUI` toma el escudo activo de `shieldUntilMs` y el recuento de objetivos de `rewardTargetCandidates`.
-- [ ] **Paso 3: Construir y vender.**
+- [x] **Paso 3: Construir y vender.**
   - **`representStructure(entity)`** crea la malla (`instantiateBuildingMesh(kind, faction === 'player')`), con la barra a `turret ? 2.8 : 2.5` y ancho `2.2`. Copia la posición y la vida del ECS, la registra en `targetObjects` y en su lista y la devuelve.
   - **Toque del jugador:** `buildStructure(commandContext(), 'player', type, {x, y, z})`.
     - `too-close` → "⚠️ Ubicación ocupada. Elige otro punto." y `return`, sin cancelar;
@@ -439,18 +439,18 @@
     - `outside-zone`, `match-over` y `not-playing` → `return` sin aviso.
   - **Vender:** `sellStructure(commandContext(), 'player', b.ecsEntityId)`. Si se acepta, se quitan y liberan la malla, la entrada de `targetObjects` y la de la lista, con el sonido y el aviso de siempre y el reembolso del resultado.
   - Tras cada comando, `syncGoldMirrors()`.
-- [ ] **Paso 4: Entrenar.**
+- [x] **Paso 4: Entrenar.**
   - "Sin barracas" sale de `liveFactories(world, 'player').length === 0` y "todas ocupadas", de `idleFactories`.
   - La barraca elegida es `idleFactories(...)[0]`. La aparición y `veteran_armor` no cambian; la posición de la barraca se lee del `transform` ECS.
   - La llamada es `trainUnit(commandContext(), 'player', ...)`.
   - Mensajes de rechazo: `match-over` y `not-playing`, ninguno; el resto, los de §3.4.
-- [ ] **Paso 5: Recompensas.**
+- [x] **Paso 5: Recompensas.**
   - `activateRewardForFaction(faction, id)` conserva su guarda `session.state` y llama a `activateReward(commandContext(), faction, id)`.
   - **Rechazo:**
     - jugador → `getRewardFailureMessage(reason)` (ahora recibe el motivo), salvo `match-over` y `not-playing`, que no muestran aviso;
     - después, `updateRewardUI()`.
   - **Aceptado:** el resto de §3.5 pasos 5-7 sin cambios, con `result.aim` y `result.definition`. `activeRewardUntil` del escudo = `shieldUntilMs`; el de los ataques, como hoy.
-- [ ] **Paso 6: IA.**
+- [x] **Paso 6: IA.**
   - `updateEnemyAI` usa `enemyAi.update(delta, () => buildEnemyAiSnapshot(commandContext()))` y `executeEnemyTurn(commandContext(), turn)`.
   - `ui.setAiStatus` no cambia.
   - Por cada resultado aceptado:
@@ -458,17 +458,17 @@
     - `activateReward` → la misma representación del paso 5 (sirena y aviso enemigo);
     - `train` → nada.
   - Después, `syncGoldMirrors()`. Se eliminan `spawnAIBuilding` y el resumen antiguo.
-- [ ] **Paso 7: Diagnóstico.**
+- [x] **Paso 7: Diagnóstico.**
   - Cada `spawnAIBuilding(...)` y el creador genérico (≈2890) pasan a `representStructure(placeDiagnosticStructure(world, faction, kind, pos))`.
   - Las barracas invisibles del estrés pasan a `placeDiagnosticStructure(world, faction, 'barracks', pos)`, sin visual.
   - `prepareRewardScenario` escribe `matchState.rewards.player.cooldownUntilMs = gameplayClockMs` y `shieldUntilMs = 0`.
-- [ ] **Paso 8: Verificar.**
+- [x] **Paso 8: Verificar.**
   Run: `npm test && npm run typecheck && npm run build`
   Expected: todo PASS, incluida la frontera.
 
   Run: `grep -nE "spawnAIBuilding|registerStructureTarget|rewardCooldownUntil\b|enemyRewardCooldownUntil|defensiveShieldUntil|enemyDefensiveShieldUntil|< 3\.8" web/src/GameApplication.ts && grep -rnE "from '(three|\.\./\.\./(ui|rendering|platform))" web/src/game/commands/`
   Expected: sin resultados. Los límites estrictos del raycast (`BUILD_ZONE_*` en `getPlacementPosition`) se quedan, por §5.3.
-- [ ] **Paso 9: Comprobación rápida en el navegador** (perfil móvil emulado):
+- [x] **Paso 9: Comprobación rápida en el navegador** (perfil móvil emulado):
   - construir los tres tipos;
   - un toque a menos de 3,8 (aviso, el modo sigue);
   - vender;
@@ -476,7 +476,7 @@
   - activar el escudo.
 
   Expected: los mismos avisos que hoy y sin errores de consola.
-- [ ] **Paso 10: Commit.**
+- [x] **Paso 10: Commit.**
   ```bash
   git add web/src/GameApplication.ts web/src/game/commands/constructionBoundary.test.ts
   git commit -m "refactor(commands): the player, the AI and diagnostics act through the shared commands"
@@ -484,7 +484,7 @@
 
 ---
 
-### Tarea 8: Navegador, bundle, medición y entrega
+### Task 8: Navegador, bundle, medición y entrega
 
 **Files:**
 - Modify: `README.md` (arquitectura: `game/commands/` y `dev/diagnosticStructures.ts`)
@@ -493,7 +493,7 @@
 - Modify: `docs/superpowers/specs/2026-11-20-r4-comandos-compartidos-design.md` (§9, informe de entrega)
 - Modify: este plan (casillas)
 
-- [ ] **Paso 1: Navegador** (perfil móvil emulado y, si hay, el teléfono de R0):
+- [x] **Paso 1: Navegador** (perfil móvil emulado y, si hay, el teléfono de R0):
   - toques en el borde de la zona (Review Focus 1);
   - pausa con el botón de recompensa (no hace nada);
   - partida contra la IA con `runMatchScenario({ durationSeconds: 60 })` (la IA construye y no solapa);
@@ -503,14 +503,14 @@
   - escenarios `prepareRewardScenario` (`'ready'`, `'no-target'` e `'insufficient-gold'`), `runCombatScenario` y `runStressScenario`.
 
   Expected: sin errores de consola y los mismos avisos.
-- [ ] **Paso 2: Bundle.**
+- [x] **Paso 2: Bundle.**
   Run: `npm run build && grep -rlE "placeDiagnosticStructure: development only|setNexusHealth|__gameDiagnostics" dist/`
   Expected: `build` con código de salida 0 y `grep` sin resultados (código 1).
-- [ ] **Paso 3: Medición.**
+- [x] **Paso 3: Medición.**
   - Se repite la batería de §6 del informe de rendimiento en los dos perfiles.
   - Se compara con R0, R2 y R3: métricas estructurales iguales, picos de `aiMs` sin empeorar, y `simulationMs` y `gameplayOtherMs` sin aumento claro.
   - No se presenta como mejora nada que no esté respaldado. Si no hay dispositivo, se dice.
-- [ ] **Paso 4: Informe de entrega** en §9 del diseño:
+- [x] **Paso 4: Informe de entrega** en §9 del diseño:
   - commits;
   - pruebas ejecutadas y su número;
   - las cifras `BASELINE` y `CURRENT` por dificultad, con el turno del primer rechazo y el `CONTROL` elegido;
@@ -519,7 +519,7 @@
   - confirmación de alcance con `git diff cee5941 --stat`.
 
   Se actualizan también el README y la auditoría.
-- [ ] **Paso 5: Commit.**
+- [x] **Paso 5: Commit.**
   ```bash
   git add README.md docs/audits/2026-11-14-auditoria-responsabilidades.md docs/performance/2026-11-14-referencia-rendimiento.md docs/superpowers/specs/2026-11-20-r4-comandos-compartidos-design.md docs/superpowers/plans/2026-11-20-r4-comandos-compartidos.md
   git commit -m "docs(commands): verify R4 in the browser, check the bundle and measure it"

@@ -1,6 +1,6 @@
 # R4 — Comandos compartidos: construir, vender, entrenar y activar recompensas — diseño
 
-Fecha: 2026-11-20 · Estado: aprobado (revisión 3) (opción A; condiciones 1-6, ajustes 7-9 y aclaraciones 10-11 incorporados) · Commit de partida: `bf2c4a7`
+Fecha: 2026-11-20 · Estado: aprobado (revisión 3) e implementado; informe de entrega en §9 (opción A; condiciones 1-6, ajustes 7-9 y aclaraciones 10-11 incorporados) · Commit de partida: `bf2c4a7`
 
 Relación con los documentos anteriores:
 - `docs/audits/2026-11-14-auditoria-responsabilidades.md`: paso R4 en §7, pruebas previas en §8.2, acoplamiento 2 de §5.
@@ -419,13 +419,91 @@ Ejecutor actual: `tsx --test "web/src/**/*.test.ts"`. Todo sin WebGL.
 - Los espejos `gold` y `enemyGold` siguen existiendo y se refrescan tras cada comando (limpieza en R6 o R7).
 - **Al terminar R4 no se empieza R5.**
 
-## 9. Informe de entrega (se rellena al terminar)
+## 9. Informe de entrega
 
-- commits;
-- pruebas y comprobaciones ejecutadas;
-- cifras de §6.2 por dificultad;
-- medición del panel;
-- limitaciones y lo que no se pudo verificar.
+### 9.1 Commits
+
+Todos están en `main`, después del plan (`f3c8489`):
+
+1. `32b51f7` test(ai): línea base con semilla del ejecutor antiguo. **Solo pruebas, antes de tocar producción.**
+2. `38775fc` ubicación y fase de partida en el dominio.
+3. `b4cff98` construir y vender.
+4. `dc48004` entrenar.
+5. `399b0dd` estado de recompensas, escudo único y activación.
+6. `6945d2b` resumen y ejecutor de la IA en el dominio, con la comparación.
+7. `d499196` `GameApplication` usa los comandos.
+8. El commit de cierre (este informe, README, auditoría e informe de rendimiento).
+
+### 9.2 Pruebas y comprobaciones
+
+- **`npm test`:** 243 de 243, frente a 192 antes de R4.
+- **`npm run typecheck` y `npm run build`:** correctos, con el código de salida comprobado.
+- **Bundle:** en `dist/` no aparecen `placeDiagnosticStructure: development only`, `setNexusHealth` ni `__gameDiagnostics`. Como control, el servidor de desarrollo sí sirve la marca en `dev/diagnosticStructures.ts`.
+- **Fronteras:**
+  - `game/commands/` no importa `three`, `ui/`, `rendering/` ni `platform/`;
+  - la prueba `constructionBoundary.test.ts` pasa: solo `buildStructure` y la utilidad de desarrollo crean estructuras.
+- **Navegador** (móvil emulado, Chrome del sistema, sin errores de consola):
+  - **Construir y vender:**
+    - un toque junto al Nexo da "Ubicación ocupada", el modo de colocación sigue y el toque siguiente construye;
+    - una barraca sobre un generador se rechaza;
+    - generador, barraca y torreta se construyen con sus avisos;
+    - vender un generador devuelve +70;
+    - sin oro da "¡Recursos insuficientes!" y cancela el modo: un segundo toque no hace nada.
+  - **Entrenar:** soldados y un tanque, con "Orden aceptada"; el tanque aparece a los 5 s.
+  - **Recompensas:**
+    - escudo de 10 s;
+    - artillería: −180 de oro, −10 CP y 360 de daño a las torretas del escenario;
+    - ataque aéreo: −280 de oro, −18 CP y 380 de daño;
+    - durante la recarga desaparecen los botones de activar;
+    - con `'no-target'` solo queda el escudo, y con `'insufficient-gold'`, ninguno;
+    - en pausa no hay botones de activar.
+  - **Partida y escenarios:**
+    - victoria forzada con `setNexusHealth`;
+    - la segunda partida empieza sin escudo ni recargas;
+    - partida contra la IA (30 s): la IA construye 4 generadores, 2 barracas y 4 torretas;
+    - los escenarios de recompensas, combate y estrés funcionan.
+
+### 9.3 Comparación con semilla (§6.2)
+
+Semilla 1, hasta 300 s y jugador inactivo. Todas las ejecuciones terminan en derrota del jugador antes de un minuto, como en una partida real con el jugador inactivo.
+
+| Dificultad | Ejecutor | Intentos · rechazos por distancia | Aceptadas (gen. / barr. / torr.) | Solapadas | Oro en estructuras · total | Órdenes de tropa | Derrota a los |
+|---|---|---|---|---:|---|---:|---|
+| Fácil | antes | 6 · 0 | 3 / 1 / 2 | 1 | 700 · 1490 | 8 | 54,33 s |
+| Fácil | después | 7 · 1 | 3 / 1 / 2 | 0 | 700 · 1440 | 7 | 46,67 s |
+| Normal | antes | 9 · 0 | 4 / 2 / 3 | 1 | 1075 · 2165 | 14 | 42,13 s |
+| Normal | después | 11 · 2 | 4 / 2 / 3 | 0 | 1075 · 2215 | 15 | 43,27 s |
+| Difícil | antes | 13 · 0 | 5 / 3 / 5 | 4 | 1575 · 2985 | 23 | 42,13 s |
+| Difícil | después | 14 · 1 | 5 / 3 / 5 | 0 | 1575 · 2835 | 20 | 40,43 s |
+
+- **Primer rechazo:** Fácil a los 15,0 s (generador), Normal a los 9,8 s (generador) y 14,7 s (torreta), Difícil a los 7,35 s (generador). Hasta ese turno, los registros de antes y después son idénticos turno a turno.
+- **Escenario de control** (Normal, semilla 3; 9 intentos sin solapes): los dos ejecutores dan el mismo registro y las mismas métricas de principio a fin.
+- **Lectura:**
+  - con esta semilla, la IA acaba construyendo los mismos edificios, solo que en otro sitio y algo más tarde;
+  - las diferencias de oro total, órdenes de tropa y momento de la derrota son la divergencia esperada tras el primer rechazo, y no se compensan (condición 1);
+  - **no es una evaluación de equilibrio:** queda pendiente del banco de partidas de la fase 3.
+
+### 9.4 Medición
+
+En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.4:
+
+- sin cambios estructurales (draw calls, geometrías y repetición sin crecimiento);
+- ritmo de la IA igual (1 llamada por fotograma, 1,40 decisiones/s);
+- simulación sin aumento;
+- picos de la IA de 0,8-4,9 ms, dentro del rango anterior. La malla del edificio se sigue creando en el fotograma de la orden (R6).
+
+### 9.5 Limitaciones y lo no verificado
+
+- **Comparación con semilla:**
+  - la referencia es una transcripción de prueba del ejecutor de `bf2c4a7`;
+  - no reproduce la secuencia de `Math.random` del juego real;
+  - no ejercita recompensas: sin CP, la IA no las pide, y su activación en la referencia lanza un error si se usara;
+  - con el jugador inactivo, cada ejecución dura menos de un minuto.
+- **Toques en el borde exacto de la zona** (`z = 73`, `|x| = 53`): no se comprobaron en el navegador. Los cubren las pruebas de `placement.test.ts`, y el raycast que filtra el punto bruto no ha cambiado.
+- **Sin dispositivo real.** Todo se midió y comprobó en Chrome headless del portátil.
+- **Daño de recompensas guiado por el visual:** sigue igual. `GameApplication.getRewardTargetCandidates` se conserva solo para aplicar ese daño al llegar el proyectil o la bomba (R5). La activación, la UI y la IA usan `rewardTargetCandidates` del dominio.
+- **Sin cambios, como se acordó:** desbloqueos, los dos mecanismos de fin de partida, la duración con reloj real, `enemyAIEnabled`, los espejos `gold` y `enemyGold`, y la estrategia y los valores de la IA.
+- **Al terminar R4 no se empieza R5.**
 
 ## 10. Decisiones tomadas por el diseñador (para revisar)
 

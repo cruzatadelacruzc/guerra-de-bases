@@ -29,11 +29,22 @@ La partida arranca con dos Nexos opuestos y sin soldados gratuitos. El Nexo es e
   - `enemyAiProfile.ts`: parámetros de decisión por dificultad;
   - `DecisionClock.ts`: una decisión como máximo por fotograma, con el tiempo de juego;
   - `enemyAi.ts`: `decideEnemyTurn`, una decisión pura sobre un resumen de la partida, con azar inyectable, que devuelve órdenes y el estado para el HUD;
-  - `EnemyAiController.ts`: une las tres piezas en cada partida.
+  - `EnemyAiController.ts`: une las tres piezas en cada partida;
+  - `aiSnapshot.ts`: el resumen que lee la IA, construido desde el ECS y `MatchState`;
+  - `executeEnemyTurn.ts`: ejecuta cada orden con los mismos comandos que el jugador (`game/commands/`) y devuelve su resultado. La IA no reacciona a los rechazos.
 
-  `GameApplication.ts` construye el resumen, ejecuta las órdenes y muestra el estado en el HUD. El entrenamiento (`requestUnitProduction`) y las recompensas (`activateRewardForFaction`) usan las mismas funciones que el jugador. La construcción todavía va por `spawnAIBuilding`, propia de la IA, hasta que la fase de comandos compartidos (R4) unifique ese camino.
+  `GameApplication.ts` solo representa lo aceptado (visual del edificio, efecto de la recompensa) y muestra el estado en el HUD.
+- `web/src/game/commands/` contiene los comandos de juego que comparten el jugador y la IA, sin Three.js, DOM ni UI:
+  - `CommandContext.ts`: lo que lee un comando (mundo, bases, `MatchState`, la fase de la sesión como dato, dificultad y reloj de juego) y `checkMatchPlaying`: solo se acepta con la sesión en `PLAYING` y sin resultado terminal;
+  - `placement.ts`: zona de construcción espejada por facción (5 ≤ |z| ≤ 73 en la mitad propia, |x| ≤ 53) y distancia mínima de 3,8 a cualquier estructura propia, Nexo incluido;
+  - `structureCommands.ts`: `buildStructure` (el único camino de juego que crea estructuras) y `sellStructure` (reembolso del 70 %);
+  - `trainCommand.ts`: `trainUnit` sobre `requestUnitProduction`, y las consultas de Barracas vivas y libres;
+  - `rewardCommand.ts`: `activateReward` valida, apunta, cobra CP y oro, y fija la recarga de 15 s y el escudo.
+
+  Cada comando lo valida todo antes de su primera escritura: un rechazo no cambia el mundo, el oro, los CP, las órdenes ni las recargas. Una prueba de frontera impide crear estructuras fuera de `buildStructure` y de la utilidad de desarrollo `web/src/dev/diagnosticStructures.ts`, que solo usan los escenarios de diagnóstico y no llega al build de producción.
 - `web/src/game/match/` contiene las reglas de la partida que dependen de las muertes, sin Three.js, DOM ni UI:
-  - `MatchState.ts`: puntos de combate y rachas por facción, unidades destruidas y perdidas, y el resultado;
+  - `MatchState.ts`: puntos de combate y rachas por facción, unidades destruidas y perdidas, el resultado, y la recarga y el escudo de cada facción;
+  - `shield.ts`: el único sitio donde el escudo reduce el daño al Nexo, tanto de proyectiles como de recompensas;
   - `DeathResolver.ts`: una vez por fotograma busca en el ECS las unidades y estructuras con vida ≤ 0, puntúa cada muerte una sola vez, borra la entidad, devuelve eventos ordenados y detecta victoria o derrota (si caen ambos Nexos a la vez, derrota). El resultado es terminal: después no se procesa nada más;
   - `matchEvents.ts` y `unlockEvents.ts`: los eventos de muerte y su traducción a los eventos de desbloqueo.
 
