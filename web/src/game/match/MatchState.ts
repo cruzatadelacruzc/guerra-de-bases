@@ -1,4 +1,7 @@
 import type { Faction } from '../ecs/components.ts';
+import type { StrikeId } from '../rewardSystem.ts';
+import { createStrikeTimeline } from './strikeState.ts';
+import type { StrikeTimeline } from './strikeState.ts';
 
 export type MatchOutcome = 'victory' | 'defeat';
 
@@ -6,6 +9,8 @@ export type MatchOutcome = 'victory' | 'defeat';
 export interface FactionRewardState {
   cooldownUntilMs: number;
   shieldUntilMs: number;
+  /** Until when each strike shows as active in the UI: its activation plus its duration. */
+  strikeActiveUntilMs: Partial<Record<StrikeId, number>>;
 }
 
 /**
@@ -22,6 +27,8 @@ export interface MatchState {
   /** Terminal once set: deaths are no longer resolved after it. */
   outcome: MatchOutcome | null;
   rewards: Record<Faction, FactionRewardState>;
+  /** Strikes in flight; a new match starts with none. */
+  strikes: StrikeTimeline;
 }
 
 export function createMatchState(): MatchState {
@@ -32,9 +39,10 @@ export function createMatchState(): MatchState {
     playerUnitsLost: 0,
     outcome: null,
     rewards: {
-      player: { cooldownUntilMs: 0, shieldUntilMs: 0 },
-      enemy: { cooldownUntilMs: 0, shieldUntilMs: 0 }
-    }
+      player: { cooldownUntilMs: 0, shieldUntilMs: 0, strikeActiveUntilMs: {} },
+      enemy: { cooldownUntilMs: 0, shieldUntilMs: 0, strikeActiveUntilMs: {} }
+    },
+    strikes: createStrikeTimeline()
   };
 }
 

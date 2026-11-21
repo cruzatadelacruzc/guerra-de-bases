@@ -78,7 +78,7 @@ test('the snapshot reads the same values as the old one from the ECS and the mat
   createSoldier(ctx.world, 'player', { x: 0, y: 0, z: 10 });
   applyDamageSystem(ctx.world, ctx.bases.enemy, 300);
   ctx.match.combatPoints.enemy = 12;
-  ctx.match.rewards.enemy = { cooldownUntilMs: 9000, shieldUntilMs: 6000 };
+  ctx.match.rewards.enemy = { cooldownUntilMs: 9000, shieldUntilMs: 6000, strikeActiveUntilMs: {} };
 
   const snapshot = buildEnemyAiSnapshot(ctx);
   const legacy = LEGACY_STRATEGY.snapshot({ ...ctx });

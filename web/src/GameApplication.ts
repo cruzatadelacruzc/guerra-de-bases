@@ -36,8 +36,12 @@ import { unlockEventsFor } from './game/match/unlockEvents.ts';
 import { createNexusDamageAlert } from './game/nexusDamageAlert.ts';
 import { createHapticFeedback, createPlatformVibrate } from './platform/HapticFeedback.ts';
 import {
+    AIR_STRIKE_BOMB_FALL_SECONDS,
     AIR_STRIKE_BOMB_OFFSETS,
     AIR_STRIKE_EFFECTIVE_RADIUS,
+    AIR_STRIKE_FLIGHT_SECONDS,
+    AIR_STRIKE_RUN_HALF_LENGTH,
+    AIR_STRIKE_SPEED,
     ARTILLERY_IMPACT_OFFSETS,
     ARTILLERY_IMPACT_RADIUS,
     ARTILLERY_LAUNCH_DELAY_SECONDS,
@@ -2014,11 +2018,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     // Low enough to stay on screen when the camera frames the target, above the tallest buildings.
     const AIR_STRIKE_CRUISE_HEIGHT = 8;
     const AIR_STRIKE_FLIGHT_ARC_HEIGHT = 1.2;
-    const AIR_STRIKE_FLIGHT_SECONDS = 5.2;
-    /** The run starts and ends this far from the aim point, so the aircraft is over it halfway through. */
-    const AIR_STRIKE_RUN_HALF_LENGTH = 60;
-    const AIR_STRIKE_SPEED = (2 * AIR_STRIKE_RUN_HALF_LENGTH) / AIR_STRIKE_FLIGHT_SECONDS;
-    const AIR_STRIKE_BOMB_FALL_SECONDS = 0.72;
     const AIR_STRIKE_CAMERA_LEAD_SECONDS = 1;
     const AIR_STRIKE_CAMERA_DISTANCE = 45;
     // The fuselage and tail are laid out along local X, with the nose at +X.

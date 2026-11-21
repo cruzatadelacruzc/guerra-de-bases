@@ -1,5 +1,7 @@
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export type RewardId = 'artillery_strike' | 'air_strike' | 'defensive_shield';
+/** The rewards that strike the battlefield; the shield is the other reward. */
+export type StrikeId = 'artillery_strike' | 'air_strike';
 
 export interface DifficultyProfile {
   label: string;
@@ -31,6 +33,13 @@ export interface RewardDefinition {
 export const REWARD_COOLDOWN_MS = 15000;
 
 export const AIR_STRIKE_EFFECTIVE_RADIUS = 12;
+export const AIR_STRIKE_FLIGHT_SECONDS = 5.2;
+/** The run starts and ends this far from the aim point, so the aircraft is over it halfway through. */
+export const AIR_STRIKE_RUN_HALF_LENGTH = 60;
+export const AIR_STRIKE_SPEED = (2 * AIR_STRIKE_RUN_HALF_LENGTH) / AIR_STRIKE_FLIGHT_SECONDS;
+export const AIR_STRIKE_BOMB_FALL_SECONDS = 0.72;
+/** The enemy's aircraft keeps crossing the field along x. */
+export const ENEMY_AIR_STRIKE_HEADING: Readonly<StrikeAim> = Object.freeze({ x: -1, z: 0 });
 
 /** Artillery shells are fired from the activating faction's Nexus and arc to their impact points. */
 export const ARTILLERY_IMPACT_RADIUS = 12;
@@ -72,6 +81,15 @@ export const AIR_STRIKE_BOMB_OFFSETS: readonly StrikeOffset[] = Object.freeze([
   { x: -4, z: -3 },
   { x: 8, z: -5 }
 ]);
+/**
+ * Seconds from activation until the bomb at `offset` lands, flying along the unit `heading`.
+ * Only for framing the camera; the order of impacts does not use it.
+ */
+export function nominalBombLandingSeconds(offset: StrikeOffset, heading: Readonly<StrikeAim>): number {
+  return AIR_STRIKE_FLIGHT_SECONDS / 2
+    + (offset.x * heading.x + offset.z * heading.z) / AIR_STRIKE_SPEED
+    + AIR_STRIKE_BOMB_FALL_SECONDS;
+}
 /** A strike prefers enemy units only when one aim reaches at least this many of them. */
 export const STRIKE_MIN_CONCENTRATION_UNITS = 3;
 

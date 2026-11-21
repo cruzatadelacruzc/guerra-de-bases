@@ -73,8 +73,12 @@ for (const difficulty of ['easy', 'normal', 'hard'] as const satisfies readonly 
     assert.deepEqual(result, { accepted: true, definition });
     assert.equal(ctx.match.combatPoints.enemy, 100 - definition.pointsCost);
     assert.equal(goldOf(ctx, 'enemy'), 1000 - definition.goldCost);
-    assert.deepEqual(ctx.match.rewards.enemy, { cooldownUntilMs: 17000, shieldUntilMs: 2000 + definition.durationSeconds * 1000 });
-    assert.deepEqual(ctx.match.rewards.player, { cooldownUntilMs: 0, shieldUntilMs: 0 });
+    assert.deepEqual(ctx.match.rewards.enemy, {
+      cooldownUntilMs: 17000,
+      shieldUntilMs: 2000 + definition.durationSeconds * 1000,
+      strikeActiveUntilMs: {}
+    });
+    assert.deepEqual(ctx.match.rewards.player, { cooldownUntilMs: 0, shieldUntilMs: 0, strikeActiveUntilMs: {} });
     assert.equal(ctx.match.combatPoints.player, 100);
     assert.equal(goldOf(ctx, 'player'), 1000);
   });

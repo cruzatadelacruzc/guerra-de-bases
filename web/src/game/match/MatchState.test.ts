@@ -10,9 +10,10 @@ test('a match starts with no points, streaks, losses or result', () => {
     playerUnitsLost: 0,
     outcome: null,
     rewards: {
-      player: { cooldownUntilMs: 0, shieldUntilMs: 0 },
-      enemy: { cooldownUntilMs: 0, shieldUntilMs: 0 }
-    }
+      player: { cooldownUntilMs: 0, shieldUntilMs: 0, strikeActiveUntilMs: {} },
+      enemy: { cooldownUntilMs: 0, shieldUntilMs: 0, strikeActiveUntilMs: {} }
+    },
+    strikes: { active: [], nextId: 1 }
   });
 });
 
