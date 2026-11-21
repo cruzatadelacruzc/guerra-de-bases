@@ -13,7 +13,9 @@ const TEST_UTILITIES = new Set([
   'game/match/matchHarness.ts',
   'game/ai/legacyEnemyExecutor.ts',
   'game/ai/aiMatchRunner.ts',
-  'game/commands/commandTestState.ts'
+  'game/commands/commandTestState.ts',
+  'game/match/legacyRewardTimeline.ts',
+  'game/match/strikeScenarios.ts'
 ]);
 
 function sourceFiles(directory: string): string[] {
