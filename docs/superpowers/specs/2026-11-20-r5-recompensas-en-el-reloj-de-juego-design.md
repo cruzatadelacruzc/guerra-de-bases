@@ -682,3 +682,36 @@ En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.5:
   4. Informe de rendimiento: la explicación de los 0,67 ms de simulación en escritorio solo cita la primera pasada, aunque la segunda (320 geometrías) también da 0,673 ms. Además, no menciona la subida del fotograma y la CPU del combate en escritorio (28,3 → 31,4 ms; 9,7-10,1 → 10,5-10,9 ms), que deberían figurar como variación entre sesiones.
   5. `GameApplication`: crea un objeto `{ player, enemy }` de bases en cada fotograma `PLAYING`, igual que el patrón de `updateCombat`. El coste es despreciable.
   6. §5.2 dice que `advanceStrikes` "no asigna nada salvo los eventos". En los fotogramas con impactos también crea la lista de vencidos y sus entradas, como mucho 7 por ataque.
+
+### 10.10 Comprobaciones de cierre pedidas por el usuario (2026-11-21)
+
+1. **Ataques en vuelo después del resultado.**
+   - **Qué se corrigió:** la aserción del banco que exigía `strikes.active` vacío tras el resultado, el menor 1 de §10.9.
+   - **La prueba nueva** (`aiMatchRunner.strikes.test.ts`, «a strike in flight when the match ends stays frozen») funciona así:
+     - hace caer el Nexo del jugador en el mismo fotograma en que la IA lanza su primer ataque;
+     - comprueba que el resultado es `defeat` y que el ataque **sigue** en `active`;
+     - después avanza el dominio 600 fotogramas más.
+   - **Lo que exige en esos 600 fotogramas:** ningún evento, el estado de los ataques idéntico al del resultado y la vida de todas las entidades sin cambios.
+   - **Se comprobó que puede fallar:** al quitar la guarda `outcome !== null` de `advanceStrikes`, la prueba falla. Con la guarda pasa. El dominio no se modificó.
+2. **Orden de los impactos que vencen en el mismo fotograma.** Se comprueba por el orden de los eventos `impact`, sin exponer `nominalMs` en la interfaz pública. Lo cubren tres pruebas de `rewardExecution.test.ts`:
+   - **Hora nominal entre ataques:** «due impacts in one frame are applied and emitted in nominal order». Con Δ = 1 s, el primer proyectil de la IA cae entre el primero y el segundo del jugador.
+   - **Hora nominal entre tipos:** «a bomb released and landing in the same frame…». Las cuatro bombas caen entre el primer y el segundo proyectil.
+   - **Desempate por `strikeId`:** la prueba nueva «impacts with the same nominal time break ties by strikeId, then by impact index» usa dos artillerías programadas en el mismo instante, con las dos facciones en los dos órdenes de activación. El resultado queda intercalado proyectil a proyectil, y el id menor va primero sea cual sea su facción.
+   - **Desempate por índice:** las cuatro bombas con la misma hora nominal se aplican en orden de índice.
+
+   **Mutaciones comprobadas, todas revertidas:**
+
+   | Mutación | Pruebas que fallan |
+   |---|---|
+   | Sin ordenar | 3 |
+   | Hora nominal invertida | 3 |
+   | Desempate por `strikeId` invertido | 2 |
+   | Desempate por índice invertido | 1 |
+3. **Escudo defensivo.**
+   - Se conserva el comportamiento: R5 no cambia la eficacia del escudo contra la artillería ni contra el ataque aéreo.
+   - Queda documentado como **regla de juego existente**, en el README y en §3.4 y §7: el escudo solo protege al Nexo, y los ataques nunca eligen el Nexo como objetivo, así que el escudo no reduce su daño.
+   - Su equilibrio se puede revisar aparte, fuera de R5.
+
+**Sin cambios de arquitectura ni de equilibrio.** Solo cambian pruebas y documentación.
+
+**R5 queda cerrada. No se empieza R6.**

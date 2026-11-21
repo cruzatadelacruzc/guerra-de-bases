@@ -10,6 +10,8 @@ import { runAiMatch } from './aiMatchRunner.ts';
 import type { AiRunState, AiStrategy } from './aiMatchRunner.ts';
 import { ARTILLERY_LAUNCH_DELAY_SECONDS, ARTILLERY_SHELL_FLIGHT_SECONDS } from '../rewardSystem.ts';
 import { executeEnemyTurn } from './executeEnemyTurn.ts';
+import { advanceStrikes } from '../match/rewardExecution.ts';
+import type { StrikeEvent } from '../match/rewardExecution.ts';
 
 const FRAME_SECONDS = 1 / 60;
 const FRAME_MS = (1 / 60) * 1000;
@@ -65,7 +67,46 @@ test('with strikes on, enemy strikes land and damage player targets without rend
   assert.ok(rewards.combatPointsSpent > 0);
   const damaged = targets.some((e) => healthOf(state as AiRunState, e) < (healthAtStart.get(e) ?? 0));
   assert.ok(damaged, 'no player target lost health');
-  if (metrics.outcome !== null) assert.equal((state as AiRunState).match.strikes.active.length, 0);
+});
+
+test('a strike in flight when the match ends stays frozen: no impacts, damage or events after the outcome', () => {
+  let state: AiRunState | undefined;
+  let forced = false;
+  // The player's Nexus falls in the same frame the AI launches its first strike, so the strike is in flight at the outcome.
+  const forcing: AiStrategy = {
+    snapshot: CURRENT_STRATEGY.snapshot,
+    execute: (s, turn) => {
+      const executed = CURRENT_STRATEGY.execute(s, turn);
+      const launched = executed.some((r) => r.accepted && r.command.type === 'activateReward' && r.command.reward !== 'defensive_shield');
+      if (!forced && launched) {
+        forced = true;
+        const nexus = s.world.getComponent(s.bases.player, COMPONENTS.health);
+        if (nexus) nexus.current = 0;
+      }
+      return executed;
+    }
+  };
+  const { metrics, rewards } = runAiMatch(
+    { difficulty: DIFFICULTY, seed: SEED, durationSeconds: 120, strikes: true, setup: (s) => { setup(s); state = s; } },
+    forcing
+  );
+  assert.ok(state && forced, 'the AI launched no strike');
+  const after = state;
+  assert.equal(metrics.outcome, 'defeat');
+  assert.ok(after.match.strikes.active.length >= 1, 'the strike should still be pending after the outcome');
+
+  const strikesAtOutcome = structuredClone(after.match.strikes);
+  const healthAtOutcome = after.world.query(COMPONENTS.health).map((e) => [e, healthOf(after, e)] as const);
+  const events: StrikeEvent[] = [];
+  // Ten more seconds of frames, longer than any strike: the outcome guard keeps the timeline frozen.
+  for (let frame = 0; frame < 600; frame++) {
+    after.nowMs += FRAME_MS;
+    advanceStrikes(after.world, after.match, after.bases, FRAME_SECONDS, after.nowMs, after.difficulty, events);
+    assert.deepEqual(events, [], `events after the outcome on frame ${frame}`);
+  }
+  assert.deepEqual(after.match.strikes, strikesAtOutcome);
+  assert.deepEqual(after.world.query(COMPONENTS.health).map((e) => [e, healthOf(after, e)] as const), healthAtOutcome);
+  assert.equal(rewards.strikeImpacts, 0, 'no impact before the outcome either: the strike was launched that frame');
 });
 
 test('with strikes off, pending strikes never exceed one and no strike damage is applied', () => {

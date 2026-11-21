@@ -256,6 +256,25 @@ test('due impacts in one frame are applied and emitted in nominal order', () => 
   assert.deepEqual(impacts(clock.frame(3)), [[player.id, 0], [enemyId, 0], [player.id, 1], [enemyId, 1]]);
 });
 
+test('impacts with the same nominal time break ties by strikeId, then by impact index', () => {
+  // Two artillery strikes scheduled at the same instant have pairwise identical nominal times.
+  // One 10 s frame makes all six due at once: nominal time interleaves them shell by shell and,
+  // within each tie, the lower strikeId (activated first) goes first, whichever faction it is.
+  for (const firstFaction of ['player', 'enemy'] as const) {
+    const w = createStrikeWorld();
+    const secondFaction = firstFaction === 'player' ? 'enemy' : 'player';
+    const aimOf = (faction: 'player' | 'enemy') => (faction === 'player' ? PLAYER_AIM : ENEMY_AIM);
+    const first = scheduleStrike(w.match, firstFaction, 'artillery_strike', aimOf(firstFaction), undefined, w.difficulty, 0).id;
+    const second = scheduleStrike(w.match, secondFaction, 'artillery_strike', aimOf(secondFaction), undefined, w.difficulty, 0).id;
+    assert.ok(first < second);
+    assert.deepEqual(impacts(gameplayClock(w).frame(10)), [
+      [first, 0], [second, 0],
+      [first, 1], [second, 1],
+      [first, 2], [second, 2]
+    ]);
+  }
+});
+
 test('a bomb released and landing in the same frame has nominal frame start + 720 ms', () => {
   const w = createStrikeWorld();
   const tank = addUnit(w, 'enemy', PLAYER_AIM.x, PLAYER_AIM.z, 'tank');
