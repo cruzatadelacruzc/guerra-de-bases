@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
+import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 interface ImportRecord {
@@ -13,12 +14,38 @@ const EXTRA_PRESENTATION_MODULES: string[] = [];
 
 const ENTITY_VIEWS = ['BattlefieldView.ts', 'ProjectileView.ts', 'BattlefieldRemains.ts'];
 
+/** Rules match on the import path resolved against web/src, so `./x.ts` and `../dev/x.ts` are caught alike. */
 const MUTATING_MODULES = [
-  /(^|\/)commands\//,
-  /(^|\/)ecs\/(systems|BattleSimulation|initialBattle|World)\.ts$/,
-  /(^|\/)match\/(DeathResolver|rewardExecution|shield|MatchState)\.ts$/,
-  /(^|\/)dev\/diagnosticStructures\.ts$/
+  /^game\/commands\//,
+  /^game\/ecs\/(systems|BattleSimulation|initialBattle|World)\.ts$/,
+  /^game\/match\/(DeathResolver|rewardExecution|shield|MatchState)\.ts$/,
+  /^dev\/diagnosticStructures\.ts$/
 ];
+
+/** Resolves a relative specifier against the importing file (both relative to web/src); bare specifiers are returned as is. */
+function resolveImport(from: string, specifier: string): string {
+  return specifier.startsWith('.') ? posix.normalize(posix.join(posix.dirname(from), specifier)) : specifier;
+}
+
+function isMutatingValueImport(from: string, record: ImportRecord): boolean {
+  const resolved = resolveImport(from, record.specifier);
+  return !record.typeOnly && MUTATING_MODULES.some((pattern) => pattern.test(resolved));
+}
+
+function isWorldImport(from: string, record: ImportRecord): boolean {
+  return resolveImport(from, record.specifier) === 'game/ecs/World.ts';
+}
+
+function isForbiddenForEntityView(from: string, record: ImportRecord): boolean {
+  const resolved = resolveImport(from, record.specifier);
+  return /^platform\//.test(resolved) || /(^|\/)MapCameraController\.ts$/.test(resolved)
+    || /(^|\/)audio\//i.test(resolved) || /(^|\/)Audio[^/]*\.ts$/.test(resolved);
+}
+
+function isForbiddenForGame(from: string, record: ImportRecord): boolean {
+  const resolved = resolveImport(from, record.specifier);
+  return resolved === 'three' || resolved.startsWith('three/') || /^(rendering|ui|platform)\//.test(resolved);
+}
 
 const renderingUrl = new URL('./', import.meta.url);
 const gameUrl = new URL('../game/', import.meta.url);
@@ -60,14 +87,14 @@ const presentationFiles: Array<{ name: string; code: string }> = [
 test('presentation modules value-import no ECS-mutating module', () => {
   const offenders = presentationFiles.flatMap(({ name, code }) =>
     importRecords(code)
-      .filter((record) => !record.typeOnly && MUTATING_MODULES.some((pattern) => pattern.test(record.specifier)))
+      .filter((record) => isMutatingValueImport(name, record))
       .map((record) => `${name}: ${record.specifier}`));
   assert.deepEqual(offenders, []);
 });
 
 test('presentation modules never import World, not even as a type', () => {
   const offenders = presentationFiles.flatMap(({ name, code }) =>
-    importRecords(code).filter((record) => /(^|\/)ecs\/World\.ts$/.test(record.specifier)).map((record) => `${name}: ${record.specifier}`));
+    importRecords(code).filter((record) => isWorldImport(name, record)).map((record) => `${name}: ${record.specifier}`));
   assert.deepEqual(offenders, []);
 });
 
@@ -76,20 +103,16 @@ test('entity views import neither platform, the camera controller nor audio', ()
     .filter(({ name }) => ENTITY_VIEWS.some((view) => name.endsWith(`/${view}`)))
     .flatMap(({ name, code }) =>
       importRecords(code)
-        .filter((record) => /(^|\/)platform\//.test(record.specifier)
-          || /(^|\/)MapCameraController\.ts$/.test(record.specifier)
-          || /(^|\/)audio\//i.test(record.specifier)
-          || /Audio[^/]*\.ts$/.test(record.specifier))
+        .filter((record) => isForbiddenForEntityView(name, record))
         .map((record) => `${name}: ${record.specifier}`));
   assert.deepEqual(offenders, []);
 });
 
 test('game modules import neither three, rendering, ui nor platform', () => {
-  const offenders = productionFiles(gameUrl, true, () => false).flatMap((url) =>
-    importRecords(read(url))
-      .filter(({ specifier }) => specifier === 'three' || specifier.startsWith('three/')
-        || /(^|\/)(rendering|ui|platform)\//.test(specifier))
-      .map((record) => `${url.pathname.split('/game/')[1] ?? url.pathname}: ${record.specifier}`));
+  const offenders = productionFiles(gameUrl, true, () => false).flatMap((url) => {
+    const name = `game/${url.pathname.split('/game/')[1] ?? url.pathname}`;
+    return importRecords(read(url)).filter((record) => isForbiddenForGame(name, record)).map((record) => `${name}: ${record.specifier}`);
+  });
   assert.deepEqual(offenders, []);
 });
 
@@ -115,4 +138,23 @@ test('the boundary check recognises value, type-only, mixed, re-export, side-eff
     ['sideEffect.ts', false],
     ['dynamic.ts', false]
   ]);
+});
+
+test('the rules reject sibling-relative and parent-relative imports and accept legitimate ones', () => {
+  const value = (specifier: string): ImportRecord => ({ specifier, typeOnly: false });
+  const type = (specifier: string): ImportRecord => ({ specifier, typeOnly: true });
+  assert.ok(isMutatingValueImport('dev/visualConsistency.ts', value('./diagnosticStructures.ts')));
+  assert.ok(isMutatingValueImport('rendering/X.ts', value('../game/commands/rewardCommand.ts')));
+  assert.ok(isMutatingValueImport('rendering/X.ts', value('../game/match/shield.ts')));
+  assert.ok(!isMutatingValueImport('dev/visualConsistency.ts', type('./diagnosticStructures.ts')));
+  assert.ok(!isMutatingValueImport('rendering/X.ts', value('../game/ecs/WorldReader.ts')));
+  assert.ok(isWorldImport('game/ecs/Other.ts', type('./World.ts')));
+  assert.ok(isWorldImport('rendering/X.ts', type('../game/ecs/World.ts')));
+  assert.ok(!isWorldImport('rendering/X.ts', value('../game/ecs/WorldReader.ts')));
+  assert.ok(isForbiddenForEntityView('rendering/BattlefieldView.ts', value('../platform/HapticFeedback.ts')));
+  assert.ok(isForbiddenForEntityView('rendering/BattlefieldView.ts', value('./MapCameraController.ts')));
+  assert.ok(!isForbiddenForEntityView('rendering/BattlefieldView.ts', value('./TerrainGrid.ts')));
+  assert.ok(isForbiddenForGame('game/ecs/x.ts', value('../../rendering/TerrainGrid.ts')));
+  assert.ok(isForbiddenForGame('game/x.ts', value('three')));
+  assert.ok(!isForbiddenForGame('game/ecs/x.ts', value('./World.ts')));
 });
