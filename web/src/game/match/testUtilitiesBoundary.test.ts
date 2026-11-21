@@ -12,7 +12,8 @@ const TEST_UTILITIES = [
   'game/match/matchHarness.ts',
   'game/ai/legacyEnemyExecutor.ts',
   'game/ai/aiMatchRunner.ts',
-  'game/commands/commandTestState.ts'
+  'game/commands/commandTestState.ts',
+  'rendering/presentationTestState.ts'
 ];
 
 /** Every relative module specifier: static imports and re-exports, side-effect imports and dynamic imports. */

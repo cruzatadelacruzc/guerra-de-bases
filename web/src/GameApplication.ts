@@ -8,9 +8,7 @@ import { ENEMY_BASE_POSITION, PLAYER_BASE_POSITION } from './game/ecs/initialBat
 import { requestUnitProduction } from './game/ecs/systems.ts';
 import type {
     ProductionCompletedEvent,
-    ProductionOverrides,
-    ProjectileImpact,
-    WeaponFireEvent
+    ProductionOverrides
 } from './game/ecs/systems.ts';
 import { EnemyAiController } from './game/ai/EnemyAiController.ts';
 import type { EnemyAiTurn } from './game/ai/enemyAi.ts';
@@ -61,6 +59,8 @@ import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createBattlefieldTerrain, MenuSoldiers, type BattlefieldTerrain } from './rendering/battlefieldScene.ts';
 import { airStrikeShots, artilleryShots } from './rendering/strikeCinematics.ts';
 import { BattlefieldRemains } from './rendering/BattlefieldRemains.ts';
+import { ProjectileView } from './rendering/ProjectileView.ts';
+import type { ShotKind } from './rendering/ProjectileView.ts';
 import { PlacementGhost } from './rendering/PlacementGhost.ts';
 import {
     createHQMesh,
@@ -100,11 +100,6 @@ interface RuntimeUnit {
 }
 
 type RuntimeTarget = RuntimeStructure | RuntimeUnit;
-
-interface RuntimeProjectile {
-    ecsEntityId: Entity;
-    mesh: THREE.Mesh;
-}
 
 interface AudioWindow extends Window {
     webkitAudioContext?: typeof AudioContext;
@@ -390,8 +385,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let rewardScenarioBuildings: RuntimeStructure[] = [];
     let playerUnits: RuntimeUnit[] = [];
     let enemyUnits: RuntimeUnit[] = [];
-    let projectiles: RuntimeProjectile[] = [];
-    const projectileVisuals = new Map<Entity, RuntimeProjectile>();
+    let projectileView: ProjectileView;
+    const shots: ShotKind[] = [];
+    const heavyImpacts: Position[] = [];
     let menuSoldiers: MenuSoldiers;
     const diagnosticsEnabled = import.meta.env.DEV
         && new URLSearchParams(window.location.search).get('diagnostics') === '1';
@@ -481,6 +477,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         combatEffects = renderCoordinator.effects;
         remains = new BattlefieldRemains(scene, combatEffects);
         projectilePool = renderCoordinator.projectiles;
+        projectileView = new ProjectileView(projectilePool, soldierRenderer);
         rewardEffectsView = new RewardEffectsView({ scene, shellOrigin: strikeShellOrigin });
         terrain = createBattlefieldTerrain(scene);
         placementGhost = new PlacementGhost(scene, terrain.floor);
@@ -689,7 +686,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 disposeObjectResources(unit.mesh);
             }
         }
-        projectilePool.clear();
+        projectileView.clear();
         combatEffects.clear();
         battleSimulation?.world.clear();
         cameraShake = 0;
@@ -700,8 +697,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         enemyUnits = [];
         playerHQ = null;
         enemyHQ = null;
-        projectiles = [];
-        projectileVisuals.clear();
         targetObjects.clear();
         battleSimulation = null;
         cancelPlacement();
@@ -1273,83 +1268,19 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         simulation.drainGeneratedIncome();
 
-        for (const event of simulation.drainWeaponEvents()) {
-            createProjectileVisual(event, time);
+        projectileView.fired(simulation.world, simulation.drainWeaponEvents(), time, shots);
+        for (const shot of shots) {
+            if (shot === 'rifle') SFX.playRifleShot();
+            else SFX.playHeavyCannon();
         }
         for (const event of simulation.drainProductionEvents()) {
             createTroopVisual(event);
         }
-        for (const impact of simulation.drainProjectileImpacts()) {
-            finishProjectileVisual(impact);
+        projectileView.impacts(simulation.drainProjectileImpacts(), heavyImpacts);
+        for (const position of heavyImpacts) {
+            createCinematicExplosion(new THREE.Vector3(position.x, position.y, position.z), 0.6, false);
         }
-        syncProjectileVisuals();
-    }
-
-    function createProjectileVisual(event: WeaponFireEvent, time: number) {
-        const simulation = battleSimulation;
-        if (!simulation) return;
-        const projectile = simulation.world.getComponent(event.projectile, ECS_COMPONENTS.projectile);
-        const position = simulation.world.getComponent(event.projectile, ECS_COMPONENTS.transform);
-        const faction = simulation.world.getComponent(event.source, ECS_COMPONENTS.faction);
-        if (!projectile || !position || !faction) return;
-
-        const source = targetObjects.get(event.source);
-        if (source && 'type' in source && source.type === 'rifleman') {
-            SFX.playRifleShot();
-            soldierRenderer.showMuzzleFlash(event.source, time + 0.05);
-        } else {
-            SFX.playHeavyCannon();
-        }
-
-        const mesh = projectilePool.acquire(
-            new THREE.Vector3(position.x, position.y, position.z),
-            faction === ECS_FACTIONS.player,
-            projectile.isHeavy
-        );
-        if (!mesh) return;
-
-        const visual: RuntimeProjectile = {
-            ecsEntityId: event.projectile,
-            mesh
-        };
-        projectiles.push(visual);
-        projectileVisuals.set(event.projectile, visual);
-    }
-
-    function finishProjectileVisual(impact: ProjectileImpact) {
-        const visual = projectileVisuals.get(impact.projectile);
-        if (visual) {
-            projectilePool.release(visual.mesh);
-            projectileVisuals.delete(impact.projectile);
-            const index = projectiles.indexOf(visual);
-            if (index !== -1) projectiles.splice(index, 1);
-        }
-        if (impact.isHeavy) {
-            createCinematicExplosion(
-                new THREE.Vector3(impact.position.x, impact.position.y, impact.position.z),
-                0.6,
-                false
-            );
-        }
-    }
-
-    function syncProjectileVisuals() {
-        const simulation = battleSimulation;
-        if (!simulation) return;
-        for (let index = projectiles.length - 1; index >= 0; index--) {
-            const visual = projectiles[index];
-            const position = simulation.world.getComponent(
-                visual.ecsEntityId,
-                ECS_COMPONENTS.transform
-            );
-            if (!position) {
-                projectilePool.release(visual.mesh);
-                projectileVisuals.delete(visual.ecsEntityId);
-                projectiles.splice(index, 1);
-                continue;
-            }
-            visual.mesh.position.set(position.x, position.y, position.z);
-        }
+        projectileView.sync(simulation.world);
     }
 
     function updateCombat(delta: number) {
@@ -1736,7 +1667,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ring.record('particles', effectStats.activeParticles);
         ring.record('shockwaves', effectStats.activeShockwaves);
         ring.record('emitters', effectStats.activeEmitters);
-        ring.record('projectiles', projectiles.length);
+        ring.record('projectiles', projectileView.stats().active);
         ring.record('cachedProjectiles', projectileStats.cached);
         ring.record('soldiers', playerUnits.length + enemyUnits.length);
         ring.record('playerSoldiers', playerUnits.length);
