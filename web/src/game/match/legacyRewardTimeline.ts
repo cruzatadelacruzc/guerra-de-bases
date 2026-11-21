@@ -31,12 +31,7 @@ import {
 import type { Difficulty, StrikeAim } from '../rewardSystem.ts';
 import type { MatchState } from './MatchState.ts';
 import { applyRewardDamage } from './shield.ts';
-
-export interface StrikeHit {
-  readonly entity: Entity;
-  /** Health before the hit minus health after it. */
-  readonly healthLoss: number;
-}
+import type { StrikeHit } from './strikeState.ts';
 
 export interface StrikeImpactRecord {
   readonly frame: number;

@@ -1,4 +1,4 @@
-import type { Faction } from '../ecs/components.ts';
+import type { Entity, Faction } from '../ecs/components.ts';
 import type { StrikeId } from '../rewardSystem.ts';
 
 /** One artillery shell; what is `readonly` is fixed when the strike is scheduled. */
@@ -63,4 +63,11 @@ export interface StrikeTimeline {
 
 export function createStrikeTimeline(): StrikeTimeline {
   return { active: [], nextId: 1 };
+}
+
+/** How much health one impact took from one target (only for tests that compare impacts). */
+export interface StrikeHit {
+  readonly entity: Entity;
+  /** Health before the hit minus health after it. */
+  readonly healthLoss: number;
 }

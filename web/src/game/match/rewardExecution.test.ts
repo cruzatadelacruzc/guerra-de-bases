@@ -14,8 +14,8 @@ import { createMatchState } from './MatchState.ts';
 import { advanceStrikes, scheduleStrike } from './rewardExecution.ts';
 import type { StrikeEvent } from './rewardExecution.ts';
 import type { ActiveStrike } from './strikeState.ts';
-import { addBuilding, addUnit, createStrikeWorld } from './strikeScenarios.ts';
-import type { StrikeWorld } from './strikeScenarios.ts';
+import { addBuilding, addUnit, createStrikeWorld, DELTA_SEQUENCES, runStrikeScenario, STRIKE_SCENARIOS } from './strikeScenarios.ts';
+import type { StrikeDriver, StrikeWorld } from './strikeScenarios.ts';
 
 type ArtilleryStrike = Extract<ActiveStrike, { kind: 'artillery_strike' }>;
 type AirStrike = Extract<ActiveStrike, { kind: 'air_strike' }>;
@@ -319,4 +319,50 @@ test('strike damage ignores an active shield because the Nexus is never a target
   assert.equal(health(w, w.bases.enemy), nexusBefore);
   // Full damage despite the shield: 380 - 3 · 120.
   assert.equal(health(w, tank), 20);
+});
+
+test('advanceStrikes behaves identically with and without onImpactApplied', () => {
+  // S1 and S4d at once, with fixed60: artillery and an air strike with two bombs in one frame.
+  const runOnce = (withCallback: boolean) => {
+    const events: StrikeEvent[] = [];
+    const eventsPerFrame: StrikeEvent[][] = [];
+    const strikesPerFrame: unknown[] = [];
+    let reported = 0;
+    const driver: StrikeDriver = {
+      activate(w, faction, kind, aim, heading, nowMs) {
+        scheduleStrike(w.match, faction, kind, aim, heading, w.difficulty, nowMs);
+      },
+      update(w, deltaSeconds, nowMs) {
+        if (withCallback) {
+          advanceStrikes(w.world, w.match, w.bases, deltaSeconds, nowMs, w.difficulty, events, () => {
+            reported++;
+          });
+        } else {
+          advanceStrikes(w.world, w.match, w.bases, deltaSeconds, nowMs, w.difficulty, events);
+        }
+        eventsPerFrame.push(events.map((event) => ({ ...event })));
+        strikesPerFrame.push(structuredClone(w.match.strikes));
+      },
+      newMatch() {},
+      records: () => []
+    };
+    let world: StrikeWorld | undefined;
+    const { frames } = runStrikeScenario((w) => {
+      world = w;
+      return [...STRIKE_SCENARIOS.S1(w), ...STRIKE_SCENARIOS.S4d(w)];
+    }, driver, DELTA_SEQUENCES.fixed60);
+    assert.ok(world);
+    return { frames, eventsPerFrame, strikesPerFrame, strikes: world.match.strikes, reported };
+  };
+
+  const withCallback = runOnce(true);
+  const without = runOnce(false);
+
+  assert.equal(withCallback.reported, 3 + 4);
+  assert.equal(without.reported, 0);
+  assert.deepEqual(without.frames, withCallback.frames);
+  assert.deepEqual(without.eventsPerFrame, withCallback.eventsPerFrame);
+  assert.equal(impacts(withCallback.eventsPerFrame.flat()).length, 3 + 4);
+  assert.deepEqual(without.strikesPerFrame, withCallback.strikesPerFrame);
+  assert.deepEqual(without.strikes, withCallback.strikes);
 });

@@ -17,7 +17,7 @@ import {
 import type { Difficulty, StrikeAim, StrikeId } from '../rewardSystem.ts';
 import type { MatchState } from './MatchState.ts';
 import { applyRewardDamage } from './shield.ts';
-import type { ActiveStrike } from './strikeState.ts';
+import type { ActiveStrike, StrikeHit } from './strikeState.ts';
 import { isStrikeTarget } from './strikeTargets.ts';
 
 /** What happened to the strikes in one frame, for the presentation; the damage never depends on it. */
@@ -132,15 +132,21 @@ function applyImpact(
   x: number,
   z: number,
   nowMs: number,
-  difficulty: Difficulty
+  difficulty: Difficulty,
+  hits: StrikeHit[] | undefined
 ): void {
   for (const entity of world.query(COMPONENTS.targetable, COMPONENTS.faction, COMPONENTS.transform, COMPONENTS.health)) {
     if (!isStrikeTarget(world, entity, strike.faction)) continue;
     const position = world.getComponent(entity, COMPONENTS.transform);
     if (!position) continue;
-    if (Math.hypot(position.x - x, position.z - z) <= strike.radius) {
+    if (Math.hypot(position.x - x, position.z - z) > strike.radius) continue;
+    if (hits === undefined) {
       applyRewardDamage(world, match, bases, entity, strike.damagePerImpact, nowMs, difficulty);
+      continue;
     }
+    const before = world.getComponent(entity, COMPONENTS.health)?.current ?? 0;
+    const after = applyRewardDamage(world, match, bases, entity, strike.damagePerImpact, nowMs, difficulty).current;
+    hits.push({ entity, healthLoss: before - after });
   }
 }
 
@@ -150,6 +156,10 @@ function applyImpact(
  * The impacts that fall due in the frame are applied in nominal-time order (then strike id, then
  * index) against the targets of that moment. `events` is emptied and then filled for the
  * presentation, after the damage.
+ *
+ * `onImpactApplied` is only for tests: when given, it is called after each impact's damage with
+ * the health each target lost. When omitted, no per-impact hit list is built and the health
+ * before each hit is not read; execution and damage are the same either way.
  */
 export function advanceStrikes(
   world: World,
@@ -158,7 +168,8 @@ export function advanceStrikes(
   deltaSeconds: number,
   nowMs: number,
   difficulty: Difficulty,
-  events: StrikeEvent[]
+  events: StrikeEvent[],
+  onImpactApplied?: (strikeId: number, index: number, hits: readonly StrikeHit[]) => void
 ): void {
   events.length = 0;
   if (match.outcome !== null) return;
@@ -220,7 +231,13 @@ export function advanceStrikes(
     due.sort(compareDue);
     for (const { strike, index } of due) {
       const point = strike.kind === 'artillery_strike' ? strike.shells[index] : strike.bombs[index];
-      applyImpact(world, match, bases, strike, point.x, point.z, nowMs, difficulty);
+      if (onImpactApplied) {
+        const hits: StrikeHit[] = [];
+        applyImpact(world, match, bases, strike, point.x, point.z, nowMs, difficulty, hits);
+        onImpactApplied(strike.id, index, hits);
+      } else {
+        applyImpact(world, match, bases, strike, point.x, point.z, nowMs, difficulty, undefined);
+      }
       events.push({ type: 'impact', strikeId: strike.id, faction: strike.faction, kind: strike.kind, index, x: point.x, z: point.z });
     }
   }

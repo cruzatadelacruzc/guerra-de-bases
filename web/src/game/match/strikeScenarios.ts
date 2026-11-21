@@ -10,12 +10,16 @@ import type { Entity, Faction, SoldierKind } from '../ecs/components.ts';
 import { createSoldier, createSoldierFactory, createStructure, SOLDIER_PRODUCTION } from '../ecs/initialBattle.ts';
 import type { World } from '../ecs/World.ts';
 import { STRUCTURE_DEFINITIONS } from '../definitions/structures.ts';
+import { ENEMY_AIR_STRIKE_HEADING } from '../rewardSystem.ts';
 import type { Difficulty, StrikeAim } from '../rewardSystem.ts';
 import { DeathResolver } from './DeathResolver.ts';
 import { LegacyRewardTimeline } from './legacyRewardTimeline.ts';
 import type { StrikeImpactRecord } from './legacyRewardTimeline.ts';
 import { createMatchState } from './MatchState.ts';
 import type { MatchOutcome, MatchState } from './MatchState.ts';
+import { advanceStrikes, scheduleStrike } from './rewardExecution.ts';
+import type { StrikeEvent } from './rewardExecution.ts';
+import type { StrikeHit } from './strikeState.ts';
 
 type StrikeKind = 'artillery_strike' | 'air_strike';
 
@@ -275,3 +279,195 @@ export function legacyDriver(): StrikeDriver {
     }
   };
 }
+
+/**
+ * The domain (scheduleStrike + advanceStrikes) as a driver. Each record is built from an `impact`
+ * event, with the hits that `onImpactApplied` reported for that impact. A new match needs nothing:
+ * the runner has already replaced `match`, and the strikes in flight went with the old one.
+ */
+export function domainDriver(): StrikeDriver {
+  const records: StrikeImpactRecord[] = [];
+  const events: StrikeEvent[] = [];
+  const applied: Array<{ strikeId: number; index: number; hits: readonly StrikeHit[] }> = [];
+  const onImpactApplied = (strikeId: number, index: number, hits: readonly StrikeHit[]): void => {
+    applied.push({ strikeId, index, hits });
+  };
+
+  return {
+    activate(w, faction, kind, aim, heading, nowMs) {
+      if (kind === 'air_strike' && heading === undefined && faction === 'player') {
+        throw new Error('A player air strike needs a heading');
+      }
+      const runHeading = kind === 'air_strike' ? heading ?? ENEMY_AIR_STRIKE_HEADING : undefined;
+      scheduleStrike(w.match, faction, kind, aim, runHeading, w.difficulty, nowMs);
+    },
+    update(w, deltaSeconds, nowMs, frame) {
+      applied.length = 0;
+      advanceStrikes(w.world, w.match, w.bases, deltaSeconds, nowMs, w.difficulty, events, onImpactApplied);
+      let next = 0;
+      for (const event of events) {
+        if (event.type !== 'impact') continue;
+        const impact = applied[next++];
+        if (impact === undefined || impact.strikeId !== event.strikeId || impact.index !== event.index) {
+          throw new Error(`Impact ${event.strikeId}/${event.index} has no matching onImpactApplied call`);
+        }
+        const { strikeId, kind, faction, index, x, z } = event;
+        records.push({ frame, strike: strikeId, kind, faction, index, x, z, hits: impact.hits });
+      }
+      if (next !== applied.length) throw new Error(`${applied.length - next} onImpactApplied calls had no impact event`);
+    },
+    newMatch() {},
+    records() {
+      return [...records];
+    }
+  };
+}
+
+const S1_AIM: StrikeAim = { x: 10, z: -20 };
+const S2_AIM: StrikeAim = { x: -15, z: 25 };
+const S3_AIM: StrikeAim = { x: -10, z: 20 };
+const S4_AIM: StrikeAim = { x: 15, z: -25 };
+/** The enemy Nexus is at (0, -60): 2 from this aim. */
+const S5_AIM: StrikeAim = { x: 2, z: -60 };
+
+function activate(
+  atMs: number,
+  when: ScenarioStep['when'],
+  faction: Faction,
+  kind: StrikeKind,
+  aim: StrikeAim,
+  heading?: StrikeAim
+): ScenarioStep {
+  return { atMs, when, action: { type: 'activate', faction, kind, aim, heading } };
+}
+
+/** Five enemy soldiers spread over the three artillery circles (offsets (0,0), (6,4), (-5,-3)). */
+function s1(w: StrikeWorld): readonly ScenarioStep[] {
+  const { x, z } = S1_AIM;
+  addUnit(w, 'enemy', x, z);
+  addUnit(w, 'enemy', x + 7, z + 5, 'tank');
+  addUnit(w, 'enemy', x - 6, z - 4);
+  addUnit(w, 'enemy', x + 1, z + 1, 'tank');
+  addUnit(w, 'enemy', x - 14, z - 8, 'tank');
+  return [activate(0, 'between-frames', 'player', 'artillery_strike', S1_AIM)];
+}
+
+/** Player structures under the AI's artillery; an enemy soldier among them must not be hit. */
+function s2(w: StrikeWorld): readonly ScenarioStep[] {
+  const { x, z } = S2_AIM;
+  addBuilding(w, 'player', 'turret', x, z);
+  addBuilding(w, 'player', 'generator', x + 6, z + 5);
+  addBuilding(w, 'player', 'barracks', x - 6, z - 4);
+  addUnit(w, 'enemy', x + 1, z);
+  return [activate(500, 'inside-frame', 'enemy', 'artillery_strike', S2_AIM)];
+}
+
+/** The AI's air strike, with its fixed heading (the driver's default). */
+function s3(w: StrikeWorld): readonly ScenarioStep[] {
+  const { x, z } = S3_AIM;
+  addUnit(w, 'player', x, z);
+  addUnit(w, 'player', x + 5, z + 3, 'tank');
+  addUnit(w, 'player', x - 4, z - 3);
+  addUnit(w, 'player', x + 8, z - 5, 'tank');
+  addUnit(w, 'player', x + 2, z - 1, 'tank');
+  return [activate(700, 'inside-frame', 'enemy', 'air_strike', S3_AIM)];
+}
+
+function s4(heading: StrikeAim, extra?: (w: StrikeWorld) => void): (w: StrikeWorld) => readonly ScenarioStep[] {
+  return (w) => {
+    const { x, z } = S4_AIM;
+    addUnit(w, 'enemy', x, z, 'tank');
+    addUnit(w, 'enemy', x + 5, z + 4);
+    addUnit(w, 'enemy', x - 4, z - 2, 'tank');
+    addUnit(w, 'enemy', x + 9, z - 6);
+    addBuilding(w, 'enemy', 'barracks', x + 3, z - 3);
+    extra?.(w);
+    return [activate(0, 'between-frames', 'player', 'air_strike', S4_AIM, heading)];
+  };
+}
+
+function normalized(x: number, z: number): StrikeAim {
+  const length = Math.hypot(x, z);
+  return { x: x / length, z: z / length };
+}
+
+/** At exactly 12 and at 12 + 1e-6 from the first shell, with the enemy Nexus 2 away. */
+function s5(w: StrikeWorld): readonly ScenarioStep[] {
+  addUnit(w, 'enemy', S5_AIM.x + 12, S5_AIM.z);
+  addUnit(w, 'enemy', S5_AIM.x - (12 + 1e-6), S5_AIM.z);
+  return [activate(0, 'between-frames', 'player', 'artillery_strike', S5_AIM)];
+}
+
+/** A soldier with 10 health inside the first two shells' circles (and outside the third's). */
+function s6(w: StrikeWorld): readonly ScenarioStep[] {
+  const soldier = addUnit(w, 'enemy', S1_AIM.x + 6, S1_AIM.z + 6);
+  return [
+    { atMs: 0, when: 'between-frames', action: { type: 'set-health', entity: soldier, current: 10 } },
+    activate(0, 'between-frames', 'player', 'artillery_strike', S1_AIM)
+  ];
+}
+
+/** Between activation and the first shell, one soldier moves in, one moves out and one appears. */
+function s7(w: StrikeWorld): readonly ScenarioStep[] {
+  const { x, z } = S1_AIM;
+  const entering = addUnit(w, 'enemy', x + 30, z);
+  const leaving = addUnit(w, 'enemy', x + 1, z + 1);
+  return [
+    activate(0, 'between-frames', 'player', 'artillery_strike', S1_AIM),
+    { atMs: 1500, when: 'inside-frame', action: { type: 'move', entity: entering, x, z } },
+    { atMs: 1500, when: 'between-frames', action: { type: 'move', entity: leaving, x: x + 40, z: z + 40 } },
+    { atMs: 2000, when: 'inside-frame', action: { type: 'add-unit', faction: 'enemy', x: x - 2, z } }
+  ];
+}
+
+/** The player's artillery (between frames) and the AI's air strike (inside the frame), same frame. */
+function s9(w: StrikeWorld): readonly ScenarioStep[] {
+  const steps = s1(w);
+  const { x, z } = S3_AIM;
+  addUnit(w, 'player', x, z, 'tank');
+  addUnit(w, 'player', x + 5, z + 3);
+  addUnit(w, 'player', x - 4, z - 3, 'tank');
+  return [
+    ...steps.map((step) => ({ ...step, atMs: 1000 })),
+    activate(1000, 'inside-frame', 'enemy', 'air_strike', S3_AIM)
+  ];
+}
+
+/** The enemy Nexus falls at 4 s, between the second shell (3.6 s) and the third (4.3 s). */
+function s10(w: StrikeWorld): readonly ScenarioStep[] {
+  const steps = s1(w);
+  // Only the third shell (aim + (-5, -3)) reaches this one.
+  addUnit(w, 'enemy', S1_AIM.x - 13, S1_AIM.z - 6);
+  return [...steps, { atMs: 4000, when: 'inside-frame', action: { type: 'set-health', entity: 'enemy-hq', current: 0 } }];
+}
+
+/** A new match at 1 s, with the player's artillery in flight. */
+function s11(w: StrikeWorld): readonly ScenarioStep[] {
+  return [...s1(w), { atMs: 1000, when: 'between-frames', action: { type: 'new-match' } }];
+}
+
+/** The scenarios of design §6.2, compared between the legacy reference and the domain. */
+export const STRIKE_SCENARIOS: Readonly<Record<
+  'S1' | 'S2' | 'S3' | 'S4a' | 'S4b' | 'S4c' | 'S4d' | 'S5' | 'S6' | 'S7' | 'S8' | 'S9' | 'S10' | 'S11',
+  (w: StrikeWorld) => readonly ScenarioStep[]
+>> = Object.freeze({
+  S1: s1,
+  S2: s2,
+  S3: s3,
+  S4a: s4({ x: 1, z: 0 }),
+  S4b: s4({ x: 0, z: -1 }),
+  S4c: s4(normalized(1, 1)),
+  // Perpendicular to (9, 6) = bomb 1 - bomb 2, so both are released in the same frame; the soldier
+  // at aim + (0.5, 0) is inside both their circles.
+  S4d: s4(normalized(-6, 9), (w) => addUnit(w, 'enemy', S4_AIM.x + 0.5, S4_AIM.z)),
+  S5: s5,
+  S6: s6,
+  S7: s7,
+  S8: (w) => {
+    w.match.rewards.enemy.shieldUntilMs = 1e9;
+    return s1(w);
+  },
+  S9: s9,
+  S10: s10,
+  S11: s11
+});
