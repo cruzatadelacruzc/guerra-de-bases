@@ -38,17 +38,12 @@ import { unlockEventsFor } from './game/match/unlockEvents.ts';
 import { createNexusDamageAlert } from './game/nexusDamageAlert.ts';
 import { createHapticFeedback, createPlatformVibrate } from './platform/HapticFeedback.ts';
 import {
-    AIR_STRIKE_BOMB_OFFSETS,
     AIR_STRIKE_FLIGHT_SECONDS,
     ARTILLERY_IMPACT_OFFSETS,
-    ARTILLERY_LAUNCH_DELAY_SECONDS,
-    ARTILLERY_SALVO_INTERVAL_SECONDS,
     ARTILLERY_SHELL_FLIGHT_SECONDS,
-    artilleryStrikeDurationSeconds,
     ENEMY_AIR_STRIKE_HEADING,
     getDifficultyProfile,
     getRewardDefinitionForDifficulty,
-    nominalBombLandingSeconds,
     type RewardId,
     type StrikeAim
 } from './game/rewardSystem.ts';
@@ -63,12 +58,12 @@ import type {
     UnlockView
 } from './ui/contracts.ts';
 import type { MapCameraController } from './rendering/MapCameraController.ts';
-import { createTerrainGrid } from './rendering/TerrainGrid.ts';
+import { createBattlefieldTerrain, MenuSoldiers, type BattlefieldTerrain } from './rendering/battlefieldScene.ts';
+import { airStrikeShots, artilleryShots } from './rendering/strikeCinematics.ts';
 import { BattlefieldRemains } from './rendering/BattlefieldRemains.ts';
 import {
     createHQMesh,
     createNexusShieldVisual,
-    createSoldierMesh,
     createTankMesh,
     disposeObjectResources,
     instantiateBuildingMesh
@@ -396,7 +391,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let enemyUnits: RuntimeUnit[] = [];
     let projectiles: RuntimeProjectile[] = [];
     const projectileVisuals = new Map<Entity, RuntimeProjectile>();
-    let menuUnits: THREE.Group[] = [];
+    let menuSoldiers: MenuSoldiers;
     const diagnosticsEnabled = import.meta.env.DEV
         && new URLSearchParams(window.location.search).get('diagnostics') === '1';
     const diagnosticsOptions = diagnosticsEnabled ? parseDiagnosticsOptions(window.location.search) : null;
@@ -439,7 +434,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let selectedBuildType: BuildingType | null = null;
     let placementGhost: THREE.Group | null = null;
     let isDemolishMode = false;
-    let terrainFloor: THREE.Mesh | null = null;
+    let terrain: BattlefieldTerrain | null = null;
     let cameraShake = 0;
     let aiDifficulty: 'easy' | 'normal' | 'hard' = 'normal';
     let gameplayClockMs = 0;
@@ -470,6 +465,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 : undefined
         );
         scene = renderCoordinator.scene;
+        menuSoldiers = new MenuSoldiers(scene);
         camera = renderCoordinator.camera;
         renderer = renderCoordinator.renderer;
         cameraController = renderCoordinator.cameraController;
@@ -485,7 +481,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         remains = new BattlefieldRemains(scene, combatEffects);
         projectilePool = renderCoordinator.projectiles;
         rewardEffectsView = new RewardEffectsView({ scene, shellOrigin: strikeShellOrigin });
-        createTerrain();
+        terrain = createBattlefieldTerrain(scene);
 
         inputController = new GameInputController(renderCoordinator.canvas, {
             onPointerMove,
@@ -531,56 +527,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         });
         inputController.attach();
 
-        setupMenuCinematic();
-    }
-
-    function createTerrain() {
-        const planeGeo = new THREE.PlaneGeometry(110, 150);
-        const planeMat = new THREE.MeshStandardMaterial({
-            color: 0x0a0f1d,
-            roughness: 0.8,
-            metalness: 0.2
-        });
-        terrainFloor = new THREE.Mesh(planeGeo, planeMat);
-        terrainFloor.rotation.x = -Math.PI / 2;
-        terrainFloor.receiveShadow = true;
-        scene.add(terrainFloor);
-
-        // Plain unlit ground around the map so its edges don't float in a void;
-        // it sits below the terrain (which hides it inside the map) and the far
-        // fog blends it into the background before its own edge is seen.
-        const outerGround = new THREE.Mesh(
-            new THREE.PlaneGeometry(2000, 2000),
-            new THREE.MeshBasicMaterial({ color: 0x0c1222 })
-        );
-        outerGround.rotation.x = -Math.PI / 2;
-        outerGround.position.y = -0.1;
-        scene.add(outerGround);
-
-        const gridHelper = createTerrainGrid(110, 150, 5, 0x00f0ff, 0x1e293b);
-        gridHelper.position.y = 0.05;
-        scene.add(gridHelper);
-
-        const centerLineGeo = new THREE.BoxGeometry(110, 0.2, 1);
-        const centerLineMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, transparent: true, opacity: 0.6 });
-        const centerLine = new THREE.Mesh(centerLineGeo, centerLineMat);
-        centerLine.position.set(0, 0.1, 0);
-        scene.add(centerLine);
-    }
-
-    function setupMenuCinematic() {
-        for (let i = 0; i < 8; i++) {
-            const s = createSoldierMesh(0x00f0ff);
-            s.position.set(-15 + Math.random() * 10, 0, 10 + Math.random() * 10);
-            scene.add(s);
-            menuUnits.push(s);
-        }
-        for (let i = 0; i < 8; i++) {
-            const s = createSoldierMesh(0xff3344);
-            s.position.set(-15 + Math.random() * 10, 0, -10 - Math.random() * 10);
-            scene.add(s);
-            menuUnits.push(s);
-        }
+        menuSoldiers.show();
     }
 
     function startNewGame(settings = ui.getMissionSettings()) {
@@ -596,11 +543,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         pendingVictoryState = false;
 
         // Clear Menu Preview Units
-        menuUnits.forEach((unit) => {
-            scene.remove(unit);
-            disposeObjectResources(unit);
-        });
-        menuUnits = [];
+        menuSoldiers.clear();
 
         teardownMatch();
 
@@ -722,7 +665,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ui.enterMainMenu();
         ui.setPlacementActive(false);
 
-        setupMenuCinematic();
+        menuSoldiers.show();
     }
 
     function teardownMatch(): void {
@@ -925,9 +868,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     const BUILD_ZONE_MAX_ABS_X = 53;
 
     function getPlacementPosition(): THREE.Vector3 | undefined {
-        if (!terrainFloor) return undefined;
+        if (!terrain) return undefined;
         raycaster.setFromCamera(mouse, camera);
-        const point = raycaster.intersectObject(terrainFloor)[0]?.point;
+        const point = raycaster.intersectObject(terrain.floor)[0]?.point;
         if (!point
             || point.z <= BUILD_ZONE_MIN_Z
             || point.z >= BUILD_ZONE_MAX_Z
@@ -1519,18 +1462,22 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         return matchState.rewards[faction].shieldUntilMs > now;
     }
 
-    const ARTILLERY_CAMERA_NEXUS_DISTANCE = 38;
-    const ARTILLERY_CAMERA_IMPACT_DISTANCE = 50;
-    const AIR_STRIKE_CAMERA_LEAD_SECONDS = 1;
-    const AIR_STRIKE_CAMERA_DISTANCE = 45;
     /** Filled by advanceStrikes each frame and read right after; one array for the whole app. */
     const strikeEvents: StrikeEvent[] = [];
 
     /** Where shell `index` leaves the faction's Nexus (only visual; the domain never reads it). */
     function strikeShellOrigin(faction: 'player' | 'enemy', index: number, shellCount: number) {
-        const nexus = faction === ECS_FACTIONS.player ? playerHQ : enemyHQ;
-        const base = nexus?.position ?? (faction === ECS_FACTIONS.player ? PLAYER_BASE_POSITION : ENEMY_BASE_POSITION);
-        return muzzleOrigin(base, index, shellCount);
+        return muzzleOrigin(nexusPosition(faction), index, shellCount);
+    }
+
+    /** The Nexus transform in the live world, or the faction's starting base when there is none. */
+    function nexusPosition(faction: 'player' | 'enemy'): Position {
+        const simulation = battleSimulation;
+        const base = faction === ECS_FACTIONS.player ? simulation?.playerBase : simulation?.enemyBase;
+        const transform = simulation && base !== undefined
+            ? simulation.world.getComponent(base, ECS_COMPONENTS.transform)
+            : undefined;
+        return transform ?? (faction === ECS_FACTIONS.player ? PLAYER_BASE_POSITION : ENEMY_BASE_POSITION);
     }
 
     /** Lands this frame's due strike impacts on the gameplay clock, then plays and draws them. */
@@ -1579,27 +1526,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     /** Player-only cinematic: show the salvo leaving the Nexus, then follow it to the impact zone. */
     function playArtilleryCinematic(impactCenter: StrikeAim): void {
         if (!playerHQ) return;
-        const shellCount = ARTILLERY_IMPACT_OFFSETS.length;
-        const firstImpactAt = ARTILLERY_LAUNCH_DELAY_SECONDS + ARTILLERY_SHELL_FLIGHT_SECONDS;
-        // Stay on the Nexus until the second shell is out, then arrive just before the first lands.
-        const leaveNexusAt = ARTILLERY_LAUNCH_DELAY_SECONDS + ARTILLERY_SALVO_INTERVAL_SECONDS + 0.1;
-        const arriveAt = firstImpactAt - 0.15;
-        cameraController.playShots([
-            {
-                x: playerHQ.position.x,
-                z: playerHQ.position.z,
-                durationSeconds: ARTILLERY_LAUNCH_DELAY_SECONDS,
-                holdSeconds: leaveNexusAt - ARTILLERY_LAUNCH_DELAY_SECONDS,
-                distance: ARTILLERY_CAMERA_NEXUS_DISTANCE
-            },
-            {
-                x: impactCenter.x,
-                z: impactCenter.z,
-                durationSeconds: arriveAt - leaveNexusAt,
-                holdSeconds: artilleryStrikeDurationSeconds(shellCount) - arriveAt + 0.8,
-                distance: ARTILLERY_CAMERA_IMPACT_DISTANCE
-            }
-        ]);
+        cameraController.playShots(artilleryShots(nexusPosition(ECS_FACTIONS.player), impactCenter));
     }
 
     /** Unit ground direction the camera looks along; the player's aircraft flies this way to stay in view. */
@@ -1611,17 +1538,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     /** Player-only cinematic: reach the target before the aircraft so its bombs are seen leaving it. */
     function playAirStrikeCinematic(target: StrikeAim, heading: StrikeAim): void {
-        // The bomb furthest along the run drops, and lands, last.
-        const lastLandingAt = Math.max(...AIR_STRIKE_BOMB_OFFSETS.map((offset) => nominalBombLandingSeconds(offset, heading)));
-        cameraController.playShots([
-            {
-                x: target.x,
-                z: target.z,
-                durationSeconds: AIR_STRIKE_CAMERA_LEAD_SECONDS,
-                holdSeconds: lastLandingAt + 0.6 - AIR_STRIKE_CAMERA_LEAD_SECONDS,
-                distance: AIR_STRIKE_CAMERA_DISTANCE
-            }
-        ]);
+        cameraController.playShots(airStrikeShots(target, heading));
     }
 
     function getRewardFailureMessage(reason: RewardRejection): string {
