@@ -664,3 +664,21 @@ En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.5:
     - `clearStrikes` no tenía prueba hasta S11.
 - **Sin cambios, como se acordó:** el escudo no reduce el daño de los ataques, y la IA, los desbloqueos, los dos mecanismos de fin de partida, la duración con reloj real y el paso fijo siguen como estaban.
 - **Al terminar R5 no se empieza R6.**
+
+### 10.9 Revisión independiente final (`2896efd..dafca10`)
+
+- **Resultado:** sin hallazgos críticos ni importantes. Lista para cerrar.
+- **Lo que confirmó el revisor:**
+  - la aritmética del dominio es la de `GameApplication.ts` @ `f54dc77`, línea a línea;
+  - hay un solo camino de daño;
+  - no hay ciclos de importación ni dependencias de Three.js en el dominio;
+  - la pausa, `MATCH_ENDING`, la partida nueva y la liberación de recursos se comportan como pide el diseño;
+  - nada queda fuera del alcance.
+- **Ninguno de los menores aparcados de §10.8 bloquea el cierre.**
+- **Menores nuevos, anotados sin corregir:**
+  1. `aiMatchRunner.strikes.test.ts`: la aserción condicional sobre el resultado espera `strikes.active` vacío. Por la guarda de `outcome`, un ataque en vuelo se queda en `active`, así que podría fallar sin motivo. Habría que sustituirla por «`strikeImpacts` no cambia después del resultado».
+  2. `RewardEffectsView.ts`: si un visual guardado no coincide en tipo con el ataque del mismo id, se salta sin avisar. Hoy no puede pasar, porque `clear()` va antes de cada partida nueva.
+  3. Número de proyectiles desde dos fuentes: es el mismo punto que en §10.8.
+  4. Informe de rendimiento: la explicación de los 0,67 ms de simulación en escritorio solo cita la primera pasada, aunque la segunda (320 geometrías) también da 0,673 ms. Además, no menciona la subida del fotograma y la CPU del combate en escritorio (28,3 → 31,4 ms; 9,7-10,1 → 10,5-10,9 ms), que deberían figurar como variación entre sesiones.
+  5. `GameApplication`: crea un objeto `{ player, enemy }` de bases en cada fotograma `PLAYING`, igual que el patrón de `updateCombat`. El coste es despreciable.
+  6. §5.2 dice que `advanceStrikes` "no asigna nada salvo los eventos". En los fotogramas con impactos también crea la lista de vencidos y sus entradas, como mucho 7 por ataque.
