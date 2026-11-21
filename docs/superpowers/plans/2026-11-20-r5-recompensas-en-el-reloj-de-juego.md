@@ -134,7 +134,7 @@
   export function legacyDriver(): StrikeDriver;
   ```
 
-- [ ] **Paso 1: Transcripción.** `LegacyRewardTimeline` copia `triggerArtilleryStrike`, `updateActiveArtillery`, `triggerAirStrikeForFaction`, `updateActiveAirStrikes`, `getRewardTargetCandidates` y `applyDamage` línea a línea. Solo cambia esto:
+- [x] **Paso 1: Transcripción.** `LegacyRewardTimeline` copia `triggerArtilleryStrike`, `updateActiveArtillery`, `triggerAirStrikeForFaction`, `updateActiveAirStrikes`, `getRewardTargetCandidates` y `applyDamage` línea a línea. Solo cambia esto:
   - **se quitan** mallas, `scene`, `combatEffects`, `createCinematicExplosion`, `SFX`, `haptics`, `ballisticPoint`, `orientAircraftAlongFlightPath` y `disposeVisualTree`;
   - `THREE.Vector3` pasa a `{ x, y, z }` y `THREE.MathUtils.lerp` a `(1 - t) * a + t * b`;
   - el `if (!impact.projectile)` pasa a un booleano `launched`;
@@ -144,7 +144,7 @@
   Se conserva el recorrido inverso de las listas (`for (let i = length - 1; i >= 0; i--)`), el orden por índice de impactos y bombas, y el orden explosión → daño del avión (sin explosión).
 
   **Cabecera del fichero:** qué se transcribió, de qué commit (`f54dc77`, blob `9bff6f4`, idéntico en `71890e9`) y qué se quitó.
-- [ ] **Paso 2: Utilidades de escenario.**
+- [x] **Paso 2: Utilidades de escenario.**
   - **`DELTA_SEQUENCES`:** cada secuencia cubre al menos 8 s de juego.
     - `fixed60`: `1/60`;
     - `fixed30`: `1/30`;
@@ -166,7 +166,7 @@
 
     `activate` anota `nowMs` actual. Un paso `new-match` llama a `driver.newMatch` y crea `createMatchState()`.
   - **`legacyDriver()`** envuelve `LegacyRewardTimeline`. `newMatch` llama a `clear()` y crea una timeline nueva sobre el nuevo `match`.
-- [ ] **Paso 3: Pruebas que fijan la referencia** (§6.1), en `legacyRewardTimeline.test.ts`:
+- [x] **Paso 3: Pruebas que fijan la referencia** (§6.1), en `legacyRewardTimeline.test.ts`:
   - `legacy artillery lands three shells at the frames where the summed delta reaches 2.9, 3.6 and 4.3 s`: con `fixed60`, los fotogramas son el primero con `Σdelta ≥ t`, calculado en la prueba con la misma suma en coma flotante. Puntos `aim + (0,0)`, `(6,4)` y `(-5,-3)`.
   - `legacy air strike drops four bombs within 5.2 s at aim + offset`: rumbo `{x:-1,z:0}`. Las bombas caen en orden de proyección creciente sobre el rumbo: índices 3, 1, 0, 2.
   - `legacy air strike release order follows the heading`: con `{x:1,z:0}`, el orden es 2, 0, 1, 3.
@@ -174,10 +174,10 @@
   - `legacy damage per impact is 120 for artillery and 220 for the air strike on every difficulty`.
   - `legacy timeline does not advance while paused`: `paused` da los mismos impactos que `fixed60`, desplazados exactamente 90 fotogramas.
   - `legacy strikes never hit the Nexus`.
-- [ ] **Paso 4: Ejecutar.**
+- [x] **Paso 4: Ejecutar.**
   Run: `npx tsx --test web/src/game/match/legacyRewardTimeline.test.ts web/src/game/commands/constructionBoundary.test.ts`
   Expected: PASS. Ningún fichero de producción cambia (`git status` solo muestra los cuatro de esta tarea).
-- [ ] **Paso 5: `npm test`, `npm run typecheck`, y commit.**
+- [x] **Paso 5: `npm test`, `npm run typecheck`, y commit.**
   ```bash
   git add web/src/game/match/legacyRewardTimeline.ts web/src/game/match/strikeScenarios.ts web/src/game/match/legacyRewardTimeline.test.ts web/src/game/commands/constructionBoundary.test.ts
   git commit -m "test(rewards): pin the current strike timing with a legacy reference"
@@ -234,7 +234,7 @@
   export function clearStrikes(match: MatchState): void;                         // solo vacía `strikes.active`
   ```
 
-- [ ] **Paso 1: Pruebas que fallan** (`rewardExecution.test.ts`), con mundos de `strikeScenarios.ts`:
+- [x] **Paso 1: Pruebas que fallan** (`rewardExecution.test.ts`), con mundos de `strikeScenarios.ts`:
   - `scheduleStrike places artillery shells at aim + offset with launchAt 0.7, 1.4, 2.1 and sets strikeActiveUntilMs to now + 4300`.
   - `scheduleStrike builds the air run from aim - heading·60 to aim + heading·60 and sets strikeActiveUntilMs to now + 5200`.
   - `scheduleStrike freezes a copy of the heading`: cambiar el objeto original después no cambia `strike.heading`, y `Object.isFrozen(strike.heading)`.
@@ -252,13 +252,13 @@
   - `a bomb released and landing in the same frame has nominal frame start + 720 ms`: dos bombas con el mismo valor se aplican en orden de índice.
   - `nominalBombLandingSeconds is within one 1/60 frame of the replicated landing frame`: los cuatro desfases con el rumbo de la IA y con `{x:1,z:0}`.
   - `strike damage ignores an active shield because the Nexus is never a target`.
-- [ ] **Paso 2: Prueba de límites** (`rewardExecutionBoundary.test.ts`), con el patrón de `constructionBoundary.test.ts`:
+- [x] **Paso 2: Prueba de límites** (`rewardExecutionBoundary.test.ts`), con el patrón de `constructionBoundary.test.ts`:
   - los ficheros `strikeState.ts`, `strikeTargets.ts` y `rewardExecution.ts` no contienen imports de `commands/`, `'three'`, `rendering/`, `ui/` ni `platform/`;
   - `strikeState.ts` no importa `MatchState.ts` ni `rewardExecution.ts`.
-- [ ] **Paso 3: Ejecutar y ver que fallan.**
+- [x] **Paso 3: Ejecutar y ver que fallan.**
   Run: `npx tsx --test web/src/game/match/rewardExecution.test.ts web/src/game/match/rewardExecutionBoundary.test.ts`
   Expected: FAIL (los módulos no existen).
-- [ ] **Paso 4: Implementar.**
+- [x] **Paso 4: Implementar.**
   - **Tipos y estado:** `strikeState.ts` con los tipos de §5.2. `MatchState` importa sus tipos con `import type` y `createMatchState` añade `strikes: createStrikeTimeline()` y `strikeActiveUntilMs: {}` por facción. Se actualiza el `deepEqual` de `MatchState.test.ts`.
   - **`isStrikeTarget`:** recibe la condición que hoy está en el bucle de `rewardTargetCandidates`.
   - **`scheduleStrike`:** según §5.3. El daño sale de `getRewardDefinitionForDifficulty`, con el respaldo de las restricciones globales, y el radio de `getStrikePattern(id, d).radius`.
@@ -300,10 +300,10 @@
     ```
   - **`clearStrikes`:** `match.strikes.active.length = 0`.
   - **Constantes:** se mueven a `rewardSystem.ts` y `GameApplication` las importa, sin otro cambio.
-- [ ] **Paso 5: Ejecutar.**
+- [x] **Paso 5: Ejecutar.**
   Run: `npx tsx --test web/src/game/match/rewardExecution.test.ts web/src/game/match/rewardExecutionBoundary.test.ts web/src/game/match/MatchState.test.ts`
   Expected: PASS.
-- [ ] **Paso 6: `npm test`, `npm run typecheck`, y commit.**
+- [x] **Paso 6: `npm test`, `npm run typecheck`, y commit.**
   ```bash
   git add web/src/game/rewardSystem.ts web/src/GameApplication.ts web/src/game/match/strikeState.ts web/src/game/match/strikeTargets.ts web/src/game/match/rewardExecution.ts web/src/game/match/MatchState.ts web/src/game/match/rewardExecution.test.ts web/src/game/match/rewardExecutionBoundary.test.ts web/src/game/match/MatchState.test.ts
   git commit -m "feat(rewards): schedule and resolve strikes on the gameplay clock in the domain"
@@ -328,7 +328,7 @@
     (w: StrikeWorld) => readonly ScenarioStep[]>>;
   ```
 
-- [ ] **Paso 1: `domainDriver`.** Para anotar `hits` hay que atribuir cada golpe a su impacto, y desde fuera de `advanceStrikes` solo se ve la vida al final del fotograma.
+- [x] **Paso 1: `domainDriver`.** Para anotar `hits` hay que atribuir cada golpe a su impacto, y desde fuera de `advanceStrikes` solo se ve la vida al final del fotograma.
   - `advanceStrikes` recibe un último parámetro opcional `onImpactApplied?: (strikeId: number, index: number, hits: readonly StrikeHit[]) => void`, documentado como solo para pruebas. Se llama después de aplicar el daño de cada impacto, con la vida perdida por cada objetivo.
   - `StrikeHit` pasa de `legacyRewardTimeline.ts` a `strikeState.ts`, y la referencia lo importa de ahí.
   - **Si no se pasa el parámetro** (aclaración 3), no se crea ningún array de golpes ni ningún registro por impacto. La lista se crea solo dentro de `if (onImpactApplied)`, y la vida previa se lee solo en esa rama.
@@ -339,7 +339,7 @@
   - **Revisión:** que la rama sin parámetro no asigna nada es un punto de la revisión de la tarea, porque una prueba no puede medir asignaciones.
 
   Es la única concesión del dominio a las pruebas. El daño no depende de él.
-- [ ] **Paso 2: Escenarios** (tabla de §6.2):
+- [x] **Paso 2: Escenarios** (tabla de §6.2):
   - **S1:** artillería del jugador sobre 5 soldados enemigos repartidos en los tres radios.
   - **S2:** artillería de la IA (`inside-frame`) sobre una torreta, un generador y una barraca del jugador.
   - **S3:** avión de la IA con `ENEMY_AIR_STRIKE_HEADING`.
@@ -351,7 +351,7 @@
   - **S9:** artillería del jugador (`between-frames`) y avión de la IA (`inside-frame`) con el mismo `atMs`, es decir, en el mismo fotograma.
   - **S10:** artillería del jugador en `atMs = 0` y `set-health enemy-hq 0` en `atMs = 4000`, entre el segundo impacto (3,6 s) y el tercero (4,3 s).
   - **S11:** artillería del jugador en `atMs = 0`, y `new-match` en `atMs = 1000`.
-- [ ] **Paso 3: Comparación** (aclaración 10). Para cada escenario y cada secuencia de `DELTA_SEQUENCES`, `runStrikeScenario` con `legacyDriver()` y con `domainDriver()`, y después:
+- [x] **Paso 3: Comparación** (aclaración 10). Para cada escenario y cada secuencia de `DELTA_SEQUENCES`, `runStrikeScenario` con `legacyDriver()` y con `domainDriver()`, y después:
   - **igualdad estricta:**
     - mismo número de registros;
     - el multiconjunto de `(frame, strike, kind, faction, index, x, z)`;
@@ -361,15 +361,15 @@
   - **grupo de varios:** idénticos el conjunto de entidades dañadas y, por entidad, el número de golpes y la suma de `healthLoss`.
 
   Si algo no coincide, se corrige el dominio. **No se relaja la prueba** (§6.2).
-- [ ] **Paso 4: Comprobaciones propias de algunos escenarios:**
+- [x] **Paso 4: Comprobaciones propias de algunos escenarios:**
   - S5: el Nexo no aparece en ningún `hits`;
   - S6: el soldado aparece solo en el impacto 0;
   - S10: ningún registro después del fotograma del resultado;
   - S11: ningún registro después del `new-match` y `match.strikes.active` vacío.
-- [ ] **Paso 5: Ejecutar.**
+- [x] **Paso 5: Ejecutar.**
   Run: `npx tsx --test web/src/game/match/rewardExecution.comparison.test.ts`
   Expected: PASS en los 14 × 6 casos.
-- [ ] **Paso 6: `npm test`, `npm run typecheck`, y commit.**
+- [x] **Paso 6: `npm test`, `npm run typecheck`, y commit.**
   ```bash
   git add web/src/game/match/strikeScenarios.ts web/src/game/match/rewardExecution.ts web/src/game/match/strikeState.ts web/src/game/match/legacyRewardTimeline.ts web/src/game/match/rewardExecution.comparison.test.ts web/src/game/match/rewardExecution.test.ts
   git commit -m "test(rewards): compare the domain strike timeline with the legacy reference"
@@ -396,7 +396,7 @@
   // rewardTargetCandidates: misma firma, filtra con isStrikeTarget
   ```
 
-- [ ] **Paso 1: Pruebas que fallan** (`rewardCommand.test.ts`):
+- [x] **Paso 1: Pruebas que fallan** (`rewardCommand.test.ts`):
   - `an accepted strike schedules exactly one strike with the aim and the caller's heading`: `strikeId` coincide con `match.strikes.active[0].id`.
   - `the shield schedules no strike`.
   - `every rejection schedules nothing`: se amplía la tabla de rechazos de R4 con `match.strikes.active.length === 0`. `snapshotCommandState` ya compara `match` completo.
@@ -404,10 +404,10 @@
   - `the camera fallback heading {x:0,z:-1} is accepted` (Review Focus 1).
   - La prueba de R4 que activa `air_strike` sin rumbo (línea ≈91) pasa a dar `{ heading: { x: 0, z: -1 } }`. El punto de mira esperado no cambia.
   - En `executeEnemyTurn.test.ts`: `enemy air strikes use ENEMY_AIR_STRIKE_HEADING`.
-- [ ] **Paso 2: Ejecutar y ver que fallan.**
+- [x] **Paso 2: Ejecutar y ver que fallan.**
   Run: `npx tsx --test web/src/game/commands/rewardCommand.test.ts web/src/game/ai/executeEnemyTurn.test.ts`
   Expected: FAIL.
-- [ ] **Paso 3: Implementar.**
+- [x] **Paso 3: Implementar.**
   - **`activateReward`:**
     - para `air_strike`, valida el rumbo **antes** de `checkMatchPlaying` (es un error de programación, §5.3);
     - tras cobrar y fijar la recarga, llama a `scheduleStrike(match, faction, id, aim, options?.heading, difficulty, nowMs)` y devuelve `strikeId`;
@@ -416,10 +416,10 @@
   - **`activateRewardForFaction`** pasa `{ heading: faction === 'player' ? cameraGroundHeading() : ENEMY_AIR_STRIKE_HEADING }` solo para `air_strike`. `representRewardActivation` usa el rumbo guardado en el ataque (`matchState.strikes.active` por `strikeId`) para lanzar el visual heredado.
 
   **Estado intermedio aceptado hasta la Tarea 5:** el dominio programa ataques que nadie avanza, y la vista heredada sigue aplicando el daño. No hay daño doble, y `createMatchState` los borra en cada partida.
-- [ ] **Paso 4: Ejecutar.**
+- [x] **Paso 4: Ejecutar.**
   Run: `npx tsx --test web/src/game/commands/rewardCommand.test.ts web/src/game/ai/executeEnemyTurn.test.ts web/src/game/ai/aiExecutor.comparison.test.ts`
   Expected: PASS. La comparación de R4 queda sin cambios.
-- [ ] **Paso 5: `npm test`, `npm run typecheck`, y commit.**
+- [x] **Paso 5: `npm test`, `npm run typecheck`, y commit.**
   ```bash
   git add web/src/game/commands/rewardCommand.ts web/src/game/ai/executeEnemyTurn.ts web/src/GameApplication.ts web/src/game/commands/rewardCommand.test.ts web/src/game/ai/executeEnemyTurn.test.ts
   git commit -m "feat(commands): activating a strike schedules it with the caller's heading"
@@ -452,7 +452,7 @@
   }
   ```
 
-- [ ] **Paso 1: Pruebas que fallan** (`RewardEffectsView.test.ts`, con `THREE.Scene` en Node como `CombatEffects.test.ts`):
+- [x] **Paso 1: Pruebas que fallan** (`RewardEffectsView.test.ts`, con `THREE.Scene` en Node como `CombatEffects.test.ts`):
   - `sync creates one aircraft and four hidden bombs for an air strike`.
   - `a bomb is visible only between released and landed`.
   - `a shell follows the ballistic arc from its origin to the impact point by the domain's flight progress`: con progreso 0,5, la posición es `ballisticPoint(origin, point, apexHeightFor(origin, point), 0.5)`.
@@ -461,10 +461,10 @@
   - `clear removes every strike visual from the scene`.
 
   La vista no importa `game/match/rewardExecution.ts` (solo tipos de `strikeState.ts`).
-- [ ] **Paso 2: Ejecutar y ver que fallan.**
+- [x] **Paso 2: Ejecutar y ver que fallan.**
   Run: `npx tsx --test web/src/rendering/RewardEffectsView.test.ts`
   Expected: FAIL.
-- [ ] **Paso 3: Implementar `RewardEffectsView`** con el código visual que hoy está en `GameApplication`:
+- [x] **Paso 3: Implementar `RewardEffectsView`** con el código visual que hoy está en `GameApplication`:
   - `createAttackAircraft`, `orientAircraftAlongFlightPath`, `disposeVisualTree`;
   - las mallas del proyectil y de la bomba;
   - las constantes `AIR_STRIKE_CRUISE_HEIGHT` (8) y `AIR_STRIKE_FLIGHT_ARC_HEIGHT` (1.2), y las de la boca del cañón.
@@ -474,7 +474,7 @@
   - el proyectil es visible si `launched && !landed`.
 
   Los visuales se indexan en un `Map<number, …>` por `strike.id`.
-- [ ] **Paso 4: Conectar en `GameApplication`** (§5.6):
+- [x] **Paso 4: Conectar en `GameApplication`** (§5.6):
   - **Orden en `animate`:** `advanceBattleSimulation` → `advanceStrikes(world, matchState, bases, delta, gameplayClockMs, aiDifficulty, strikeEvents)` → `representStrikeEvents(strikeEvents)` → `rewardEffectsView.sync(matchState.strikes)` → `updateNexusShieldVisuals` → `updateCombat`. `strikeEvents` es un único array del cierre.
   - **`representStrikeEvents`:**
     - `shell-launched`: `combatEffects.createExplosion(origen, 0.3)`, `SFX.playHeavyCannon()` y `SFX.playShellWhistle(ARTILLERY_SHELL_FLIGHT_SECONDS)`;
@@ -490,19 +490,19 @@
     - `getRewardTargetCandidates`, `applyDamage`, `clearActiveRewardEffects`;
     - los tipos `Artillery*` y `AirStrike*`, `artilleryEffects` y `airStrikeEffects`;
     - `playerActiveRewardUntil` y `enemyActiveRewardUntil`.
-- [ ] **Paso 5: Comprobar que no queda daño en la vista.**
+- [x] **Paso 5: Comprobar que no queda daño en la vista.**
   Run: `grep -nE "applyRewardDamage|getRewardTargetCandidates|ActiveRewardUntil|updateActive(Artillery|AirStrikes)" web/src/GameApplication.ts web/src/rendering/RewardEffectsView.ts`
   Expected: sin resultados.
-- [ ] **Paso 6: Ejecutar.**
+- [x] **Paso 6: Ejecutar.**
   Run: `npx tsx --test web/src/rendering/RewardEffectsView.test.ts && npm test && npm run typecheck && npm run build`
   Expected: todo en verde.
-- [ ] **Paso 7: Comprobación rápida en el navegador** (perfil móvil emulado):
+- [x] **Paso 7: Comprobación rápida en el navegador** (perfil móvil emulado):
   - `prepareRewardScenario('ready')`;
   - artillería y avión del jugador, el segundo con la cámara girada;
   - un ataque de la IA.
 
   Expected: explosiones en los puntos de impacto, bajada de vida en el mismo momento y sin errores de consola.
-- [ ] **Paso 8: Commit.**
+- [x] **Paso 8: Commit.**
   ```bash
   git add web/src/rendering/RewardEffectsView.ts web/src/rendering/RewardEffectsView.test.ts web/src/GameApplication.ts
   git commit -m "refactor(rewards): the view draws the domain strike timeline and no longer applies damage"
@@ -529,7 +529,7 @@
   // AiRunMetrics.combatPointsSpent: number  (CP de la IA antes − después de `strategy.execute`, acumulado; allí no se resuelven muertes)
   ```
 
-- [ ] **Paso 1: Pruebas que fallan:**
+- [x] **Paso 1: Pruebas que fallan:**
   - `with strikes on, enemy strikes land and damage player targets without rendering`:
     - `setup` coloca un grupo de soldados y estructuras del jugador;
     - `hard`, semilla fija y 120 s;
@@ -542,19 +542,19 @@
     - hasta el fotograma del primer impacto de la ejecución `strikes: true`, coinciden en las dos ejecuciones `goldSpentTotal` y `combatPointsSpent` **acumulados**, fotograma a fotograma. No se comparan saldos de CP, porque un impacto letal da CP en ese mismo fotograma (aclaración 2).
   - `the runner passes the end-of-frame clock to advanceStrikes`: una artillería activada por la IA en el fotograma k tiene la hora nominal del primer proyectil en `k·(1000/60) + 2900`, es decir, el inicio del fotograma k más 2,9 s, con el fotograma k empezando en `k·1000/60`. Se lee con `onImpactApplied` o con el registro de eventos.
   - La comparación de R4 (`aiExecutor.comparison.test.ts`) se ejecuta **sin cambios**.
-- [ ] **Paso 2: Ejecutar y ver que fallan.**
+- [x] **Paso 2: Ejecutar y ver que fallan.**
   Run: `npx tsx --test web/src/game/ai/aiMatchRunner.strikes.test.ts`
   Expected: FAIL.
-- [ ] **Paso 3: Implementar** (§5.7):
+- [x] **Paso 3: Implementar** (§5.7):
   - tras el turno de la IA, si `!strikes`, `clearStrikes(state.match)`;
   - después de `simulation.advance`, si `strikes`, `advanceStrikes(..., FRAME_SECONDS, state.nowMs, ...)`, sumando los eventos `impact` a `strikeImpacts`. `state.nowMs` ya incluye este fotograma, así que es su final (aclaración 2);
   - `combatPointsSpent` se acumula alrededor de `strategy.execute`, igual que `goldSpentTotal`;
   - después, `resolver.resolve` como hoy;
   - `setup` se llama una vez, antes del primer fotograma.
-- [ ] **Paso 4: Ejecutar.**
+- [x] **Paso 4: Ejecutar.**
   Run: `npx tsx --test web/src/game/ai/aiMatchRunner.strikes.test.ts web/src/game/ai/aiExecutor.comparison.test.ts`
   Expected: PASS, y la comparación de R4 con las mismas cifras.
-- [ ] **Paso 5: `npm test`, `npm run typecheck`, y commit.**
+- [x] **Paso 5: `npm test`, `npm run typecheck`, y commit.**
   ```bash
   git add web/src/game/ai/aiMatchRunner.ts web/src/game/ai/aiMatchRunner.strikes.test.ts
   git commit -m "feat(ai): run reward strikes headless in the AI match runner"
@@ -572,7 +572,7 @@
 - Modify: este plan (casillas)
 - Test: `web/src/game/match/testUtilitiesBoundary.test.ts` (grafo de importaciones, paso 3)
 
-- [ ] **Paso 1: Navegador** (perfil móvil emulado y, si hay, el teléfono de R0), §6.4:
+- [x] **Paso 1: Navegador** (perfil móvil emulado y, si hay, el teléfono de R0), §6.4:
   - `prepareRewardScenario('ready')`;
   - artillería y ataque aéreo del jugador con dos rumbos de cámara, uno casi vertical (Review Focus 1);
   - mover la cámara a mitad del vuelo (la trayectoria no cambia);
@@ -582,9 +582,9 @@
   - volver al menú y partida nueva con un ataque en vuelo (Review Focus 3).
 
   Expected: sin errores de consola, sin visuales sueltos y sin daño en la partida nueva.
-- [ ] **Paso 2: Recursos.** Con el panel 0b, geometrías y texturas antes y después de 5 ataques y de dos partidas seguidas.
+- [x] **Paso 2: Recursos.** Con el panel 0b, geometrías y texturas antes y después de 5 ataques y de dos partidas seguidas.
   Expected: vuelven al mismo valor.
-- [ ] **Paso 3: Bundle** (aclaración 3).
+- [x] **Paso 3: Bundle** (aclaración 3).
   - **Prueba principal, el grafo de importaciones:** una prueba de límites, `testUtilitiesBoundary.test.ts` en `web/src/game/match/`, recorre desde `web/src/main.ts` todas las importaciones relativas de ficheros que no son `.test.ts` y falla si alcanza `legacyRewardTimeline.ts`, `strikeScenarios.ts`, `matchHarness.ts`, `legacyEnemyExecutor.ts`, `aiMatchRunner.ts` o `commandTestState.ts`.
 
     Es la prueba principal: lo que no se alcanza desde `main.ts` no entra en el bundle de Vite.
@@ -592,11 +592,11 @@
   - **`onImpactApplied` sigue en el bundle** como parámetro inerte de `advanceStrikes`, y así se documenta.
 
   Expected: la prueba del grafo en verde, `build` con código 0 y las dos búsquedas sin resultados.
-- [ ] **Paso 4: Medición.**
+- [x] **Paso 4: Medición.**
   - Batería de §6 del informe de rendimiento, con el escenario de recompensas, en los dos perfiles.
   - Se compara con R0, R3 y R4: métricas estructurales iguales y `gameplayOtherMs` sin aumento claro.
   - Sin dispositivo real, se dice.
-- [ ] **Paso 5: Informe de entrega** (§10 del diseño):
+- [x] **Paso 5: Informe de entrega** (§10 del diseño):
   - commits;
   - pruebas ejecutadas y su número;
   - resultado de la comparación (14 escenarios × 6 secuencias);
@@ -605,7 +605,7 @@
   - confirmación de alcance con `git diff 71890e9 --stat`.
 
   Se actualizan también el README y la auditoría.
-- [ ] **Paso 6: Commit.**
+- [x] **Paso 6: Commit.**
   ```bash
   git add README.md docs/audits/2026-11-14-auditoria-responsabilidades.md docs/performance/2026-11-14-referencia-rendimiento.md docs/superpowers/specs/2026-11-20-r5-recompensas-en-el-reloj-de-juego-design.md docs/superpowers/plans/2026-11-20-r5-recompensas-en-el-reloj-de-juego.md web/src/game/match/testUtilitiesBoundary.test.ts
   git commit -m "docs(rewards): verify R5 in the browser, check resources and measure it"

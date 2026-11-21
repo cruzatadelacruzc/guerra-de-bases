@@ -523,3 +523,144 @@ Las pruebas usan el ejecutor actual (`tsx --test`), sin DOM ni WebGL.
 9. **La referencia heredada se conserva** después de R5.
 10. **El criterio de objetivo pasa a `match/strikeTargets.ts`** en lugar de quedarse en `rewardCommand.ts`, para que `rewardExecution.ts` no dependa de los comandos (aclaración 9). `rewardTargetCandidates` conserva su firma.
 11. **Definición de solape para la comparación:** comparten al menos una entidad dentro del radio en el mismo fotograma, en cualquiera de las dos implementaciones (aclaración 10).
+
+## 10. Informe de entrega
+
+### 10.1 Commits
+
+Todos están en `main`, después del diseño (`71890e9`) y del plan (`2896efd`):
+
+1. `5f6e47e` test(rewards): referencia heredada y pruebas que fijan los tiempos actuales. **Solo pruebas, antes de tocar producción.**
+2. `319f995` programar y resolver los ataques en el dominio, sobre el reloj de juego.
+3. `4143fa6` comparación de la referencia con el dominio.
+4. `e69f39b` el comando programa el ataque con el rumbo del llamador.
+5. `447f356` la vista dibuja el dominio y deja de aplicar daño.
+6. `28d9144` ataques sin render en `aiMatchRunner`.
+7. El commit de cierre (este informe, la prueba del grafo de importaciones, README, auditoría e informe de rendimiento).
+
+**Decisiones del controlador durante la ejecución:**
+
+- **R1:** las pruebas de R4 que activan `air_strike`, también la tabla de rechazos, pasan el rumbo `{x: 0, z: -1}`. Sus expectativas no cambian; §5.3 hace obligatorio el rumbo.
+- **R2:** la prueba del reloj del banco comprueba `strikeActiveUntilMs` del fotograma de activación más 4300/5200 ms, y el fotograma del primer impacto con dos duraciones de la misma semilla (un fotograma antes y en el esperado). No se añadió la hora nominal a los eventos, cuya forma fija §5.4.
+- **R3:** las métricas de recompensas del banco se devuelven aparte (`runAiMatch(...).rewards`: impactos y CP gastados). `AiRunMetrics` no cambia, y la comparación de R4 sigue idéntica byte a byte.
+
+### 10.2 Pruebas y comprobaciones
+
+- **`npm test`:** 389 de 389, frente a 243 antes de R5 (`f54dc77`, ejecutado en un worktree temporal). Las de R5:
+  - `legacyRewardTimeline.test.ts` (7), `rewardExecution.test.ts` (15) y `rewardExecutionBoundary.test.ts` (4);
+  - `rewardExecution.comparison.test.ts` (103: los 84 casos de §10.3 y las comprobaciones propias de cada escenario);
+  - `RewardEffectsView.test.ts` (6), `aiMatchRunner.strikes.test.ts` (3) y `rewardCommand.test.ts` (12, con las de R4);
+  - `testUtilitiesBoundary.test.ts` (3).
+- **`npm run typecheck`:** sin errores.
+- **`npm run build`:** código de salida 0. Avisa de un fragmento de más de 500 kB (`index-*.js`, 690,81 kB). **Ya existía antes de R5:** el build de `f54dc77` en un worktree temporal da el mismo aviso con 687,10 kB.
+- **Bundle (aclaración 3):**
+  - **Prueba principal, el grafo de importaciones** (`game/match/testUtilitiesBoundary.test.ts`):
+    - recorre desde `main.ts` las importaciones relativas estáticas, las reexportaciones, las de efecto lateral y las dinámicas, sin entrar en ficheros `.test.ts`;
+    - falla si alcanza `legacyRewardTimeline.ts`, `strikeScenarios.ts`, `matchHarness.ts`, `legacyEnemyExecutor.ts`, `aiMatchRunner.ts` o `commandTestState.ts`;
+    - también falla si una importación relativa no termina en `.ts`, `.css` o `.json`, porque el recorrido no podría seguirla.
+  - **La prueba puede fallar.** Se comprobó con tres cambios temporales, revertidos después:
+    - `import('./game/match/strikeScenarios.ts')` al final de `main.ts`: falla y nombra `strikeScenarios.ts` y `legacyRewardTimeline.ts`;
+    - una importación estática de `aiMatchRunner.ts` en `GameApplication.ts`: falla y nombra `aiMatchRunner.ts`;
+    - `import './rendering/RewardEffectsView'` sin extensión: falla con «the walk cannot follow».
+  - **Comprobación complementaria, no una prueba:** en `dist/` no aparecen «A player air strike needs a heading» (`strikeScenarios.ts`) ni «legacy reward activation is outside the comparison scenario» (`legacyEnemyExecutor.ts`). Como control, «An air strike needs a heading», el texto de producción, sí aparece.
+  - **`onImpactApplied` sigue en el bundle** como parámetro opcional e inerte de `advanceStrikes`. Si se omite, no se crea ningún registro y el daño es el mismo.
+
+### 10.3 Comparación referencia ↔ dominio (§6.2)
+
+- **14 escenarios × 6 secuencias de delta = 84 casos**, todos iguales con igualdad estricta:
+  - escenarios S1, S2, S3, S4a-S4d, S5-S11;
+  - secuencias `fixed60`, `fixed30`, `clamp`, `jitter`, `paused` y `huge`.
+- Se comparan en cada caso el fotograma, la identidad y el punto de cada impacto, el número de impactos y el estado de juego al final de cada fotograma. El daño se compara por impacto o por grupo solapado (aclaración 10).
+- Una prueba comprueba que la comparación cubrió los 84 casos, con impactos solos y en grupos solapados.
+
+### 10.4 Navegador (§6.4)
+
+Perfil móvil emulado de R0 (412×915, DPR 2,625 → 1,5, táctil), Chrome 155 headless con GPU (Intel UHD 620 por Vulkan), servidor de desarrollo con `?diagnostics=1&overlay=0`, a unos 57 FPS. Las recompensas se activaron con los botones del Centro de Mando. La misma secuencia se ejecutó contra `f54dc77` como referencia. **Sin errores ni avisos de consola en R5.**
+
+- **Artillería con la cámara por defecto:** tres caídas de vida de 120 (1900 → 1540) a 3,26, 3,94 y 4,62 s de pared tras el toque, cada una con su onda de choque. En `f54dc77`, 3,29, 3,98 y 4,69 s con el mismo daño.
+- **Cámara movida a mitad del vuelo** (arrastre, rueda y giro a 1,5 s, entre el primer disparo y el primer impacto): las mismas tres caídas de 120. La trayectoria no depende de la cámara: los puntos se fijan al programar y la vista no la recibe.
+- **Ataque aéreo con la cámara girada:** 380 de daño (220, y 160 con dos ondas en el mismo fotograma). Igual que en `f54dc77`.
+- **Ataque aéreo con la cámara casi vertical** (Review Focus 1): alejada al máximo con la rueda e inclinada con el botón derecho. El avión y las bombas se ven en la captura, 380 de daño y sin errores.
+  - El controlador limita la elevación a 82°, así que el respaldo `{0,-1}` de `cameraGroundHeading()` no se alcanza desde la interfaz;
+  - lo cubre la prueba de la Tarea 4.
+- **Pausa a mitad del ataque** (Review Focus 2): pausa a 1,6 s durante 5 s de pared. Durante la pausa, la vida se queda en 1900 y el ataque sigue activo. Al reanudar caen los tres impactos a 8,14, 8,84 y 9,55 s: descontando los 5,04 s de pausa, 3,10, 3,80 y 4,51 s, el mismo ritmo que sin pausa.
+- **Victoria forzada a mitad del ataque** (Review Focus 4): `setNexusHealth('enemy', 0)` justo después del primer impacto.
+  - La vida se queda en 1780 durante `MATCH_ENDING`, aunque los otros dos proyectiles habrían caído en ese tiempo, y el resumen dice «VICTORIA».
+  - Igual que en `f54dc77`.
+  - En el resumen, `activeArtilleryStrikes` sigue en 1 en R5 (0 antes): el ataque queda en `MatchState.strikes` sin avanzar, por la guarda de `outcome`, hasta la partida nueva. Los objetos de escena son los mismos que en `f54dc77` (32).
+- **Menú o partida nueva con un ataque en vuelo** (Review Focus 3):
+  - salir al menú con el avión en vuelo y empezar una partida: 0 ataques activos en todos los fotogramas de 7 s, y 34 objetos de escena y 62 geometrías, igual que una partida sin ataque;
+  - reiniciar desde la pausa con la artillería en vuelo: lo mismo (0 ataques activos, 34 objetos de escena y 62 geometrías durante 7 s);
+  - sin ataques activos no puede caer daño de un ataque en la partida nueva. En `f54dc77` se ven los mismos objetos de escena.
+- **Ataque de la IA: no observado en el navegador.**
+  - Partida Normal de 227 s con la IA activa y el jugador construyendo torretas para que la IA las destruyera. Se mantuvo vivo el Nexo del jugador con `setNexusHealth`, sin código nuevo de producción.
+  - Se construyeron 10 torretas y la IA las destruyó, pero no activó ninguna recompensa.
+  - La IA solo pide una recompensa con el oro que le queda tras construir y entrenar en el mismo turno (`decideEnemyTurn`), y sus barracas entrenaban sin parar. Su oro y sus CP no se leyeron en este intento.
+  - No se investigó más. El camino de la IA lo cubren los escenarios S2, S3 y S9 de la comparación y `aiMatchRunner.strikes.test.ts`. La sirena se reproduce en la misma rama de `representRewardActivation` que el aviso «¡ALERTA! Ataque enemigo entrante», que no apareció.
+
+### 10.5 Recursos
+
+Panel 0b, perfil móvil emulado, la misma secuencia en R5 y en `f54dc77`:
+
+| Momento | Geometrías R5 | Geometrías `f54dc77` |
+|---|---:|---:|
+| Partida nueva (la primera de la página) | 21 | 21 |
+| Tras `prepareRewardScenario` | 27 | 27 |
+| Tras los 5 ataques (2 artillerías, 2 aviones y 1 artillería con pausa) | 68 | 69 |
+| Partidas nuevas 2, 3, 4, 5 y 6 | 62 en todas | 63 en todas |
+
+- **Texturas:** 0 en todo momento.
+- **Entre partidas seguidas, las geometrías vuelven al mismo valor** (62 en R5) y no crecen.
+- **Dentro de la partida crecen igual que antes de R5**, ataque a ataque: +11, +12, +3, +3 y +6 en R5 frente a +12, +12, +3, +3 y +6 antes.
+  - Una causa comprobada en el código de las dos versiones: `prepareRewardScenario` quita de la escena las torretas anteriores sin liberar sus recursos, y cada partida de la secuencia lo llamó varias veces.
+  - Esas geometrías se quedan en el contador de `renderer.info`. Por eso la primera partida da 21 y las siguientes, 62.
+  - Es una utilidad de diagnóstico y no se toca en R5.
+- **Sin el escenario de recompensas,** la repetición de §6 vuelve a 22-23 (§8.5 del informe de rendimiento).
+- **Los visuales de los ataques de R5 no añaden nada a lo de antes:** tras cada ataque, R5 tiene las mismas geometrías que `f54dc77` o una menos, y los mismos objetos de escena. No se identificó qué geometrías forman los incrementos de +3 a +12, que son iguales en las dos versiones.
+
+### 10.6 Medición
+
+En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.5:
+
+- sin cambios estructurales;
+- ritmo de la IA igual (1 llamada por fotograma, 1,40 decisiones/s);
+- en el escenario de recompensas, comparado con `f54dc77` en la misma sesión, el resto gameplay se solapa (0,49-0,57 frente a 0,43-0,53 ms en móvil emulado, y 0,52-0,57 frente a 0,52-0,60 en escritorio), sin un aumento claro;
+- el diagnóstico `sceneObjects` cuenta las mallas ocultas de los proyectiles entre 0,7 y 2,1 s antes. El render no cambia.
+
+### 10.7 Alcance
+
+`git diff 71890e9 --stat`, con el commit de cierre preparado: 28 ficheros.
+
+- **Producción:** `GameApplication.ts`, `rendering/RewardEffectsView.ts`, `game/rewardSystem.ts`, `game/commands/rewardCommand.ts`, `game/ai/executeEnemyTurn.ts`, y en `game/match/` `MatchState.ts`, `rewardExecution.ts`, `strikeState.ts` y `strikeTargets.ts`.
+- **Utilidades de prueba:** `game/match/legacyRewardTimeline.ts`, `game/match/strikeScenarios.ts` y `game/ai/aiMatchRunner.ts`. No llegan al bundle (§10.2).
+- **Pruebas:** 11 ficheros `.test.ts`; cuatro ya existían (`MatchState`, `rewardCommand`, `executeEnemyTurn` y `constructionBoundary`).
+- **Documentos:** README, auditoría, informe de rendimiento, este diseño y su plan.
+- **Nada fuera de §5:** ni `game/ecs/`, ni la IA salvo el rumbo de su ataque aéreo, ni la UI, ni el paso fijo.
+
+### 10.8 Limitaciones y lo no verificado
+
+- **Fidelidad de la referencia:** la transcripción de `GameApplication.ts` @ `f54dc77` descansa en la revisión de la Tarea 1 y en el navegador, donde los tiempos y el daño coinciden con `f54dc77`. No hay una prueba automática contra el código antiguo en ejecución.
+- **Sin dispositivo real.** Todo se comprobó y midió en Chrome headless del portátil, con el perfil móvil emulado.
+- **Equilibrio no evaluado.** No hay cambios de valores; la evaluación queda para el banco de partidas de la fase 3.
+- **Ataque de la IA en el navegador:** no observado (§10.4).
+- **Menores anotados en las revisiones, sin corregir:**
+  - **Pruebas:**
+    - la prueba que fija el avión en la referencia usa una ventana de ±1/60 s (la igualdad estricta de fotogramas la da la comparación);
+    - la prueba de pausa de la referencia no programa ningún paso durante la pausa;
+    - la prueba de 10 s ordena los impactos;
+    - en S11, la comprobación de que no hay nada activo lee la partida nueva; el peso lo lleva «ningún registro después de la partida nueva»;
+    - S9 solo junta impactos de las dos facciones en el mismo fotograma con la secuencia `huge` (el orden nominal lo cubre la prueba de la Tarea 2);
+    - el recuento de cobertura de la comparación depende del orden de las pruebas;
+    - la prueba del comando mezcla opciones y rumbo en el caso que lanza el error;
+    - la prueba de la vista compara posiciones con igualdad exacta de coma flotante;
+    - en el banco, la aserción de «dañado» puede cumplirse por el combate normal y la del resultado es condicional; los objetivos se comparten a nivel de módulo, y `maxPending` se observa solo después de ejecutar.
+  - **Código:**
+    - `advanceStrikes` usa bucles `for...of` (un iterador por llamada, despreciable);
+    - `StrikeBase` lleva `kind`;
+    - los eventos `shell-launched` y `bomb-released` se emiten antes del daño del impacto (solo presentación);
+    - `representRewardActivation` lanza un error defensivo después del pago;
+    - la vista recibe el número de proyectiles de `ARTILLERY_IMPACT_OFFSETS.length` en lugar de `strike.shells.length`;
+    - `teardownMatch` no llama a `clearStrikes` (inofensivo: la partida nueva crea un `MatchState` vacío);
+    - `clearStrikes` no tenía prueba hasta S11.
+- **Sin cambios, como se acordó:** el escudo no reduce el daño de los ataques, y la IA, los desbloqueos, los dos mecanismos de fin de partida, la duración con reloj real y el paso fijo siguen como estaban.
+- **Al terminar R5 no se empieza R6.**

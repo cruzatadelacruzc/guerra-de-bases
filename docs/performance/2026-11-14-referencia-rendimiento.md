@@ -510,6 +510,72 @@ La partida 2 de escritorio terminó con derrota antes de los 30 s, como ya pasó
 - **Fotogramas y CPU:** el combate en móvil emulado sale más lento que en R3 y el de escritorio, más rápido. Las dos diferencias son menores que la variación entre sesiones (§8.2). No se presenta ninguna como efecto de R4.
 - **Sin dispositivo real:** no hay medición en el teléfono para R4.
 
+### 8.5 R5 — recompensas en el reloj de juego
+
+Cambio medido:
+- la artillería y el ataque aéreo se programan al activarlos (`scheduleStrike`) y avanzan una vez por fotograma en el dominio (`advanceStrikes`, `game/match/rewardExecution.ts`), que aplica el daño;
+- `RewardEffectsView` (`rendering/`) solo dibuja los proyectiles, el avión y las bombas a partir de `MatchState.strikes`.
+
+Misma batería de §6 y mismos perfiles, con el Chrome del sistema (Chrome 155 headless, la misma GPU Intel UHD 620 por Vulkan). Carga media del portátil: ~3,0-3,5. Los pasos se automatizaron con scripts de Node sobre `playwright-core`, el que instala `playwright-cli`; no es dependencia del proyecto.
+
+| Escenario · perfil | Métrica | R4 (1 / 2) | R5 (1 / 2) |
+|---|---|---:|---:|
+| Partida · escritorio | Fotograma · CPU (ms) | 30,36 · 2,35 / 20,36 · 2,56 | 22,66 · 2,52 / 22,11 · 2,24 |
+| | Simulación · resto gameplay (ms) | 0,092 · 0,441 / 0,082 · 0,476 | 0,111 · 0,468 / 0,085 · 0,424 |
+| | IA llamadas/fotograma · decisiones/s | 1,00 · 1,40 / 0,98 · 1,43 | 1,00 · 1,40 / 1,00 · 1,40 |
+| | IA media · máx. (ms) | 0,022 · 1,9 / 0,012 · 0,8 | 0,029 · 3,5 / 0,026 · 7,3 |
+| | Draw calls · geometrías máx. | 10,7 · 23 / 18,5 · 23 | 13,0 · 22 / 11,8 · 22 |
+| Partida · móvil emulado | Fotograma · CPU (ms) | 20,80 · 1,79 / 21,48 · 1,81 | 18,14 · 1,95 / 18,42 · 1,97 |
+| | Simulación · resto gameplay (ms) | 0,068 · 0,357 / 0,079 · 0,403 | 0,112 · 0,470 / 0,093 · 0,458 |
+| | IA media · máx. (ms) | 0,018 · 1,9 / 0,021 · 4,9 | 0,020 · 2,9 / 0,022 · 2,8 |
+| | Draw calls · geometrías máx. | 11,6 · 21 / 15,6 · 22 | 16,6 · 22 / 13,4 · 22 |
+| Combate · escritorio (IA desactivada) | Fotograma · CPU (ms) | 28,34 · 9,74 / 28,43 · 10,13 | 31,44 · 10,93 / 31,21 · 10,54 |
+| | Simulación · resto gameplay (ms) | 0,512 · 1,007 / 0,549 · 1,082 | 0,665 · 1,194 / 0,673 · 1,145 |
+| | Draw calls · geometrías máx. | 212 · 321 / 207 · 325 | 213 · 339 / 207 · 320 |
+| Combate · móvil emulado (IA desactivada) | Fotograma · CPU (ms) | 29,66 · 10,86 / 29,93 · 11,99 | 25,17 · 7,71 / 25,46 · 7,70 |
+| | Simulación · resto gameplay (ms) | 0,499 · 1,190 / 0,540 · 1,206 | 0,467 · 0,969 / 0,510 · 1,027 |
+| | Draw calls · geometrías máx. | 212 · 325 / 211 · 325 | 212 · 319 / 206 · 319 |
+| Estrés · escritorio / móvil emulado | Fotograma (ms) · draw calls · geometrías | 22,60 · 46,2 · 52 / 25,11 · 44,5 · 51 | 23,65 · 46,1 · 52 / 21,83 · 44,8 · 51 |
+| Menú · escritorio / móvil emulado | Fotograma (ms) · draw calls | 25,56 · 84 / 19,71 · 45,4 | 22,23 · 84 / 16,67 · 40,7 |
+
+Repetición en R5: tres combates seguidos terminan con 105 geometrías (escritorio) y 90, 90 y 90 (móvil emulado), y la partida nueva posterior vuelve a 23 y 22, igual que en R0-R4.
+
+**Escenario de recompensas (nuevo en R5).** Ninguna referencia anterior lo midió, así que se comparó con el código anterior a R5 (`f54dc77`, en un worktree temporal y un segundo servidor de desarrollo), alternando las ejecuciones en la misma sesión:
+
+1. partida nueva desde el menú, 2 s, `prepareRewardScenario('ready')` y `reset()`;
+2. artillería desde el Centro de Mando, 6,5 s;
+3. `prepareRewardScenario('ready')` otra vez, ataque aéreo y 7,5 s;
+4. `read()`: unos 15 s de medición que cubren los dos ataques completos.
+
+| Perfil | Métrica | Antes de R5, `f54dc77` (1 / 2) | R5 (1 / 2 / 3 / 4) |
+|---|---|---:|---:|
+| Escritorio | Fotograma · CPU (ms) | 23,06 · 4,05 / 22,84 · 3,56 | 22,84 · 3,63 / 22,39 · 3,68 / 23,31 · 3,94 / 22,84 · 3,56 |
+| | Simulación (ms) | 0,078 / 0,077 | 0,081 / 0,092 / 0,079 / 0,072 |
+| | Resto gameplay (ms) | 0,596 / 0,521 | 0,536 / 0,570 / 0,519 / 0,557 |
+| | Draw calls · geometrías máx. · objetos de escena máx. | 16,9 · 61 · 48 (las dos) | 16,9-17,0 · 61 · 48 (las cuatro) |
+| Móvil emulado | Fotograma · CPU (ms) | 19,78 · 2,97 / 18,35 · 2,33 | 18,35 · 2,44 / 19,59 · 2,95 / 19,12 · 2,66 / 18,97 · 2,59 |
+| | Simulación (ms) | 0,070 / 0,051 | 0,061 / 0,096 / 0,066 / 0,069 |
+| | Resto gameplay (ms) | 0,534 / 0,430 | 0,490 / 0,572 / 0,488 / 0,491 |
+| | Draw calls · geometrías máx. · objetos de escena máx. | 14,4 · 52-53 · 48 | 14,3-14,5 · 52-53 · 48 |
+
+El servidor del worktree de `f54dc77` devolvió 403 a las fuentes de `@fontsource`, porque su `node_modules` era un enlace fuera de la raíz permitida por Vite. Solo afecta al texto de la interfaz; el servidor de R5 no tuvo errores.
+
+**Objetos de escena antes de tiempo.** `RewardEffectsView` añade a la escena las mallas ocultas de los tres proyectiles al crear el visual del ataque, en vez de al disparar cada uno. El diagnóstico `sceneObjects` las cuenta entre 0,7 y 2,1 s antes que antes de R5; no se dibujan hasta su disparo y el render no cambia. En la comprobación del navegador, el máximo de objetos de escena durante una artillería fue 45 en R5 frente a 43 en `f54dc77`; en el escenario de recompensas el máximo de los 15 s es 48 en las dos versiones.
+
+**Conclusión:**
+
+- **Sin cambios estructurales:**
+  - draw calls, geometrías y la repetición sin crecimiento coinciden con R4;
+  - en el escenario de recompensas, draw calls, geometrías máximas y finales y objetos de escena máximos son iguales antes y después de R5;
+  - el ritmo de la IA no cambia: 1 llamada por fotograma y 1,40 decisiones/s.
+- **Resto gameplay** (donde ahora corren `advanceStrikes` y la vista):
+  - en el escenario de recompensas, 0,49-0,57 ms en R5 frente a 0,43-0,53 en móvil emulado, y 0,52-0,57 frente a 0,52-0,60 en escritorio. Los rangos se solapan: no hay un aumento claro;
+  - en partida, 0,42-0,47 ms, dentro del rango de R3 (0,38-0,49);
+  - en combate, que no usa recompensas, 0,97-1,03 (móvil) y 1,15-1,19 ms (escritorio), frente a 1,19-1,21 y 1,01-1,08 en R4. Las dos diferencias van en sentidos opuestos y son menores que la variación entre sesiones (§8.2).
+- **Simulación:** el combate en escritorio sale en 0,67 ms frente a 0,51-0,55 en R4, y en móvil emulado igual (0,47-0,51). R5 no toca el código del ECS (`git diff 71890e9 --stat` no incluye `game/ecs/`) y el combate no activa recompensas, así que no se atribuye a R5. Las geometrías máximas de esa ejecución (339) indican más unidades vivas, y el combate depende de la duración real de los fotogramas (§7).
+- **IA:** el máximo de 7,3 ms en la partida 2 de escritorio es un turno que construye, como en §8.4. R5 no cambia la IA salvo el rumbo fijo de su ataque aéreo.
+- **Sin dispositivo real:** no hay medición en el teléfono para R5.
+
 ## 9. Próximos pasos de medición
 
 - **Referencia definitiva en el Samsung Galaxy A05 de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):
