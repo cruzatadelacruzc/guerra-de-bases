@@ -61,6 +61,7 @@ import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createBattlefieldTerrain, MenuSoldiers, type BattlefieldTerrain } from './rendering/battlefieldScene.ts';
 import { airStrikeShots, artilleryShots } from './rendering/strikeCinematics.ts';
 import { BattlefieldRemains } from './rendering/BattlefieldRemains.ts';
+import { PlacementGhost } from './rendering/PlacementGhost.ts';
 import {
     createHQMesh,
     createNexusShieldVisual,
@@ -432,7 +433,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let battleSimulation: BattleSimulation | null = null;
     const targetObjects = new Map<Entity, RuntimeTarget>();
     let selectedBuildType: BuildingType | null = null;
-    let placementGhost: THREE.Group | null = null;
+    let placementGhost: PlacementGhost | null = null;
     let isDemolishMode = false;
     let terrain: BattlefieldTerrain | null = null;
     let cameraShake = 0;
@@ -482,6 +483,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         projectilePool = renderCoordinator.projectiles;
         rewardEffectsView = new RewardEffectsView({ scene, shellOrigin: strikeShellOrigin });
         terrain = createBattlefieldTerrain(scene);
+        placementGhost = new PlacementGhost(scene, terrain.floor);
 
         inputController = new GameInputController(renderCoordinator.canvas, {
             onPointerMove,
@@ -836,22 +838,16 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             isDemolishMode = false;
             updateDemolishUI();
         }
-        if (placementGhost) scene.remove(placementGhost);
+        if (!placementGhost) return;
 
         selectedBuildType = type;
-        placementGhost = instantiateBuildingMesh(type, true);
-
-        if (placementGhost) {
-            placementGhost.position.set(0, -100, 0);
-            scene.add(placementGhost);
-            ui.setPlacementActive(true);
-            showToast("Haz click en tu territorio para posicionar la estructura.");
-        }
+        placementGhost.show(type);
+        ui.setPlacementActive(true);
+        showToast("Haz click en tu territorio para posicionar la estructura.");
     }
 
     function cancelPlacement() {
-        if (placementGhost) scene.remove(placementGhost);
-        placementGhost = null;
+        placementGhost?.hide();
         selectedBuildType = null;
         ui.setPlacementActive(false);
     }
@@ -861,28 +857,13 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         updatePlacementGhost();
     }
 
-    // Player build zone: own half of the 110 x 150 terrain, from just behind
-    // the center line up to 2 units short of the side and back edges.
-    const BUILD_ZONE_MIN_Z = 5;
-    const BUILD_ZONE_MAX_Z = 73;
-    const BUILD_ZONE_MAX_ABS_X = 53;
-
-    function getPlacementPosition(): THREE.Vector3 | undefined {
-        if (!terrain) return undefined;
-        raycaster.setFromCamera(mouse, camera);
-        const point = raycaster.intersectObject(terrain.floor)[0]?.point;
-        if (!point
-            || point.z <= BUILD_ZONE_MIN_Z
-            || point.z >= BUILD_ZONE_MAX_Z
-            || Math.abs(point.x) >= BUILD_ZONE_MAX_ABS_X) return undefined;
-        return new THREE.Vector3(Math.round(point.x), 0, Math.round(point.z));
+    function getPlacementPosition(): Position | undefined {
+        return placementGhost?.placementAt(raycaster, camera, mouse);
     }
 
     function updatePlacementGhost() {
         if (!selectedBuildType || !placementGhost) return;
-        const position = getPlacementPosition();
-        if (position) placementGhost.position.copy(position);
-        else placementGhost.position.set(0, -100, 0);
+        placementGhost.track(getPlacementPosition());
     }
 
     function updatePointerPosition(event: MouseEvent) {
@@ -2249,6 +2230,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         dispose() {
             frameLoop?.stop();
             inputController?.detach();
+            placementGhost?.dispose();
             rewardEffectsView?.dispose();
             renderCoordinator?.dispose();
             diagnosticsOverlay?.dispose();
