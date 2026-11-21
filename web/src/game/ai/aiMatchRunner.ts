@@ -6,6 +6,8 @@ import type { World } from '../ecs/World.ts';
 import type { BuildableStructureKind } from '../definitions/structures.ts';
 import { STRUCTURE_DEFINITIONS } from '../definitions/structures.ts';
 import { DeathResolver } from '../match/DeathResolver.ts';
+import { advanceStrikes, clearStrikes } from '../match/rewardExecution.ts';
+import type { StrikeEvent } from '../match/rewardExecution.ts';
 import { createMatchState } from '../match/MatchState.ts';
 import type { MatchOutcome, MatchState } from '../match/MatchState.ts';
 import { getDifficultyProfile } from '../rewardSystem.ts';
@@ -60,6 +62,14 @@ export interface AiRunMetrics {
   outcomeAtSeconds: number | null;
 }
 
+/** Reward figures kept apart from `AiRunMetrics`, whose shape the R4 comparison pins. */
+export interface AiRunRewardMetrics {
+  /** Strike impacts that landed; 0 with strikes off. */
+  strikeImpacts: number;
+  /** Enemy combat points spent inside `strategy.execute`, accumulated. */
+  combatPointsSpent: number;
+}
+
 function enemyGold(state: AiRunState): number {
   return state.world.getComponent(state.bases.enemy, COMPONENTS.economy)?.gold ?? 0;
 }
@@ -77,9 +87,17 @@ function overlapsOwnStructure(world: World, faction: Faction, position: Position
 }
 
 export function runAiMatch(
-  options: { difficulty: Difficulty; seed: number; durationSeconds: number },
+  options: {
+    difficulty: Difficulty;
+    seed: number;
+    durationSeconds: number;
+    /** Run reward strikes on the gameplay clock; off by default, then pending strikes are dropped each frame. */
+    strikes?: boolean;
+    /** Called once before the first frame, e.g. to place player targets. */
+    setup?: (state: AiRunState) => void;
+  },
   strategy: AiStrategy
-): { metrics: AiRunMetrics; log: AiTurnRecord[] } {
+): { metrics: AiRunMetrics; log: AiTurnRecord[]; rewards: AiRunRewardMetrics } {
   const { difficulty } = options;
   const simulation = new BattleSimulation({ enemyBaseIncome: getDifficultyProfile(difficulty).enemyBaseIncome });
   const state: AiRunState = {
@@ -104,7 +122,11 @@ export function runAiMatch(
     outcome: null,
     outcomeAtSeconds: null
   };
+  const rewards: AiRunRewardMetrics = { strikeImpacts: 0, combatPointsSpent: 0 };
+  const strikes = options.strikes ?? false;
+  const strikeEvents: StrikeEvent[] = [];
   const log: AiTurnRecord[] = [];
+  options.setup?.(state);
   const frames = Math.round(options.durationSeconds / FRAME_SECONDS);
 
   for (let frame = 0; frame < frames; frame++) {
@@ -118,8 +140,10 @@ export function runAiMatch(
         }
       }
       const goldBefore = enemyGold(state);
+      const pointsBefore = state.match.combatPoints.enemy;
       const executed = strategy.execute(state, turn);
       const goldAfter = enemyGold(state);
+      rewards.combatPointsSpent += pointsBefore - state.match.combatPoints.enemy;
       log.push({ frame, goldBefore, goldAfter, executed });
       metrics.goldSpentTotal += goldBefore - goldAfter;
       for (const result of executed) {
@@ -140,7 +164,13 @@ export function runAiMatch(
         }
       }
     }
+    if (!strikes) clearStrikes(state.match);
     simulation.advance(FRAME_SECONDS);
+    if (strikes) {
+      // state.nowMs already includes this frame, so it is the frame's end.
+      advanceStrikes(state.world, state.match, state.bases, FRAME_SECONDS, state.nowMs, difficulty, strikeEvents);
+      for (const event of strikeEvents) if (event.type === 'impact') rewards.strikeImpacts++;
+    }
     const resolution = resolver.resolve(state.world, state.match, difficulty, state.bases);
     if (resolution.outcome !== null) {
       metrics.outcome = resolution.outcome;
@@ -148,5 +178,5 @@ export function runAiMatch(
       break;
     }
   }
-  return { metrics, log };
+  return { metrics, log, rewards };
 }
