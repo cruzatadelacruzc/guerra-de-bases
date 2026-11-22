@@ -53,6 +53,7 @@ import type {
 } from './ui/contracts.ts';
 import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createBattlefieldTerrain, MenuSoldiers, type BattlefieldTerrain } from './rendering/battlefieldScene.ts';
+import { applyCameraShake, CAMERA_SHAKE_DECAY_PER_SECOND } from './rendering/cameraShake.ts';
 import { airStrikeShots, artilleryShots } from './rendering/strikeCinematics.ts';
 import { BattlefieldView } from './rendering/BattlefieldView.ts';
 import type { ExplosionCue, LifecycleCounts } from './rendering/BattlefieldView.ts';
@@ -419,6 +420,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let isDemolishMode = false;
     let terrain: BattlefieldTerrain | null = null;
     let cameraShake = 0;
+    /** Camera position when a defeat began; the end-sequence shake jitters around it. */
+    const defeatShakeAnchor = new THREE.Vector3();
     let aiDifficulty: 'easy' | 'normal' | 'hard' = 'normal';
     let gameplayClockMs = 0;
     let lastRewardUiUpdateMs = -Infinity;
@@ -1027,12 +1030,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     function updateCombat(delta: number) {
         // Camera Shake Physics
-        if (cameraShake > 0) {
-            camera.position.x += (Math.random() - 0.5) * cameraShake;
-            camera.position.y += (Math.random() - 0.5) * cameraShake;
-            camera.position.z += (Math.random() - 0.5) * cameraShake;
-            cameraShake = Math.max(0, cameraShake - delta * 4.0);
-        }
+        cameraShake = applyCameraShake(camera.position, cameraShake, delta);
 
         updateResourceUI();
 
@@ -1255,18 +1253,27 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         hqExplodingSequence = true;
         hqExplodeTimer = 0;
         pendingVictoryState = isVictory;
+        defeatShakeAnchor.copy(camera.position);
         cancelPlacement();
         matchEndTimeout = window.setTimeout(() => completeMatchEnd(), 5000);
     }
 
     function updateMatchEnding(delta: number): void {
         hqExplodeTimer += delta;
-        // Decay camera shake during the end sequence too (duplicated from
-        // updateCombat, which stops running once MATCH_ENDING begins) so the
-        // explosion's shake settles smoothly instead of staying frozen for the
-        // whole 4-5 second sequence; see the `combatEffects.update(delta)`
-        // duplication just below for the same pattern already in this file.
-        if (cameraShake > 0) cameraShake = Math.max(0, cameraShake - delta * 4.0);
+        // updateCombat stops at MATCH_ENDING, so the end sequence handles the
+        // shake left by the Nexus explosion. A defeat shakes the camera around
+        // where it stood when the Nexus fell (the camera controller is not
+        // updated here, so the jitter must not accumulate) and returns it there;
+        // a victory only lets the shake decay, unseen.
+        if (cameraShake > 0) {
+            if (pendingVictoryState) {
+                cameraShake = Math.max(0, cameraShake - delta * CAMERA_SHAKE_DECAY_PER_SECOND);
+            } else {
+                camera.position.copy(defeatShakeAnchor);
+                cameraShake = applyCameraShake(camera.position, cameraShake, delta);
+                if (cameraShake === 0) camera.position.copy(defeatShakeAnchor);
+            }
+        }
         combatEffects.update(delta);
         if (hqExplodeTimer >= 4.0) completeMatchEnd();
     }
