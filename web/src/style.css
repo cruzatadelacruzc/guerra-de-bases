@@ -140,12 +140,12 @@ select {
     gap: 0.35rem;
   }
 
-    div.game-faction-heading {
+  #game-hud .game-faction-heading {
     gap: 0.2rem;
     align-items: flex-start;
   }
 
-    div.game-faction-heading span {
+  #game-hud .game-faction-heading span {
     font-size: 0.58rem;
     line-height: 1rem;
   }
@@ -217,7 +217,7 @@ select {
     padding: 0.35rem 0.55rem;
   }
 
-    div.game-faction-meta {
+  #game-hud .game-faction-meta {
     flex-wrap: nowrap;
   }
 
@@ -332,17 +332,17 @@ select {
     backdrop-filter: blur(8px);
   }
 
-    div.game-faction-heading {
+  #game-hud .game-faction-heading {
     gap: 0.2rem;
     padding-bottom: 0.15rem;
   }
 
-    div.game-faction-heading span {
+  #game-hud .game-faction-heading span {
     font-size: 0.56rem;
     line-height: 0.8rem;
   }
 
-    div.game-faction-meta {
+  #game-hud .game-faction-meta {
     gap: 0.1rem;
     margin-top: 0;
   }
