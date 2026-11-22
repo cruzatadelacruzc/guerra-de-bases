@@ -11,6 +11,11 @@ import type { PlacementRejection } from './placement.ts';
 
 const SELL_REFUND_RATIO = 0.7;
 
+/** What selling a structure of this kind returns; the single source for the command and the HUD. */
+export function sellRefund(kind: BuildableStructureKind): number {
+  return Math.floor(STRUCTURE_DEFINITIONS[kind].cost * SELL_REFUND_RATIO);
+}
+
 export type BuildRejection = MatchNotPlaying | PlacementRejection | 'insufficient-gold';
 export type SellRejection = MatchNotPlaying | 'not-found' | 'not-owned' | 'not-sellable';
 
@@ -51,7 +56,7 @@ export function sellStructure(
   const economy = world.getComponent(ctx.bases[faction], COMPONENTS.economy);
   if (kind === undefined || kind === 'hq' || !transform || !economy) return { accepted: false, reason: 'not-sellable' };
 
-  const refund = Math.floor(STRUCTURE_DEFINITIONS[kind].cost * SELL_REFUND_RATIO);
+  const refund = sellRefund(kind);
   const position = { x: transform.x, y: transform.y, z: transform.z };
   economy.gold += refund;
   world.removeEntity(entity);

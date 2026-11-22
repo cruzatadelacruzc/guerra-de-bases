@@ -9,8 +9,10 @@ import {
   PLAYER_BASE_POSITION,
   createSoldier,
   createSoldierFactory,
-  createStructure
+  createStructure,
+  SOLDIER_PRODUCTION
 } from './initialBattle.ts';
+import { STRUCTURE_DEFINITIONS } from '../definitions/structures.ts';
 import { getDifficultyProfile } from '../rewardSystem.ts';
 import {
   applyDamageSystem,
@@ -661,4 +663,25 @@ test('initial battle places both nexuses at their mirrored base positions', () =
   const transform = world.getComponent(playerBase, COMPONENTS.transform);
   if (transform) transform.z += 1;
   assert.equal(PLAYER_BASE_POSITION.z, 60);
+});
+
+test('every unit names a buildable producer', () => {
+  for (const definition of Object.values(SOLDIER_PRODUCTION)) {
+    assert.ok(definition.producer in STRUCTURE_DEFINITIONS);
+  }
+});
+
+test('requestUnitProduction rejects a building that is not the unit\'s producer', () => {
+  const simulation = new BattleSimulation();
+  const turret = createStructure(simulation.world, FACTIONS.player, { x: 0, y: 0, z: 10 }, 380, 'turret');
+  simulation.world.addComponent(turret, COMPONENTS.factory, true);
+  simulation.world.addComponent(turret, COMPONENTS.production, { order: undefined });
+  const wallet = simulation.world.getComponent(simulation.playerBase, COMPONENTS.economy);
+  assert.ok(wallet);
+  wallet.gold = 1000;
+  assert.deepEqual(
+    requestUnitProduction(simulation.world, turret, simulation.playerBase, 'rifleman'),
+    { accepted: false, reason: 'invalid-factory' }
+  );
+  assert.equal(wallet.gold, 1000);
 });

@@ -3,7 +3,7 @@ import test from 'node:test';
 import { COMPONENTS } from '../ecs/components.ts';
 import type { Position } from '../ecs/components.ts';
 import { createStructure } from '../ecs/initialBattle.ts';
-import { buildStructure, sellStructure } from './structureCommands.ts';
+import { buildStructure, sellRefund, sellStructure } from './structureCommands.ts';
 import { createCommandTestContext, goldOf, setGold, snapshotCommandState } from './commandTestState.ts';
 
 const at = (x: number, z: number): Position => ({ x, y: 0, z });
@@ -127,5 +127,19 @@ test('a sale outside an active match changes nothing', () => {
     const before = snapshotCommandState(stopped);
     assert.deepEqual(sellStructure(stopped, 'player', built.entity), { accepted: false, reason });
     assert.deepEqual(snapshotCommandState(stopped), before);
+  }
+});
+
+test('sellRefund matches what sellStructure returns', () => {
+  const expected = { generator: 70, barracks: 105, turret: 87 } as const;
+  for (const [kind, refund] of Object.entries(expected) as [keyof typeof expected, number][]) {
+    const ctx = createCommandTestContext();
+    setGold(ctx, 'player', 1000);
+    const built = buildStructure(ctx, 'player', kind, at(0, 40));
+    assert.ok(built.accepted);
+    const sold = sellStructure(ctx, 'player', built.entity);
+    assert.ok(sold.accepted);
+    assert.equal(sellRefund(kind), sold.refund);
+    assert.equal(sold.refund, refund);
   }
 });

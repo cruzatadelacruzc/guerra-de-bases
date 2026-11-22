@@ -4,8 +4,10 @@ import { COMPONENTS } from '../ecs/components.ts';
 import type { Position } from '../ecs/components.ts';
 import { SOLDIER_PRODUCTION } from '../ecs/initialBattle.ts';
 import { buildStructure, sellStructure } from './structureCommands.ts';
-import { idleFactories, liveFactories, trainUnit } from './trainCommand.ts';
+import { idleFactories, liveFactories, producerAvailability, trainUnit } from './trainCommand.ts';
 import { createCommandTestContext, goldOf, setGold, snapshotCommandState } from './commandTestState.ts';
+import type { Entity } from '../ecs/components.ts';
+import type { ProducerAvailability } from './trainCommand.ts';
 import type { CommandContext } from './CommandContext.ts';
 
 const at = (x: number, z: number): Position => ({ x, y: 0, z });
@@ -103,4 +105,29 @@ test("liveFactories keeps the HUD's former barracks filter", () => {
   assert.equal(sellStructure(ctx, 'player', c).accepted, true);
 
   assert.deepEqual(liveFactories(ctx.world, 'player'), [a, d]);
+});
+
+test('producerAvailability counts live and idle producers of the faction', () => {
+  const ctx = createCommandTestContext();
+  const a = barracks(ctx, 'player', -20);
+  barracks(ctx, 'player', -10);
+  const dead = barracks(ctx, 'player', 0);
+  barracks(ctx, 'enemy', 0);
+  const health = ctx.world.getComponent(dead, COMPONENTS.health);
+  if (!health) throw new Error('missing health');
+  health.current = 0;
+  assert.equal(trainUnit(ctx, 'player', a, 'rifleman', at(-20, 37)).accepted, true);
+  const scratch: Entity[] = [];
+  const out: ProducerAvailability = { total: 0, free: 0 };
+  assert.equal(producerAvailability(ctx.world, 'player', 'barracks', scratch, out), out);
+  assert.deepEqual(out, { total: 2, free: 1 });
+});
+
+test('liveFactories filters by producer', () => {
+  const ctx = createCommandTestContext();
+  const factory = barracks(ctx, 'player', 0);
+  setGold(ctx, 'player', 1000);
+  assert.deepEqual(liveFactories(ctx.world, 'player', 'generator'), []);
+  assert.deepEqual(liveFactories(ctx.world, 'player', 'barracks'), [factory]);
+  assert.deepEqual(idleFactories(ctx.world, 'player', 'generator'), []);
 });

@@ -4,7 +4,7 @@ import type { Entity, Position } from './game/ecs/components.ts';
 import { BattleSimulation } from './game/ecs/BattleSimulation.ts';
 import type { SimulationPhase, SimulationProfiler } from './game/ecs/BattleSimulation.ts';
 import { visitCombatPositions } from './game/ecs/combatFocus.ts';
-import { ENEMY_BASE_POSITION, PLAYER_BASE_POSITION } from './game/ecs/initialBattle.ts';
+import { ENEMY_BASE_POSITION, PLAYER_BASE_POSITION, SOLDIER_PRODUCTION } from './game/ecs/initialBattle.ts';
 import { requestUnitProduction } from './game/ecs/systems.ts';
 import type { ProductionOverrides } from './game/ecs/systems.ts';
 import { EnemyAiController } from './game/ai/EnemyAiController.ts';
@@ -914,12 +914,13 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         const simulation = battleSimulation;
         if (!simulation) return;
         const { world } = simulation;
-        if (liveFactories(world, ECS_FACTIONS.player).length === 0) {
+        const producer = SOLDIER_PRODUCTION[unitType].producer;
+        if (liveFactories(world, ECS_FACTIONS.player, producer).length === 0) {
             showToast("¡Debes construir una Barraca primero!");
             return;
         }
 
-        const barracks = idleFactories(world, ECS_FACTIONS.player)[0];
+        const barracks = idleFactories(world, ECS_FACTIONS.player, producer)[0];
         if (barracks === undefined) {
             showToast("Todas las Barracas están produciendo.");
             return;

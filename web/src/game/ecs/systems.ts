@@ -280,6 +280,9 @@ export function requestUnitProduction(
   if (!production || !factoryOrder || !economy || economyFaction !== factoryOrder.faction) {
     return { accepted: false, reason: 'invalid-factory' };
   }
+  if (world.getComponent(factory, COMPONENTS.building)?.kind !== SOLDIER_PRODUCTION[kind].producer) {
+    return { accepted: false, reason: 'invalid-factory' };
+  }
   if (production.order) return { accepted: false, reason: 'factory-busy' };
   if ((overrides.health !== undefined
       && (!Number.isFinite(overrides.health) || overrides.health <= 0))

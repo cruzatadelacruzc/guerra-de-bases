@@ -13,6 +13,7 @@ export interface SoldierProductionDefinition {
   speed: number;
   range: number;
   weapon: Omit<Weapon, 'cooldownRemaining'>;
+  readonly producer: BuildableStructureKind;
 }
 
 export const DEFAULT_SOLDIER_WEAPONS: Readonly<Record<SoldierKind, Omit<Weapon, 'cooldownRemaining'>>> =
@@ -46,7 +47,8 @@ export const SOLDIER_PRODUCTION: Readonly<Record<SoldierKind, SoldierProductionD
       health: 100,
       speed: SOLDIER_SPEED,
       range: SOLDIER_RANGE,
-      weapon: DEFAULT_SOLDIER_WEAPONS.rifleman
+      weapon: DEFAULT_SOLDIER_WEAPONS.rifleman,
+      producer: 'barracks'
     },
     tank: {
       cost: 180,
@@ -54,7 +56,8 @@ export const SOLDIER_PRODUCTION: Readonly<Record<SoldierKind, SoldierProductionD
       health: 380,
       speed: 4.5,
       range: 18,
-      weapon: DEFAULT_SOLDIER_WEAPONS.tank
+      weapon: DEFAULT_SOLDIER_WEAPONS.tank,
+      producer: 'barracks'
     }
   });
 const TURRET_WEAPON: Omit<Weapon, 'cooldownRemaining'> = Object.freeze({
