@@ -75,8 +75,7 @@ export function requestSoldierProduction(
   const faction = world.getComponent(factory, COMPONENTS.faction);
   const transform = world.getComponent(factory, COMPONENTS.transform);
   const building = world.getComponent(factory, COMPONENTS.building);
-  if (!health || health.current <= 0 || !faction || !transform
-    || building?.kind !== 'barracks') return undefined;
+  if (!health || health.current <= 0 || !faction || !transform || !building) return undefined;
 
   return {
     faction,
