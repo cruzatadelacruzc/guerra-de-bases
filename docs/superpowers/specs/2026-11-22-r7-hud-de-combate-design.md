@@ -239,6 +239,12 @@ El reembolso mostrado sale del dominio: se exporta desde `structureCommands.ts` 
 - **Vertical:** franja superior; barra abajo; recompensas en el borde derecho; cámara AUTO en el borde izquierdo, sobre la barra.
 - **Horizontal:** la base propia está a la izquierda (`LANDSCAPE_AZIMUTH`), así que la barra y las recompensas se alinean **a la derecha** y la zona izquierda queda libre para colocar y mover la cámara. Ancho máximo de la barra = ancho − bloque de recompensas − márgenes.
 - **Tablet y escritorio:** mismos componentes; la barra cabe desplegada.
+- **Botón de cámara automática (AUTO):** su comportamiento no cambia. El seguimiento empieza activado, se desactiva al mover la cámara a mano y el botón lo alterna (`MapCameraController`). Solo cambian su lugar y su aspecto:
+  - vertical: borde izquierdo, encima de la barra; horizontal: esquina superior izquierda, bajo la franja; siempre a ≥ 8 px de cualquier otro control;
+  - 44×44 px como mínimo (hoy mide 48×30, por debajo del mínimo táctil);
+  - icono y la etiqueta «AUTO» debajo, en texto ≥ 11 px. No queda solo con icono;
+  - el estado se ve sin depender de la opacidad: activado, borde y texto iluminados en cian; desactivado, contorno apagado y texto en gris claro con contraste ≥ 4.5:1;
+  - se conserva la etiqueta accesible actual («Zoom automático activado» / «Zoom automático desactivado») y `aria-pressed`.
 - Márgenes seguros (`env(safe-area-inset-*)`) en los cuatro lados.
 - Fuera de sus controles, el HUD deja pasar los toques al campo (`pointer-events: none` en contenedores).
 - Sin `backdrop-filter` en el HUD de combate; fondos sólidos semitransparentes con contraste suficiente.
