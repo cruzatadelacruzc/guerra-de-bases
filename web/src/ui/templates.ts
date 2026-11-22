@@ -1,5 +1,5 @@
 import { uiIconMarkup } from './uiIcons.ts';
-import { NEXUS_HEALTH, STRUCTURE_DEFINITIONS } from '../game/definitions/structures.ts';
+import { STRUCTURE_DEFINITIONS } from '../game/definitions/structures.ts';
 
 export const canvasTemplate = `<!-- 3D Canvas Container -->
     <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
@@ -76,38 +76,13 @@ export const mainMenuTemplate = `<div id="main-menu" class="absolute inset-0 z-3
     </div>`;
 
 export const gameHudTemplate = `<div id="game-hud" class="hidden absolute inset-0 z-20 pointer-events-none">
-        <div class="game-status-rail pointer-events-auto">
-            <section class="game-faction-status game-faction-player cyber-panel" aria-label="Estado del Nexo aliado">
-                <div class="game-faction-heading">
-                    <span class="game-faction-name"><span class="game-faction-prefix">NEXO </span><b>ALIADO</b></span>
-                    <span id="player-hq-hp-text" class="game-hp-value">${NEXUS_HEALTH} / ${NEXUS_HEALTH} HP</span>
-                </div>
-                <div class="game-health-track"><div id="player-hq-bar" class="game-health-fill w-full"></div></div>
-                <div class="game-faction-meta">
-                    <span class="game-meta-gold">ORO <b id="res-gold">200</b></span>
-                    <span class="game-meta-cp"><b id="res-combat-points">0 CP</b></span>
-                </div>
-            </section>
-
-            <div class="game-center-controls">
-                <button id="btn-pause-game" class="cyber-button game-pause-button pointer-events-auto" aria-label="Pausar partida">
-                    <span aria-hidden="true">Ⅱ</span><span class="game-pause-label">PAUSA</span>
-                </button>
-                <button id="btn-auto-zoom" class="cyber-button game-auto-zoom pointer-events-auto" type="button" aria-pressed="true" aria-label="Zoom automático activado">AUTO</button>
-            </div>
-
-            <section class="game-faction-status game-faction-enemy cyber-panel-red" aria-label="Estado del Nexo enemigo">
-                <div class="game-faction-heading">
-                    <span class="game-faction-name"><span class="game-faction-prefix">NEXO </span><b>HOSTIL</b></span>
-                    <span id="enemy-hq-hp-text" class="game-hp-value">${NEXUS_HEALTH} / ${NEXUS_HEALTH} HP</span>
-                </div>
-                <div class="game-health-track"><div id="enemy-hq-bar" class="game-health-fill w-full"></div></div>
-                <div class="game-faction-meta">
-                    <span class="game-meta-gold">ORO <b id="enemy-gold-text">200</b></span>
-                    <span class="game-meta-status">IA: <span id="ai-strat-tag">CONSTRUYENDO</span></span>
-                </div>
-            </section>
+        <div class="hud-strip pointer-events-auto">
+            <div id="hud-faction-player"></div>
+            <button id="btn-pause-game" class="hud-pause" type="button" aria-label="Pausar partida">${uiIconMarkup('pause')}</button>
+            <div id="hud-faction-enemy"></div>
         </div>
+        <!-- Temporary position, just below the strip; its final place is decided in Task 9. -->
+        <button id="btn-auto-zoom" class="cyber-button game-auto-zoom hud-auto pointer-events-auto" type="button" aria-pressed="true" aria-label="Zoom automático activado">AUTO</button>
 
         <div class="game-toast-anchor self-center text-center pointer-events-none">
             <div id="game-toast" class="opacity-0 transition-opacity duration-300 cyber-panel px-6 py-2 rounded-full border-cyan-400/50 text-cyan-300 font-bold text-sm tracking-wide shadow-lg">

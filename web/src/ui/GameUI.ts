@@ -15,14 +15,30 @@ import type {
   GameOverSummary,
   GameUiPort,
   MissionSettings,
+  RewardCardState,
   RewardId,
-  RewardUiState,
+  RewardStatus,
   UnlockView,
 } from './contracts.ts';
 import { ToastNotifications } from './ToastNotifications.ts';
 import { createRewardIcon, getRewardCategory, getRewardFacts } from './rewardPresentation.ts';
 import { ScrollCues } from './ScrollCues.ts';
 import { createUiIcon } from './uiIcons.ts';
+import { FactionStrip } from './hud/FactionStrip.ts';
+import type { HudView, RewardButtonState } from './hud/hudView.ts';
+
+// Temporary: removed in Tasks 7 and 9. Maps the presenter's reward states onto the old drawer's.
+const DRAWER_REWARD_STATUS: Readonly<Record<RewardButtonState, RewardStatus>> = {
+  'missing-points': 'LOCKED',
+  'missing-gold': 'INSUFFICIENT GOLD',
+  'no-target': 'NO VALID TARGET',
+  cooldown: 'COOLDOWN',
+  active: 'ACTIVE',
+  ready: 'READY',
+};
+const DRAWER_REWARD_ORDER: readonly RewardButtonState[] = [
+  'missing-points', 'missing-gold', 'no-target', 'cooldown', 'active', 'ready',
+];
 
 export class GameUI implements GameUiPort {
   readonly #root: HTMLElement;
@@ -34,6 +50,14 @@ export class GameUI implements GameUiPort {
   #toast: ToastNotifications | undefined;
   #permanentUnlockCount = 0;
   #rewardCues: ScrollCues | undefined;
+  #playerStrip: FactionStrip | undefined;
+  #enemyStrip: FactionStrip | undefined;
+  // Temporary: removed in Tasks 7 and 9. Last numbers sent to the old drawer.
+  readonly #drawerInputs: number[] = [];
+  readonly #drawerScratch: number[] = [];
+  readonly #rewardInputs: number[] = [];
+  readonly #rewardScratch: number[] = [];
+  #drawerDifficulty: MissionSettings['difficulty'] = 'normal';
 
   constructor(root: HTMLElement) {
     this.#root = root;
@@ -52,6 +76,8 @@ export class GameUI implements GameUiPort {
     this.#controls = new ControlsDrawer(this.#root);
     this.#hud = new GameHud(this.#root);
     this.#toast = new ToastNotifications(this.#root);
+    this.#playerStrip = new FactionStrip(this.#element<HTMLElement>('hud-faction-player'), 'player');
+    this.#enemyStrip = new FactionStrip(this.#element<HTMLElement>('hud-faction-enemy'), 'enemy');
     this.#root.addEventListener('click', this.#handleClick);
     this.#renderRewardTeaser();
     this.#renderMissionRules(this.getMissionSettings().difficulty);
@@ -85,6 +111,10 @@ export class GameUI implements GameUiPort {
   }
 
   enterGameplay(): void {
+    // A new match: forget what the old drawer showed and read the difficulty once.
+    this.#drawerInputs.length = 0;
+    this.#rewardInputs.length = 0;
+    this.#drawerDifficulty = this.getMissionSettings().difficulty;
     this.#element<HTMLElement>('canvas-container').classList.remove('hidden');
     this.#element<HTMLElement>('main-menu').classList.add('opacity-0', 'pointer-events-none');
     this.#hud?.setPauseVisible(false);
@@ -113,27 +143,11 @@ export class GameUI implements GameUiPort {
     this.#hud?.setPauseVisible(paused);
   }
 
-  updateResources(
-    gold: number,
-    enemyGold: number,
-    barracksCount: number,
-    availableFactories: number,
-    production: readonly BarracksProductionView[]
-  ): void {
-    this.#element<HTMLElement>('res-gold').innerText = String(Math.floor(gold));
-    this.#element<HTMLElement>('enemy-gold-text').innerText = String(Math.floor(enemyGold));
-    this.#buildMenu?.updateResources(gold, barracksCount, availableFactories, production);
-  }
-
-  setBaseHealth(
-    player: { current: number; maximum: number },
-    enemy: { current: number; maximum: number }
-  ): void {
-    this.#hud?.setBaseHealth(player, enemy);
-  }
-
-  setAiStatus(status: string): void {
-    this.#hud?.setAiStatus(status);
+  render(view: Readonly<HudView>): void {
+    this.#playerStrip?.render(view.player);
+    this.#enemyStrip?.render(view.enemy);
+    this.#feedDrawer(view);
+    this.#feedRewards(view);
   }
 
   flashNexusAlert(): void {
@@ -161,11 +175,6 @@ export class GameUI implements GameUiPort {
     this.#permanentUnlockCount = unlocks.filter((item) => item.type === 'permanent' && item.unlocked).length;
   }
 
-  updateRewardState(state: RewardUiState): void {
-    this.#hud?.setRewardState(state);
-    this.#controls?.setCombatPoints(state.combatPoints);
-  }
-
   showGameOver(summary: GameOverSummary): void {
     this.#hud?.setGameVisible(false);
     this.#element<HTMLElement>('canvas-container').classList.add('hidden');
@@ -174,6 +183,67 @@ export class GameUI implements GameUiPort {
 
   setPermanentUnlockCount(count: number): void {
     this.#permanentUnlockCount = count;
+  }
+
+  // Temporary: removed in Tasks 7 and 9. Feeds the old drawer only when its numbers change.
+  #feedDrawer(view: Readonly<HudView>): void {
+    const scratch = this.#drawerScratch;
+    scratch.length = 0;
+    scratch.push(view.player.gold);
+    for (const producer of view.producers) scratch.push(producer.total, producer.free);
+    for (const action of view.actions) {
+      if (action.presentation.kind === 'unit') scratch.push(action.orders, action.progressPercent);
+    }
+    if (sameNumbers(scratch, this.#drawerInputs)) return;
+    this.#drawerInputs.length = 0;
+    this.#drawerInputs.push(...scratch);
+
+    let barracksCount = 0;
+    let availableFactories = 0;
+    for (const producer of view.producers) {
+      if (producer.producer.id !== 'barracks') continue;
+      barracksCount += producer.total;
+      availableFactories += producer.free;
+    }
+    const production: BarracksProductionView[] = [];
+    for (const action of view.actions) {
+      if (action.presentation.kind !== 'unit' || action.productionSeconds === null) continue;
+      for (let order = 0; order < action.orders; order++) {
+        production.push({
+          unit: action.presentation.id,
+          remainingSeconds: action.productionSeconds * (1 - action.progressPercent / 100),
+          durationSeconds: action.productionSeconds,
+        });
+      }
+    }
+    this.#buildMenu?.updateResources(view.player.gold, barracksCount, availableFactories, production);
+  }
+
+  // Temporary: removed in Tasks 7 and 9.
+  #feedRewards(view: Readonly<HudView>): void {
+    const scratch = this.#rewardScratch;
+    scratch.length = 0;
+    scratch.push(view.player.combatPoints, view.player.gold);
+    for (const reward of view.rewards) {
+      scratch.push(DRAWER_REWARD_ORDER.indexOf(reward.state), Math.round(reward.remainingSeconds * 10));
+    }
+    if (sameNumbers(scratch, this.#rewardInputs)) return;
+    this.#rewardInputs.length = 0;
+    this.#rewardInputs.push(...scratch);
+
+    const rewards: RewardCardState[] = view.rewards.map((reward) => ({
+      id: reward.id,
+      status: DRAWER_REWARD_STATUS[reward.state],
+      remainingSeconds: reward.state === 'active' ? reward.remainingSeconds : 0,
+      cooldownSeconds: reward.state === 'cooldown' ? reward.remainingSeconds : 0,
+    }));
+    this.#hud?.setRewardState({
+      difficulty: this.#drawerDifficulty,
+      combatPoints: view.player.combatPoints,
+      gold: view.player.gold,
+      rewards,
+    });
+    this.#controls?.setCombatPoints(view.player.combatPoints);
   }
 
   #handleClick = (event: MouseEvent): void => {
@@ -419,4 +489,10 @@ export class GameUI implements GameUiPort {
   #requireMounted(): void {
     if (!this.#mounted) throw new Error('Game UI must be mounted before it is used');
   }
+}
+
+function sameNumbers(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
 }

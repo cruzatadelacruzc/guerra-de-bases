@@ -37,23 +37,9 @@ export class GameHud {
     }
   };
 
-  setBaseHealth(
-    player: { current: number; maximum: number },
-    enemy: { current: number; maximum: number }
-  ): void {
-    this.#setHealth('player', player);
-    this.#setHealth('enemy', enemy);
-  }
-
-  setAiStatus(status: string): void {
-    this.#element<HTMLElement>('ai-strat-tag').innerText = status;
-  }
-
   setRewardState(state: RewardUiState): void {
     this.#element<HTMLElement>('reward-combat-points').innerText = String(state.combatPoints);
     this.#element<HTMLElement>('reward-gold-balance').innerText = String(Math.floor(state.gold));
-    this.#element<HTMLElement>('res-combat-points').innerText = `${state.combatPoints} CP`;
-    this.#element<HTMLElement>('res-gold').innerText = String(Math.floor(state.gold));
     const structureKey = `${state.difficulty}:${state.rewards.map((reward) => `${reward.id}-${reward.status}`).join('|')}`;
     if (structureKey === this.#rewardStructureKey) {
       this.#updateRewardTimers(state);
@@ -234,18 +220,6 @@ export class GameHud {
       this.#element<HTMLElement>('game-over-modal').classList.remove('is-arming');
     }
     this.#element<HTMLElement>('game-over-modal').classList.toggle('hidden', !visible);
-  }
-
-  #setHealth(
-    side: 'player' | 'enemy',
-    health: { current: number; maximum: number }
-  ): void {
-    const percentage = health.maximum > 0
-      ? Math.max(0, Math.min(100, (health.current / health.maximum) * 100))
-      : 0;
-    this.#element<HTMLElement>(`${side}-hq-bar`).style.width = `${percentage}%`;
-    this.#element<HTMLElement>(`${side}-hq-hp-text`).innerText =
-      `${Math.ceil(health.current)} / ${health.maximum} HP`;
   }
 
   #element<ElementType extends Element>(id: string): ElementType {

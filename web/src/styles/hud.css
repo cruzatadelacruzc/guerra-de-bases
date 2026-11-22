@@ -1,4 +1,4 @@
-/* In-game combat HUD: design tokens and scale. Rules are added by later tasks. */
+/* In-game combat HUD: design tokens, scale and components. */
 :root {
   --hud-player: #22d3ee;
   --hud-enemy: #f43f5e;
@@ -11,4 +11,210 @@
   --hud-target: 44px;
   --hud-gap: 8px;
   --hud-tile: 60px;
+}
+
+/* Top strip: one compact Nexus summary per side with the pause button between them. */
+.hud-strip {
+  position: absolute;
+  top: max(0.45rem, env(safe-area-inset-top));
+  right: max(0.45rem, env(safe-area-inset-right));
+  left: max(0.45rem, env(safe-area-inset-left));
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--hud-target) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--hud-gap);
+}
+
+.hud-faction {
+  --hud-side: var(--hud-player);
+  box-sizing: border-box;
+  display: flex;
+  height: var(--hud-target);
+  min-width: 0;
+  max-width: 11rem;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 2px;
+  border: 1.5px solid var(--hud-side);
+  border-radius: 8px;
+  background: var(--hud-panel);
+  color: #e2e8f0;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hud-faction.is-player {
+  justify-self: start;
+}
+
+/* The enemy mirrors the player: ring at the outer edge, resources towards the centre. */
+.hud-faction.is-enemy {
+  --hud-side: var(--hud-enemy);
+  flex-direction: row-reverse;
+  justify-self: end;
+  padding: 0 2px 0 8px;
+  text-align: right;
+}
+
+.hud-ring-wrap {
+  position: relative;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.hud-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.hud-ring-track,
+.hud-ring-progress {
+  fill: none;
+  stroke-width: 4;
+}
+
+.hud-ring-track {
+  stroke: rgba(148, 163, 184, 0.28);
+}
+
+.hud-ring-progress {
+  stroke: var(--hud-side);
+  stroke-linecap: butt;
+  transform: rotate(-90deg);
+  transform-origin: center;
+}
+
+.hud-percent {
+  position: relative;
+  font-size: var(--hud-text-min);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.hud-resources {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hud-gold,
+.hud-cp {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.hud-faction.is-enemy .hud-resources {
+  align-items: flex-end;
+}
+
+.hud-gold {
+  color: var(--hud-gold);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.hud-cp {
+  color: var(--hud-cp);
+  font-size: var(--hud-text-min);
+}
+
+.hud-cp b {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+}
+
+.hud-gold .ui-icon,
+.hud-cp .ui-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+/* Critical health: the ring and the border pulse in the side's own colour. */
+.hud-faction.is-critical {
+  animation: hud-critical-pulse 1.1s ease-in-out infinite;
+}
+
+.hud-faction.is-critical .hud-ring-progress {
+  animation: hud-critical-ring 1.1s ease-in-out infinite;
+}
+
+@keyframes hud-critical-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 10px 2px var(--hud-side); }
+}
+
+@keyframes hud-critical-ring {
+  0%, 100% { stroke-width: 4; }
+  50% { stroke-width: 6; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-faction.is-critical,
+  .hud-faction.is-critical .hud-ring-progress {
+    animation: none;
+  }
+
+  .hud-faction.is-critical {
+    box-shadow: 0 0 0 1.5px var(--hud-side);
+  }
+
+  .hud-faction.is-critical .hud-ring-progress {
+    stroke-width: 6;
+  }
+}
+
+.hud-pause {
+  display: grid;
+  width: var(--hud-target);
+  height: var(--hud-target);
+  padding: 0;
+  place-items: center;
+  border: 1.5px solid var(--hud-player);
+  border-radius: 8px;
+  background: var(--hud-panel);
+  color: #a5f3fc;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.hud-pause .ui-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.hud-pause:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+
+/* Temporary spot just below the strip's centre; Task 9 decides its final place. */
+.hud-auto {
+  position: absolute;
+  top: calc(max(0.45rem, env(safe-area-inset-top)) + var(--hud-target) + var(--hud-gap));
+  left: 50%;
+  z-index: 2;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
+  .hud-strip {
+    top: max(0.3rem, env(safe-area-inset-top));
+  }
+
+  .hud-auto {
+    top: calc(max(0.3rem, env(safe-area-inset-top)) + var(--hud-target) + var(--hud-gap));
+  }
 }

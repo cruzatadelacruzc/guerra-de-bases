@@ -119,7 +119,6 @@ select {
 }
 
 @media (max-width: 767px) {
-
   #btn-start-game {
     margin-bottom: 0.25rem;
   }
@@ -129,40 +128,11 @@ select {
       max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
   }
 
-  #game-hud .game-status-rail {
-    gap: 0.4rem;
-  }
-
-  #game-hud .game-faction-status {
-    flex: 1 1 0;
-    min-width: 0;
-    padding: 0.55rem;
-    gap: 0.35rem;
-  }
-
-  #game-hud .game-faction-heading {
-    gap: 0.2rem;
-    align-items: flex-start;
-  }
-
-  #game-hud .game-faction-heading span {
-    font-size: 0.58rem;
-    line-height: 1rem;
-  }
-
   #game-hud > div.game-toast-anchor {
     position: absolute;
     top: max(0.55rem, env(safe-area-inset-top));
     left: 50%;
     transform: translateX(-50%);
-  }
-
-  #btn-pause-game {
-    min-height: 44px;
-    padding: 0.45rem 0.65rem;
-    font-size: 0.6rem;
-    white-space: nowrap;
-    background-color: rgba(10, 15, 29, 0.92);
   }
 
   #game-hud > div.game-controls-drawer {
@@ -200,7 +170,6 @@ select {
 }
 
 @media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
-
   #btn-start-game {
     min-height: 44px;
     padding: 0.55rem 1.5rem;
@@ -211,14 +180,6 @@ select {
   #game-hud {
     padding: max(0.35rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right))
       max(0.35rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
-  }
-
-  #game-hud .game-faction-status {
-    padding: 0.35rem 0.55rem;
-  }
-
-  #game-hud .game-faction-meta {
-    flex-wrap: nowrap;
   }
 
   #game-hud > div.game-toast-anchor {
@@ -318,43 +279,6 @@ select {
       max(0.5rem, env(safe-area-inset-bottom)) max(0.4rem, env(safe-area-inset-left));
   }
 
-  #game-hud .game-status-rail {
-    align-items: flex-start;
-    gap: 0.35rem;
-  }
-
-  #game-hud .game-faction-status {
-    flex: 1 1 0;
-    min-width: 0;
-    gap: 0.25rem;
-    padding: 0.45rem;
-    background: rgba(5, 12, 23, 0.82);
-    backdrop-filter: blur(8px);
-  }
-
-  #game-hud .game-faction-heading {
-    gap: 0.2rem;
-    padding-bottom: 0.15rem;
-  }
-
-  #game-hud .game-faction-heading span {
-    font-size: 0.56rem;
-    line-height: 0.8rem;
-  }
-
-  #game-hud .game-faction-meta {
-    gap: 0.1rem;
-    margin-top: 0;
-  }
-
-  #btn-pause-game {
-    min-height: 2.5rem;
-    padding: 0.35rem 0.55rem;
-    background: rgba(5, 12, 23, 0.94);
-    font-size: 0.52rem;
-    white-space: nowrap;
-  }
-
   #game-hud > div.game-toast-anchor {
     position: absolute;
     top: 18%;
@@ -426,7 +350,6 @@ select {
 }
 
 @media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
-
   .game-controls-content:not(.hidden) {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -449,182 +372,6 @@ select {
 
 #game-hud.hidden {
   display: none;
-}
-
-.game-status-rail {
-  min-width: 0;
-}
-
-.game-pause-button {
-  position: static;
-}
-
-.game-status-rail {
-  position: absolute;
-  top: max(0.75rem, env(safe-area-inset-top));
-  right: max(1rem, env(safe-area-inset-right));
-  left: max(1rem, env(safe-area-inset-left));
-  z-index: 2;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: start;
-  gap: clamp(0.4rem, 2vw, 1.5rem);
-}
-
-.game-faction-status {
-  display: flex;
-  width: min(100%, 19rem);
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.55rem 0.75rem;
-  border-radius: 0.35rem;
-  background: rgba(3, 12, 21, 0.88);
-  backdrop-filter: blur(10px);
-}
-
-.game-faction-player {
-  justify-self: start;
-}
-
-.game-faction-enemy {
-  justify-self: end;
-}
-
-.game-faction-heading,
-.game-faction-meta {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.game-faction-name,
-.game-faction-name b {
-  overflow: hidden;
-  color: #67e8f9;
-  font-family: 'Orbitron', sans-serif;
-  font-size: clamp(0.6rem, 0.75vw, 0.68rem);
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.game-faction-enemy .game-faction-name,
-.game-faction-enemy .game-faction-name b {
-  color: #fb7185;
-}
-
-.game-hp-value,
-.game-faction-meta {
-  color: #94a3b8;
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 0.7rem;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.game-hp-value {
-  color: #a5f3fc;
-  font-family: monospace;
-  font-size: 0.65rem;
-}
-
-.game-faction-enemy .game-hp-value {
-  color: #fecdd3;
-}
-
-.game-health-track {
-  height: 0.28rem;
-  overflow: hidden;
-  border: 1px solid rgba(103, 232, 249, 0.25);
-  background: rgba(15, 23, 42, 0.9);
-}
-
-.game-health-fill {
-  display: block;
-  height: 100%;
-  background: #22d3ee;
-  box-shadow: 0 0 0.7rem rgba(34, 211, 238, 0.75);
-  transition: width 250ms ease;
-}
-
-.game-faction-enemy .game-health-track {
-  border-color: rgba(251, 113, 133, 0.3);
-}
-
-.game-faction-enemy .game-health-fill {
-  background: #f43f5e;
-  box-shadow: 0 0 0.7rem rgba(244, 63, 94, 0.7);
-}
-
-/* One line under the health bar in both panels, so they are the same height. */
-.game-faction-meta {
-  gap: 0.7rem;
-  font-size: 0.62rem;
-}
-
-.game-meta-gold,
-.game-meta-cp {
-  flex-shrink: 0;
-}
-
-.game-meta-gold {
-  color: #facc15;
-}
-
-/* The figures stand out from their labels. */
-.game-meta-gold b,
-.game-meta-cp b {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 0.78rem;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.game-meta-cp b {
-  color: #67e8f9;
-}
-
-/* When space runs out only the AI status is cut short; the figures always show. */
-.game-meta-status {
-  min-width: 0;
-  overflow: hidden;
-  color: #fda4af;
-  text-overflow: ellipsis;
-  text-align: right;
-}
-
-.game-pause-button {
-  display: flex;
-  min-width: 3rem;
-  min-height: 2.5rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.75rem;
-  border-color: rgba(34, 211, 238, 0.42);
-  background: rgba(3, 12, 21, 0.92);
-  color: #a5f3fc;
-  font-family: 'Orbitron', sans-serif;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-}
-
-.game-pause-button > span:first-child {
-  font-size: 1rem;
-}
-
-/* Pause + AUTO zoom stacked in the status rail's middle column. */
-.game-center-controls {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.3rem;
 }
 
 .game-auto-zoom {
@@ -845,58 +592,6 @@ select {
 }
 
 @media (max-width: 767px) {
-  .game-status-rail {
-    top: max(0.45rem, env(safe-area-inset-top));
-    right: max(0.45rem, env(safe-area-inset-right));
-    left: max(0.45rem, env(safe-area-inset-left));
-    gap: 0.35rem;
-  }
-
-  .game-faction-status {
-    gap: 0.25rem;
-    padding: 0.45rem 0.5rem;
-  }
-
-  .game-faction-name,
-  .game-faction-name b {
-    font-size: clamp(0.56rem, 2.3vw, 0.62rem);
-    letter-spacing: 0.06em;
-  }
-
-  .game-hp-value {
-    font-size: clamp(0.56rem, 2vw, 0.6rem);
-  }
-
-  .game-faction-meta {
-    gap: 0.3rem;
-    font-size: clamp(0.56rem, 2.4vw, 0.62rem);
-  }
-
-  .game-meta-gold b,
-  .game-meta-cp b {
-    font-size: 0.72rem;
-  }
-
-  .game-pause-button {
-    width: 2.75rem;
-    min-width: 2.75rem;
-    min-height: 2.75rem;
-    flex-direction: column;
-    gap: 0;
-    padding: 0.2rem;
-    font-size: 0.44rem;
-  }
-
-  #game-hud > .game-status-rail > .game-center-controls > #btn-pause-game {
-    min-height: 2.75rem;
-    padding: 0.2rem;
-  }
-
-  .game-pause-button > span:first-child {
-    font-size: 0.95rem;
-    line-height: 1;
-  }
-
   .game-controls-drawer {
     right: max(0.4rem, env(safe-area-inset-right));
     bottom: max(0.4rem, env(safe-area-inset-bottom));
@@ -971,29 +666,7 @@ select {
   }
 }
 
-/* Narrow phones: "ALIADO" / "HOSTIL" alone, so the title and HP fit without being cut. */
-@media (max-width: 479px) {
-  .game-faction-prefix {
-    display: none;
-  }
-}
-
 @media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
-  .game-status-rail {
-    top: max(0.3rem, env(safe-area-inset-top));
-    right: max(0.45rem, env(safe-area-inset-right));
-    left: max(0.45rem, env(safe-area-inset-left));
-  }
-
-  .game-faction-status {
-    gap: 0.18rem;
-    padding: 0.28rem 0.55rem;
-  }
-
-  .game-faction-heading {
-    gap: 0.25rem;
-  }
-
   .game-controls-drawer {
     right: max(0.45rem, env(safe-area-inset-right));
     bottom: max(0.3rem, env(safe-area-inset-bottom));
@@ -1333,7 +1006,6 @@ select {
 }
 
 @media (max-width: 767px) {
-
   .arsenal-reward-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.35rem;
@@ -1426,7 +1098,6 @@ select {
 }
 
 @media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
-
   .arsenal-reward-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

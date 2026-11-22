@@ -39,16 +39,14 @@ import {
     ARTILLERY_SHELL_FLIGHT_SECONDS,
     ENEMY_AIR_STRIKE_HEADING,
     getDifficultyProfile,
-    getRewardDefinitionForDifficulty,
     type RewardId,
     type StrikeAim
 } from './game/rewardSystem.ts';
+import { HudPresenter, type HudPresenterInput } from './ui/hud/HudPresenter.ts';
+import { formatPercent } from './ui/hud/hudFormat.ts';
 import { ThreeRenderCoordinator } from './rendering/ThreeRenderCoordinator.ts';
 import type {
-    BarracksProductionView,
     BuildingType,
-    RewardStatus,
-    RewardUiState,
     GameUiPort,
     UnitType,
     UnlockView
@@ -425,7 +423,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     const defeatShakeAnchor = new THREE.Vector3();
     let aiDifficulty: 'easy' | 'normal' | 'hard' = 'normal';
     let gameplayClockMs = 0;
-    let lastRewardUiUpdateMs = -Infinity;
+    const hudPresenter = new HudPresenter();
+    /** Built once per match and reused every frame, so the HUD update allocates nothing. */
+    let hudInput: HudPresenterInput | null = null;
 
     let stats: { soldiersTrained: number; buildingsConstructed: number; startTime: number } = {
         soldiersTrained: 0,
@@ -559,7 +559,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         stats.startTime = Date.now();
         matchState = createMatchState();
         gameplayClockMs = 0;
-        lastRewardUiUpdateMs = -Infinity;
+        hudPresenter.reset();
         if (import.meta.env.DEV) {
             reportedVisualInconsistencies.clear();
             lastVisualCheckMs = -Infinity;
@@ -569,7 +569,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         // A fresh enemy AI per match: its own decision clock and structure targets.
         enemyAi = new EnemyAiController(getEnemyAiProfile(aiDifficulty), Math.random);
 
-        updateResourceUI();
         lastPlayerNexusHealth = NEXUS_HEALTH;
 
         const enemyBaseIncome = getDifficultyProfile(aiDifficulty).enemyBaseIncome;
@@ -594,6 +593,17 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         battlefieldView.structureBuilt(battleSimulation.playerBase);
         battlefieldView.structureBuilt(battleSimulation.enemyBase);
 
+        const simulation = battleSimulation;
+        hudInput = {
+            world: simulation.world,
+            bases: { player: simulation.playerBase, enemy: simulation.enemyBase },
+            match: matchState,
+            difficulty: aiDifficulty,
+            nowMs: gameplayClockMs,
+            mode: interaction,
+            countRewardTargets: () => rewardTargetCandidates(simulation.world, ECS_FACTIONS.player).length
+        };
+        renderHud();
         showToast("¡Construye Barracas para desplegar tropas!");
     }
 
@@ -639,73 +649,22 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         cameraShake = 0;
         rewardScenarioEntities = [];
         battleSimulation = null;
+        hudInput = null;
         dispatchInteraction({ type: 'reset' });
     }
 
-    function updateResourceUI() {
-        const production: BarracksProductionView[] = [];
-        let barracksCount = 0;
-        let availableFactories = 0;
-        const simulation = battleSimulation;
-        if (simulation) {
-            const activeBarracks = liveFactories(simulation.world, ECS_FACTIONS.player);
-            barracksCount = activeBarracks.length;
-            for (const barracks of activeBarracks) {
-                const order = simulation.world.getComponent(barracks, ECS_COMPONENTS.production)?.order;
-                if (!order) {
-                    availableFactories++;
-                    continue;
-                }
-                production.push({
-                    unit: order.kind,
-                    remainingSeconds: order.remainingSeconds,
-                    durationSeconds: order.durationSeconds
-                });
-            }
-            gold = getFactionGold(ECS_FACTIONS.player);
-            enemyGold = getFactionGold(ECS_FACTIONS.enemy);
+    /** One presenter update per playing frame; the UI port draws the shared view. */
+    function renderHud(): void {
+        const input = hudInput;
+        if (!input) return;
+        input.nowMs = gameplayClockMs;
+        input.mode = interaction;
+        const view = hudPresenter.update(input);
+        ui.render(view);
+        if (view.player.criticalEntered) {
+            showToast(`NEXO ${formatPercent(view.player.healthPercent)}`);
+            haptics.nexusUnderAttack();
         }
-        ui.updateResources(gold, enemyGold, barracksCount, availableFactories, production);
-        updateRewardUI();
-    }
-
-    function updateRewardUI() {
-        const targetCount = battleSimulation ? rewardTargetCandidates(battleSimulation.world, ECS_FACTIONS.player).length : 0;
-        const rewards: RewardUiState['rewards'][number][] = [];
-        for (const id of ['artillery_strike', 'air_strike', 'defensive_shield'] as const) {
-            const definition = getRewardDefinitionForDifficulty(id, aiDifficulty);
-            const activeUntil = id === 'defensive_shield'
-                ? matchState.rewards.player.shieldUntilMs
-                : matchState.rewards.player.strikeActiveUntilMs[id] ?? 0;
-            const activeRemaining = Math.max(0, (activeUntil - gameplayClockMs) / 1000);
-            const cooldownRemaining = Math.max(0, (matchState.rewards.player.cooldownUntilMs - gameplayClockMs) / 1000);
-            let status: RewardStatus;
-            if (activeRemaining > 0) {
-                status = 'ACTIVE';
-            } else if (matchState.combatPoints.player < definition.pointsCost) {
-                status = 'LOCKED';
-            } else if (getFactionGold(ECS_FACTIONS.player) < definition.goldCost) {
-                status = 'INSUFFICIENT GOLD';
-            } else if (id !== 'defensive_shield' && targetCount === 0) {
-                status = 'NO VALID TARGET';
-            } else if (cooldownRemaining > 0) {
-                status = 'COOLDOWN';
-            } else {
-                status = 'READY';
-            }
-            rewards.push({
-                id,
-                status,
-                remainingSeconds: activeRemaining,
-                cooldownSeconds: cooldownRemaining
-            });
-        }
-        ui.updateRewardState({
-            difficulty: aiDifficulty,
-            combatPoints: matchState.combatPoints.player,
-            gold: getFactionGold(ECS_FACTIONS.player),
-            rewards
-        });
     }
 
     function getEconomyEntity(faction: 'player' | 'enemy'): Entity | undefined {
@@ -864,7 +823,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 battlefieldView.removedWithoutEffects(entity, 'sold');
 
                 showToast(`🗑️ Estructura vendida. Recuperas +${sale.refund} Oro.`);
-                updateResourceUI();
+                hudPresenter.invalidateRewards();
                 return;
             }
         }
@@ -903,7 +862,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 showToast("¡Recursos insuficientes!");
             }
 
-            updateResourceUI();
+            hudPresenter.invalidateRewards();
         }
     }
 
@@ -943,7 +902,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             overrides
         );
         syncGoldMirrors();
-        updateResourceUI();
+        hudPresenter.invalidateRewards();
         if (!result.accepted && (result.reason === 'match-over' || result.reason === 'not-playing')) return;
         if (!result.accepted) {
             showToast(result.reason === 'insufficient-resources'
@@ -957,7 +916,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
     /** Represents what the AI's commands changed; the rules already ran in the domain. */
     function representEnemyTurn(turn: EnemyAiTurn, simulation: BattleSimulation): void {
-        ui.setAiStatus(turn.status === 'satisfied' ? "BATALLÓN ACTIVO" : "CONSTRUYENDO");
         const outcomes = executeEnemyTurn(commandContext(simulation), turn);
         for (const outcome of outcomes) {
             if (!outcome.result.accepted) continue;
@@ -968,10 +926,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 representRewardActivation(ECS_FACTIONS.enemy, command.reward, result);
             }
         }
-        // As before, a rejected enemy reward still refreshed the reward panel.
-        if (turn.commands.some((command, index) => command.type === 'activateReward' && !outcomes[index].result.accepted)) {
-            updateRewardUI();
-        }
+        hudPresenter.invalidateRewards();
         syncGoldMirrors();
     }
 
@@ -1031,11 +986,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         // Camera Shake Physics
         cameraShake = applyCameraShake(camera.position, cameraShake, delta);
 
-        updateResourceUI();
-
         if (battleSimulation) {
             const playerHealth = battleSimulation.world.getComponent(battleSimulation.playerBase, ECS_COMPONENTS.health);
-            const enemyHealth = battleSimulation.world.getComponent(battleSimulation.enemyBase, ECS_COMPONENTS.health);
             if (playerHealth) {
                 if (nexusDamageAlert.report(lastPlayerNexusHealth, playerHealth.current, gameplayClockMs)) {
                     ui.flashNexusAlert();
@@ -1044,14 +996,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 }
                 lastPlayerNexusHealth = playerHealth.current;
             }
-            // While PLAYING both bases exist here: a base only leaves in the resolve call below.
-            if (playerHealth && enemyHealth) {
-                ui.setBaseHealth(
-                    { current: playerHealth.current, maximum: playerHealth.max },
-                    { current: enemyHealth.current, maximum: enemyHealth.max }
-                );
-            }
         }
+        // After the damage alert, so a Nexus turning critical keeps its own percentage toast.
+        renderHud();
 
         const resolution = battleSimulation
             ? deathResolver.resolve(battleSimulation.world, matchState, aiDifficulty, {
@@ -1181,7 +1128,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         if (!result.accepted) {
             const outsidePlay = result.reason === 'match-over' || result.reason === 'not-playing';
             if (faction === ECS_FACTIONS.player && !outsidePlay) showToast(getRewardFailureMessage(result.reason));
-            updateRewardUI();
+            hudPresenter.invalidateRewards();
             return false;
         }
         representRewardActivation(faction, id, result);
@@ -1219,8 +1166,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 showToast('¡ALERTA! Ataque enemigo entrante');
             }
         }
-        updateResourceUI();
-        updateRewardUI();
+        hudPresenter.invalidateRewards();
     }
 
     function activatePlayerReward(id: RewardId): boolean {
@@ -1433,10 +1379,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             advanceRewardStrikes(delta);
             battlefieldView.syncShields(currentShieldState(), gameplayClockMs);
             updateCombat(delta);
-            if (gameplayClockMs - lastRewardUiUpdateMs >= 250) {
-                lastRewardUiUpdateMs = gameplayClockMs;
-                updateRewardUI();
-            }
             if (diagnosticsEnabled) combatMs = performance.now() - combatStart;
             if (import.meta.env.DEV) runVisualConsistencyCheck();
         } else if (session.state === 'MATCH_ENDING') {
@@ -1723,8 +1665,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     }
                     rewardScenarioEntities.push(spawnScenarioStructure('turret', false, { x: 0, y: 0, z: 30 }));
                 }
-                updateResourceUI();
-                updateRewardUI();
+                hudPresenter.invalidateRewards();
             },
             setNexusHealth(faction, value) {
                 if (session.state !== 'PLAYING' || !battleSimulation) {

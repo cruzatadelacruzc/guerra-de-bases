@@ -1,5 +1,6 @@
 import type { BuildableStructureKind } from '../game/definitions/structures.ts';
 import type { SoldierKind } from '../game/ecs/components.ts';
+import type { HudView } from './hud/hudView.ts';
 
 export type BuildingType = BuildableStructureKind;
 export type UnitType = SoldierKind;
@@ -78,24 +79,13 @@ export interface GameUiPort {
   enterGameplay(): void;
   enterMainMenu(): void;
   setPaused(paused: boolean): void;
-  updateResources(
-    gold: number,
-    enemyGold: number,
-    barracksCount: number,
-    availableFactories: number,
-    production: readonly BarracksProductionView[]
-  ): void;
-  setBaseHealth(
-    player: { current: number; maximum: number },
-    enemy: { current: number; maximum: number }
-  ): void;
-  setAiStatus(status: string): void;
+  /** Draws the HUD from the presenter's view; called once per playing frame. */
+  render(view: Readonly<HudView>): void;
   /** Pulses a red screen-edge warning while the player's Nexus is being hit. */
   flashNexusAlert(): void;
   setDemolishMode(active: boolean): void;
   setPlacementActive(active: boolean): void;
   setUnlocks(unlocks: readonly UnlockView[]): void;
-  updateRewardState(state: RewardUiState): void;
   showGameOver(summary: GameOverSummary): void;
   setPermanentUnlockCount(count: number): void;
   setAutoZoom(enabled: boolean): void;
