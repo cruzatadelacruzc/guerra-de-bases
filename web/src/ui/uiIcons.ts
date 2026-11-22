@@ -17,7 +17,15 @@ export type UiIconId =
   | 'home'
   | 'smile'
   | 'swords'
-  | 'skull';
+  | 'skull'
+  | 'generator'
+  | 'barracks'
+  | 'turret'
+  | 'tank'
+  | 'sell'
+  | 'lock'
+  | 'pause'
+  | 'focus';
 
 const SVG_NAMESPACE = 'http://www.w3.org/2000/svg';
 
@@ -59,6 +67,36 @@ const ICON_PATHS: Readonly<Record<UiIconId, readonly string[]>> = {
     'M12 3a8 8 0 0 0-8 8c0 2.6 1.3 4.6 3 5.8V20h10v-3.2c1.7-1.2 3-3.2 3-5.8a8 8 0 0 0-8-8Z',
     'M10.5 11.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0ZM16.5 11.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z',
     'M10 20v-2M14 20v-2',
+  ],
+  generator: [
+    'M4 21h16',
+    'M6 21V9h12v12',
+    'M9 9V4h2v5M13 9V4h2v5',
+    'M9 14h6M9 17.5h6',
+  ],
+  barracks: ['M3 21h18', 'M5 21V9l7-5 7 5v12', 'M9.5 21v-6a2.5 2.5 0 0 1 5 0v6', 'M12 4V2'],
+  turret: [
+    'M5 21h14',
+    'M7 21v-4h10v4',
+    'M9 17v-3a3 3 0 0 1 6 0v3',
+    'M12 11V5M10 3h4',
+  ],
+  tank: [
+    'M3 17h18v3H3Z',
+    'M5 17v-4h12l2 4',
+    'M9 13v-3h6v3',
+    'M15 11.5h6',
+  ],
+  sell: [
+    'M16 9.5a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z',
+    'M10 7v5',
+    'M20 21a6 6 0 0 0-4-5.5M16 20l-1-4.5 4.5-.5',
+  ],
+  lock: ['M5 11h14v10H5Z', 'M8 11V8a4 4 0 0 1 8 0v3', 'M12 15v2'],
+  pause: ['M8 5v14M16 5v14'],
+  focus: [
+    'M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5',
+    'M13 12a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z',
   ],
 };
 

@@ -1,5 +1,8 @@
-export type BuildingType = 'generator' | 'barracks' | 'turret';
-export type UnitType = 'rifleman' | 'tank';
+import type { BuildableStructureKind } from '../game/definitions/structures.ts';
+import type { SoldierKind } from '../game/ecs/components.ts';
+
+export type BuildingType = BuildableStructureKind;
+export type UnitType = SoldierKind;
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export type RewardId = 'artillery_strike' | 'air_strike' | 'defensive_shield';
 export type RewardStatus =
