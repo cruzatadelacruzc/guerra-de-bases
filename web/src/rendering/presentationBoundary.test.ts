@@ -9,8 +9,8 @@ interface ImportRecord {
   typeOnly: boolean;
 }
 
-/** Presentation modules outside rendering/ that obey the same boundary (Task 7 adds dev/visualConsistency.ts). */
-const EXTRA_PRESENTATION_MODULES: string[] = [];
+/** Presentation modules outside rendering/ that obey the same boundary. */
+const EXTRA_PRESENTATION_MODULES: string[] = ['dev/visualConsistency.ts'];
 
 const ENTITY_VIEWS = ['BattlefieldView.ts', 'ProjectileView.ts', 'BattlefieldRemains.ts'];
 

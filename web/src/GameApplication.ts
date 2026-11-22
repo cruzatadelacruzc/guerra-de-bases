@@ -55,7 +55,7 @@ import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createBattlefieldTerrain, MenuSoldiers, type BattlefieldTerrain } from './rendering/battlefieldScene.ts';
 import { airStrikeShots, artilleryShots } from './rendering/strikeCinematics.ts';
 import { BattlefieldView } from './rendering/BattlefieldView.ts';
-import type { ExplosionCue } from './rendering/BattlefieldView.ts';
+import type { ExplosionCue, LifecycleCounts } from './rendering/BattlefieldView.ts';
 import { ProjectileView } from './rendering/ProjectileView.ts';
 import type { ShotKind } from './rendering/ProjectileView.ts';
 import { PlacementGhost } from './rendering/PlacementGhost.ts';
@@ -65,6 +65,8 @@ import { parseDiagnosticsOptions } from './dev/diagnosticsOptions.ts';
 import { disableBackdropBlur } from './dev/backdropBlur.ts';
 import { countEntities, createEntityCensus } from './dev/entityCensus.ts';
 import { MetricRing } from './dev/MetricRing.ts';
+import { checkVisualConsistency, describeInconsistencies, isConsistent } from './dev/visualConsistency.ts';
+import type { ConsistencyReport } from './dev/visualConsistency.ts';
 
 interface AudioWindow extends Window {
     webkitAudioContext?: typeof AudioContext;
@@ -100,6 +102,23 @@ interface GameDiagnostics {
      * decides the result, so 0 forces the normal victory or defeat flow.
      */
     setNexusHealth(faction: 'player' | 'enemy', value: number): void;
+    /** Throws when the visual registry and the ECS disagree (only between frames). */
+    assertConsistency(): void;
+    lifecycleCounts(): LifecycleCounts;
+    /** Window CSS pixels of the ground point (x, 0, z) as the camera sees it. */
+    screenPointFor(x: number, z: number): { x: number; y: number };
+    /** Writes an entity's ECS health only; never removes it nor sets the outcome. */
+    setHealth(entity: number, value: number): void;
+    setEnemyAiEnabled(enabled: boolean): void;
+    entities(filter?: { faction?: 'player' | 'enemy'; kind?: string }): number[];
+    readResources(): {
+        geometries: number;
+        textures: number;
+        sceneGeometries: number;
+        sceneMaterials: number;
+        effectGeometries: number;
+        effectMaterials: number;
+    };
 }
 
 declare global {
@@ -359,6 +378,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     // About one minute of frames at 60 FPS, so a whole scenario fits in one summary.
     const diagnosticsSamples = diagnosticsEnabled ? new MetricRing(3600) : null;
     let diagnosticsPreviousFrame = 0;
+    // Dev-only visual consistency check: last report, throttle clock and the signatures already logged.
+    let visualConsistencyReport: ConsistencyReport | null = null;
+    let lastVisualCheckMs = -Infinity;
+    const reportedVisualInconsistencies = new Set<string>();
     let diagnosticsSimulationMs = 0;
     let diagnosticsEffectsMs = 0;
     let diagnosticsAiMs = 0;
@@ -535,6 +558,11 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         matchState = createMatchState();
         gameplayClockMs = 0;
         lastRewardUiUpdateMs = -Infinity;
+        if (import.meta.env.DEV) {
+            reportedVisualInconsistencies.clear();
+            lastVisualCheckMs = -Infinity;
+            visualConsistencyReport = null;
+        }
 
         // A fresh enemy AI per match: its own decision clock and structure targets.
         enemyAi = new EnemyAiController(getEnemyAiProfile(aiDifficulty), Math.random);
@@ -1360,6 +1388,26 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ring.record('enemySoldiers', enemySoldiers);
     }
 
+    /** Dev only: compares the visual registry with the ECS at most once per gameplay second. */
+    function runVisualConsistencyCheck(): void {
+        if (gameplayClockMs - lastVisualCheckMs < 1000 || !battleSimulation) return;
+        lastVisualCheckMs = gameplayClockMs;
+        const report = checkVisualConsistency(battleSimulation.world, battlefieldView);
+        visualConsistencyReport = report;
+        if (isConsistent(report)) return;
+        const fresh: string[] = [];
+        for (const category of Object.keys(report) as Array<keyof ConsistencyReport>) {
+            for (const entity of report[category]) {
+                const signature = `${category}:${entity}`;
+                if (!reportedVisualInconsistencies.has(signature)) {
+                    reportedVisualInconsistencies.add(signature);
+                    fresh.push(signature);
+                }
+            }
+        }
+        if (fresh.length > 0) console.error(describeInconsistencies(report));
+    }
+
     function animate({ deltaSeconds: delta, elapsedSeconds: time }: FrameTiming) {
         const frameStart = diagnosticsEnabled ? performance.now() : 0;
         let combatMs = 0;
@@ -1384,6 +1432,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 updateRewardUI();
             }
             if (diagnosticsEnabled) combatMs = performance.now() - combatStart;
+            if (import.meta.env.DEV) runVisualConsistencyCheck();
         } else if (session.state === 'MATCH_ENDING') {
             updateMatchEnding(delta);
         }
@@ -1417,6 +1466,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         const waitSeconds = (seconds: number) => new Promise<void>((resolve) => {
             window.setTimeout(resolve, seconds * 1000);
         });
+        const countInconsistencies = (report: ConsistencyReport) => report.missingVisual.length
+            + report.orphanVisual.length + report.missingComponent.length + report.kindMismatch.length
+            + report.exemptWithVisual.length + report.staleExemption.length;
         const resetSamples = () => {
             samples.clear();
             diagnosticsPreviousFrame = 0;
@@ -1521,6 +1573,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 rewardScenarioHealth,
                 activeArtilleryStrikes: matchState.strikes.active.filter((strike) => strike.kind === 'artillery_strike').length,
                 activeAirStrikes: matchState.strikes.active.filter((strike) => strike.kind === 'air_strike').length,
+                visualInconsistencies: visualConsistencyReport ? countInconsistencies(visualConsistencyReport) : 0,
                 memoryBytes: (performance as PerformanceWithMemory).memory?.usedJSHeapSize ?? null
             };
         };
@@ -1679,6 +1732,65 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 if (!health) throw new Error('That Nexus has already been destroyed');
                 health.current = Math.min(value, health.max);
             },
+            assertConsistency() {
+                const report = checkVisualConsistency(battleSimulation?.world, battlefieldView);
+                if (!isConsistent(report)) throw new Error(describeInconsistencies(report));
+            },
+            lifecycleCounts: () => battlefieldView.lifecycleCounts(),
+            screenPointFor(x, z) {
+                const point = new THREE.Vector3(x, 0, z).project(camera);
+                const rect = renderer.domElement.getBoundingClientRect();
+                return {
+                    x: rect.left + (point.x + 1) / 2 * rect.width,
+                    y: rect.top + (1 - point.y) / 2 * rect.height
+                };
+            },
+            setHealth(entity, value) {
+                if (session.state !== 'PLAYING' || !battleSimulation) {
+                    throw new Error('Start a match before setting an entity health');
+                }
+                if (!Number.isFinite(value) || value < 0) {
+                    throw new RangeError('Entity health must be a finite number of zero or more');
+                }
+                const health = battleSimulation.world.getComponent(entity, ECS_COMPONENTS.health);
+                if (!health) throw new Error('That entity has no health');
+                health.current = Math.min(value, health.max);
+            },
+            setEnemyAiEnabled(enabled) {
+                enemyAIEnabled = enabled;
+            },
+            entities(filter) {
+                const world = battleSimulation?.world;
+                if (!world) return [];
+                const found: Entity[] = [];
+                world.queryInto(found, [ECS_COMPONENTS.faction]);
+                return found.filter((entity) => {
+                    if (filter?.faction && world.getComponent(entity, ECS_COMPONENTS.faction) !== filter.faction) return false;
+                    if (!filter?.kind) return true;
+                    const kind = world.getComponent(entity, ECS_COMPONENTS.building)?.kind
+                        ?? world.getComponent(entity, ECS_COMPONENTS.soldierKind);
+                    return kind === filter.kind;
+                });
+            },
+            readResources() {
+                const geometries = new Set<unknown>();
+                const materials = new Set<unknown>();
+                scene.traverse((object) => {
+                    if (!(object instanceof THREE.Mesh)) return;
+                    geometries.add(object.geometry);
+                    if (Array.isArray(object.material)) for (const material of object.material) materials.add(material);
+                    else materials.add(object.material);
+                });
+                const effectStats = combatEffects.stats();
+                return {
+                    geometries: renderer.info.memory.geometries,
+                    textures: renderer.info.memory.textures,
+                    sceneGeometries: geometries.size,
+                    sceneMaterials: materials.size,
+                    effectGeometries: effectStats.geometries,
+                    effectMaterials: effectStats.materials
+                };
+            },
             async runStressScenario(explosionCount = 30, intervalMs = 200) {
                 if (!Number.isInteger(explosionCount) || explosionCount < 1
                     || !Number.isFinite(intervalMs) || intervalMs < 1) {
@@ -1717,6 +1829,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                         'barracks',
                         { x, y: 0, z: ENEMY_BASE_POSITION.z }
                     );
+                    battlefieldView.declareWithoutVisual(playerFactory);
+                    battlefieldView.declareWithoutVisual(enemyFactory);
                     testFactories.push(playerFactory, enemyFactory);
                     const playerOrder = requestUnitProduction(
                         simulation.world,
@@ -1738,7 +1852,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 }
                 for (let index = 0; index < 21; index++) simulation.advance(0.1);
                 stats.soldiersTrained += battlefieldView.unitsProduced(simulation.drainProductionEvents());
-                for (const factory of testFactories) simulation.world.removeEntity(factory);
+                for (const factory of testFactories) {
+                    simulation.world.removeEntity(factory);
+                    battlefieldView.forgetWithoutVisual(factory);
+                }
                 for (const x of [-5, 0, 5]) spawnScenarioStructure('turret', false, { x, y: 0, z: 0 });
                 resetSamples();
                 let explosionIndex = 0;

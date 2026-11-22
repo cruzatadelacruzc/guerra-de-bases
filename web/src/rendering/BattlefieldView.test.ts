@@ -16,8 +16,9 @@ import { DeathResolver } from '../game/match/DeathResolver.ts';
 import type { MatchEvent } from '../game/match/matchEvents.ts';
 import { createMatchState } from '../game/match/MatchState.ts';
 import { scheduleStrike } from '../game/match/rewardExecution.ts';
+import { checkVisualConsistency, describeInconsistencies, isConsistent } from '../dev/visualConsistency.ts';
 import { BattlefieldView } from './BattlefieldView.ts';
-import type { ExplosionCue, VisualKind } from './BattlefieldView.ts';
+import type { ExplosionCue } from './BattlefieldView.ts';
 import type { CombatEffects } from './CombatEffects.ts';
 import { PlacementGhost } from './PlacementGhost.ts';
 import { ProjectileView } from './ProjectileView.ts';
@@ -49,23 +50,10 @@ function setup(): Harness {
   return { match, world: match.simulation.world, view, resolver: new DeathResolver(), cues: [], baseline };
 }
 
-function drawableEntities(world: World): Array<readonly [Entity, VisualKind]> {
-  const result: Array<readonly [Entity, VisualKind]> = [];
-  for (const entity of world.query(COMPONENTS.building)) {
-    const kind = world.getComponent(entity, COMPONENTS.building)?.kind;
-    if (kind) result.push([entity, kind]);
-  }
-  for (const entity of world.query(COMPONENTS.soldier)) {
-    const kind = world.getComponent(entity, COMPONENTS.soldierKind);
-    if (kind) result.push([entity, kind]);
-  }
-  return result.sort((a, b) => a[0] - b[0]);
-}
-
-/** The local consistency check: one entry per drawable entity, with its kind. */
-function assertMatchesEcs(h: Harness): void {
-  const entries = [...h.view.entries()].map(([entity, kind]) => [entity, kind] as const).sort((a, b) => a[0] - b[0]);
-  assert.deepEqual(entries, drawableEntities(h.world));
+/** The registry must match the ECS exactly, by the dev consistency check. */
+function assertConsistent(h: Harness): void {
+  const report = checkVisualConsistency(h.world, h.view);
+  assert.ok(isConsistent(report), describeInconsistencies(report));
 }
 
 /** Runs `action` and returns the one group it added to the scene. */
@@ -262,7 +250,7 @@ test('structureBuilt represents each accepted build once', () => {
   const builtBefore = h.view.lifecycleCounts().built;
   const turret = build(h, 'player', 'turret', at(-10, 30));
   const barracks = build(h, 'enemy', 'barracks', at(10, -40));
-  assertMatchesEcs(h);
+  assertConsistent(h);
   assert.equal(h.view.lifecycleCounts().built, builtBefore + 2);
   assert.equal(healthBarOf(rootAt(h.match.scene, at(-10, 30))).group.position.y, 2.8);
   assert.equal(healthBarOf(rootAt(h.match.scene, at(-10, 30))).width, 2.2);
@@ -280,7 +268,7 @@ test('structureBuilt represents each accepted build once', () => {
   assert.deepEqual(buildStructure(h.match.ctx, 'player', 'generator', at(20, 30)), { accepted: false, reason: 'insufficient-gold' });
   setGold(h.match.ctx, 'player', 10000);
   assert.deepEqual(buildStructure(h.match.ctx, 'player', 'generator', at(-10, 31)), { accepted: false, reason: 'too-close' });
-  assertMatchesEcs(h);
+  assertConsistent(h);
   assert.equal(h.view.lifecycleCounts().built, builtBefore + 2);
 });
 
@@ -297,7 +285,7 @@ test('unitsProduced draws riflemen in the instanced batches and tanks as meshes'
 
   assert.equal(h.view.unitsProduced(playerEvents), 1);
   const tankRoot = addedGroup(h.match.scene, () => assert.equal(h.view.unitsProduced(enemyEvents), 0));
-  assertMatchesEcs(h);
+  assertConsistent(h);
   assert.equal(h.view.lifecycleCounts().produced, producedBefore + 2);
 
   h.match.soldiers.sync(h.match.camera.quaternion, 0);
@@ -339,7 +327,7 @@ test('sync follows the ECS: health, movement and aim', () => {
   h.view.syncUnitsAndTurrets(h.match.camera);
   h.view.syncStructures(h.match.camera);
   h.match.soldiers.sync(h.match.camera.quaternion, 0);
-  assertMatchesEcs(h);
+  assertConsistent(h);
 
   // Movement: each mesh is where the ECS says, after every advance.
   const first = h.world.getComponent(tank, COMPONENTS.transform);
@@ -400,7 +388,7 @@ test('sync follows the ECS: health, movement and aim', () => {
   const riflemanDrawn = instanceTransform(soldierBody(h.match.scene, 0x00f0ff), 0).position;
   assert.ok(Math.abs(riflemanDrawn.x - riflemanNow.x) < 1e-5 && Math.abs(riflemanDrawn.z - riflemanNow.z) < 1e-5);
   assert.ok(riflemanDrawn.distanceTo(riflemanStart) > 0.1);
-  assertMatchesEcs(h);
+  assertConsistent(h);
 });
 
 test('unit deaths: explosion, then wreck or corpse, then removal', () => {
@@ -447,7 +435,7 @@ test('unit deaths: explosion, then wreck or corpse, then removal', () => {
   assert.equal(h.view.lifecycleCounts().unitDied, counts.unitDied + 2);
   h.match.soldiers.sync(h.match.camera.quaternion, 0);
   assert.equal(soldierBody(h.match.scene, 0x00f0ff).count, 0);
-  assertMatchesEcs(h);
+  assertConsistent(h);
 });
 
 test('structure deaths: ruin, then explosion, then removal, only in the structures phase', () => {
@@ -476,7 +464,7 @@ test('structure deaths: ruin, then explosion, then removal, only in the structur
   assert.equal(h.view.stats().remains, remains + 1);
   for (const count of disposals.values()) assert.equal(count, 1);
   assert.equal(h.view.lifecycleCounts().structureDestroyed, destroyed + 1);
-  assertMatchesEcs(h);
+  assertConsistent(h);
 });
 
 test('Nexus destruction: no ruin, a nuclear cue and the shield disposed once', () => {
@@ -499,6 +487,7 @@ test('Nexus destruction: no ruin, a nuclear cue and the shield disposed once', (
   assert.deepEqual(h.cues, [{ position: { x: transform.x, y: transform.y, z: transform.z }, scale: 3.0, nuclear: true }]);
   assert.equal(h.view.stats().remains, remains);
   for (const count of shieldDisposals.values()) assert.equal(count, 1);
+  assertConsistent(h);
   h.view.syncShields({ player: true, enemy: true }, 100);
   h.view.clear();
   for (const count of shieldDisposals.values()) assert.equal(count, 1);
@@ -532,8 +521,10 @@ test('a Nexus falling with other deaths in the same frame removes every visual o
   // The player's Nexus and barracks plus one ruin, one wreck and one corpse.
   assert.equal(h.view.stats().remains, 3);
   assert.equal(drawnGroups.length, 2 + 3);
-  assert.deepEqual(h.cues.map((cue) => [cue.scale, cue.nuclear]).sort(), [[1.2, false], [3, true]]);
-  assertMatchesEcs(h);
+  const expectedCues = events.flatMap((event) =>
+    event.type === 'structureDestroyed' ? [[event.kind === 'hq' ? 3 : 1.2, event.kind === 'hq']] : []);
+  assert.deepEqual(h.cues.map((cue) => [cue.scale, cue.nuclear]), expectedCues);
+  assertConsistent(h);
 });
 
 test('a production completing as its barracks falls', () => {
@@ -552,7 +543,7 @@ test('a production completing as its barracks falls', () => {
 
   assert.equal(h.view.has(produced[0].soldier), true);
   assert.equal(h.view.has(barracks), false);
-  assertMatchesEcs(h);
+  assertConsistent(h);
 });
 
 test('removedWithoutEffects removes sold and discarded visuals without remains or explosions', () => {
@@ -574,11 +565,11 @@ test('removedWithoutEffects removes sold and discarded visuals without remains o
 
   assert.equal(sellStructure(h.match.ctx, 'player', generator).accepted, true);
   h.view.removedWithoutEffects(generator, 'sold');
-  assertMatchesEcs(h);
+  assertConsistent(h);
   for (const entity of [tank, rifleman, enemyBarracks]) {
     h.world.removeEntity(entity);
     h.view.removedWithoutEffects(entity, 'diagnostic');
-    assertMatchesEcs(h);
+    assertConsistent(h);
   }
   h.view.removedWithoutEffects(9999, 'sold');
   h.view.removedWithoutEffects(generator, 'sold');
@@ -609,7 +600,7 @@ test('deathsResolved works from event data alone', () => {
   const corpse = addedGroup(h.match.scene, () => h.view.deathsResolved(events, 'units', h.cues));
   assert.deepEqual(corpse.position.toArray(), [7, 0, 33]);
   assert.deepEqual(h.cues.map((cue) => cue.position), [{ x: 7, y: 0, z: 33 }]);
-  assertMatchesEcs(h);
+  assertConsistent(h);
 });
 
 test('a missing component keeps the last visual state, and sync never removes a visual', () => {
@@ -757,6 +748,7 @@ test('pickOwnStructure climbs to the registered root', () => {
   raycaster.set(new THREE.Vector3(10, 1, -30), new THREE.Vector3(0, 0, -1));
   assert.equal(h.view.pickOwnStructure(raycaster, 'player'), undefined);
   assert.equal(h.view.pickOwnStructure(raycaster, 'enemy'), enemyBarracks);
+  assertConsistent(h);
 });
 
 test('presentation never writes the ECS', () => {
@@ -790,7 +782,7 @@ test('presentation never writes the ECS', () => {
     h.view.pickOwnStructure(new THREE.Raycaster(), 'player');
   });
   assert.deepEqual(snapshotCommandState(h.match.ctx), before);
-  assertMatchesEcs(h);
+  assertConsistent(h);
 });
 
 test('syncShields follows the active flags and pulses on the gameplay clock', () => {
@@ -814,4 +806,25 @@ test('syncShields follows the active flags and pulses on the gameplay clock', ()
   assert.equal(player.visible, false);
   assert.equal(enemy.visible, true);
   assert.deepEqual(player.scale.toArray(), [1, 1, 1]);
+  assertConsistent(h);
+});
+
+test('exemptions: declared without a visual, checked, and emptied by clear', () => {
+  const h = setup();
+  const barracks = build(h, 'player', 'barracks', at(0, 40));
+  h.view.removedWithoutEffects(barracks, 'diagnostic');
+  h.view.declareWithoutVisual(barracks);
+  assert.deepEqual([...h.view.exemptions()], [barracks]);
+  assertConsistent(h);
+
+  const registered = h.match.simulation.playerBase;
+  assert.throws(() => h.view.declareWithoutVisual(registered), /already has a visual/);
+
+  h.view.forgetWithoutVisual(barracks);
+  assert.equal(h.view.exemptions().size, 0);
+  assert.ok(checkVisualConsistency(h.world, h.view).missingVisual.includes(barracks));
+
+  h.view.declareWithoutVisual(barracks);
+  h.view.clear();
+  assert.equal(h.view.exemptions().size, 0);
 });

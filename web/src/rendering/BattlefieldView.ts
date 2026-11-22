@@ -103,6 +103,8 @@ export class BattlefieldView {
   /** Registered roots, so a raycast hit on any child climbs back to its entity. */
   readonly #roots = new WeakMap<THREE.Object3D, Entity>();
   readonly #explosionPoint = new THREE.Vector3();
+  /** Entities that are deliberately invisible (C5); the dev consistency check skips them. */
+  readonly #exempt = new Set<Entity>();
   #counts = { built: 0, produced: 0, unitDied: 0, structureDestroyed: 0, sold: 0, discarded: 0, clears: 0 };
 
   constructor(options: BattlefieldViewOptions) {
@@ -294,6 +296,20 @@ export class BattlefieldView {
     return undefined;
   }
 
+  /** C5: marks an entity as intentionally without a visual. */
+  declareWithoutVisual(entity: Entity): void {
+    this.#assertNew(entity);
+    this.#exempt.add(entity);
+  }
+
+  forgetWithoutVisual(entity: Entity): void {
+    this.#exempt.delete(entity);
+  }
+
+  exemptions(): ReadonlySet<Entity> {
+    return this.#exempt;
+  }
+
   has(entity: Entity): boolean {
     return this.#visuals.has(entity);
   }
@@ -325,6 +341,7 @@ export class BattlefieldView {
       disposeObjectResources(visual.group);
     }
     this.#visuals.clear();
+    this.#exempt.clear();
     for (const faction of FACTION_ORDER) {
       this.#structures[faction].length = 0;
       this.#units[faction].length = 0;
