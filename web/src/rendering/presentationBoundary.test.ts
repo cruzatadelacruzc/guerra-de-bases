@@ -12,6 +12,9 @@ interface ImportRecord {
 /** Presentation modules outside rendering/ that obey the same boundary. */
 const EXTRA_PRESENTATION_MODULES: string[] = ['dev/visualConsistency.ts'];
 
+/** Presentation modules allowed to touch the DOM: they own the canvas, the viewport and the pointer input. */
+const DOM_EXCEPTIONS = ['rendering/MapCameraController.ts', 'rendering/ThreeRenderCoordinator.ts'];
+
 const ENTITY_VIEWS = ['BattlefieldView.ts', 'ProjectileView.ts', 'BattlefieldRemains.ts'];
 
 /** Rules match on the import path resolved against web/src, so `./x.ts` and `../dev/x.ts` are caught alike. */
@@ -84,6 +87,30 @@ const presentationFiles: Array<{ name: string; code: string }> = [
   ...EXTRA_PRESENTATION_MODULES.map((file) => ({ name: file, code: read(new URL(`../${file}`, import.meta.url)) }))
 ];
 
+const gameFiles = productionFiles(gameUrl, true, () => false).map((url) => ({
+  name: `game/${url.pathname.split('/game/')[1] ?? url.pathname}`,
+  code: read(url)
+}));
+
+test('the watched file sets are not empty and include the entity views', () => {
+  assert.ok(presentationFiles.length > 0);
+  for (const view of ENTITY_VIEWS) {
+    assert.ok(presentationFiles.some(({ name }) => name.endsWith(`/${view}`)), `${view} is not watched`);
+  }
+  assert.ok(gameFiles.length > 0);
+  for (const file of ['game/ecs/World.ts', 'game/ecs/WorldReader.ts']) {
+    assert.ok(gameFiles.some(({ name }) => name === file), `${file} is not watched`);
+  }
+});
+
+test('presentation modules do not use the DOM, except the documented exceptions', () => {
+  const offenders = presentationFiles
+    .filter(({ name }) => !DOM_EXCEPTIONS.includes(name))
+    .filter(({ code }) => /\b(document|window|navigator)\s*\./.test(code))
+    .map(({ name }) => name);
+  assert.deepEqual(offenders, []);
+});
+
 test('presentation modules value-import no ECS-mutating module', () => {
   const offenders = presentationFiles.flatMap(({ name, code }) =>
     importRecords(code)
@@ -109,10 +136,8 @@ test('entity views import neither platform, the camera controller nor audio', ()
 });
 
 test('game modules import neither three, rendering, ui nor platform', () => {
-  const offenders = productionFiles(gameUrl, true, () => false).flatMap((url) => {
-    const name = `game/${url.pathname.split('/game/')[1] ?? url.pathname}`;
-    return importRecords(read(url)).filter((record) => isForbiddenForGame(name, record)).map((record) => `${name}: ${record.specifier}`);
-  });
+  const offenders = gameFiles.flatMap(({ name, code }) =>
+    importRecords(code).filter((record) => isForbiddenForGame(name, record)).map((record) => `${name}: ${record.specifier}`));
   assert.deepEqual(offenders, []);
 });
 

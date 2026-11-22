@@ -834,7 +834,7 @@ Chrome 155 headless con GPU (Intel UHD 620 por Vulkan), servidor de desarrollo c
 - **Paso 10:** `renderer.info` no bajó (24 → 24) porque la barraca enemiga descartada nunca se había dibujado: estaba fuera del encuadre y `renderer.info` solo cuenta lo que se ha subido a la GPU (limitación de §5.9). La liberación con objetos dibujados la muestra la comprobación 3 de abajo.
 - **Geometrías por encima de lo esperado en los pasos 13b y 14 (+1 y +3).** Solo cambia `renderer.info.memory.geometries`; las geometrías y materiales de la escena y las texturas son iguales a la línea base. Una ejecución de control en una página nueva lo explica:
   - menú 95 → tras una partida sin disparos 95 → tras un combate 96 → tras otro 96 → tras una artillería 97 → tras otra 97;
-  - son tres geometrías compartidas que viven lo que vive la aplicación y que `renderer.info` cuenta desde que se dibujan por primera vez: las dos de `ProjectilePool` (`light` y `heavy`) y la de los proyectiles de artillería de `RewardEffectsView` («only released by dispose()»);
+  - lo medido es que `renderer.info` sube +2 en la ejecución de control (96 tras el primer combate, 97 tras la primera artillería); la explicación es una inferencia: muy probablemente son geometrías compartidas que viven lo que vive la aplicación y que `renderer.info` cuenta desde que se dibujan por primera vez, las dos de `ProjectilePool` (`light` y `heavy`) y la de los proyectiles de artillería de `RewardEffectsView` («only released by dispose()»), pero la ejecución de control solo aisló +2 y no identificó cada geometría;
   - ninguna la cambió R6, y no crecen: el paso 13b repetido y los tres ciclos del paso 14 se quedan iguales.
 
   No es una fuga, pero **el valor literal esperado no se cumple**, porque la línea base se tomó antes de que se usaran por primera vez. Se deja anotado así, sin cambiar la expectativa.
@@ -922,7 +922,25 @@ En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.6:
 - **Sin cambios, como se acordó (§9):** R7 y R8, los espejos de oro, `SFX` y los hápticos, el temblor dentro de `MapCameraController`, compartir geometrías entre barras y edificios, `enemyAIEnabled` al empezar otra partida, la zona de construcción duplicada y `aiMs` con la creación de mallas.
 - **Al terminar R6 no se empieza R7.**
 
-### 13.7 Alcance
+### 13.7 Revisión independiente final (`d8fb2f1..a4ce991`)
+
+- **Resultado:** «lista con correcciones». 0 críticos.
+- **Corregidos en el commit de cierre:**
+  1. (Importante) `presentationBoundary.test.ts` no tenía la regla de §6.1: un módulo de presentación no usa `document`, `window` ni `navigator`, salvo `MapCameraController.ts` y `ThreeRenderCoordinator.ts`. Se añadió; empezó en verde y falla con una infracción temporal (no confirmada).
+  2. Las listas de ficheros vigilados podían pasar en vacío: ahora se exige que no estén vacías y que contengan las tres vistas de entidad (`BattlefieldView.ts`, `ProjectileView.ts`, `BattlefieldRemains.ts`) y, en `game/`, `World.ts` y `WorldReader.ts`.
+  3. README: la prueba de `BattlefieldView` congela una vez todos los componentes y ejecuta cada operación.
+  4. Auditoría, fila R6 de §7: el inicio es `1438b55` (primer commit de implementación), como en R4 y R5.
+  5. §13.3: la explicación de las geometrías compartidas se marca como inferencia y se separa de lo medido.
+- **Registrado, sin corregir:**
+  - lista de categorías de consistencia duplicada en `GameApplication` (desarrollo);
+  - la lógica de sonido y temblor de la explosión está duplicada entre `createCinematicExplosion` y `playExplosionFeedback`;
+  - `stats()` asigna memoria en cada fotograma en el modo de diagnóstico;
+  - `declareWithoutVisual` se acepta sin un `World` conectado (desarrollo);
+  - `PlacementGhost` usa `private` de TypeScript en lugar de `#`;
+  - para R8: el `dispose()` del runtime también debería limpiar la vista del campo de batalla, los soldados del menú y el terreno;
+  - tras R6, a petición del usuario: arreglar el temblor invisible de la caída del Nexo, manteniendo la intensidad 4,5 y **solo en la derrota**.
+
+### 13.8 Alcance
 
 `git diff 38b0ae7 d12120d --stat` (hasta el commit de cierre; la ronda de corrección posterior solo cambia este informe): 30 ficheros, 4.681 inserciones y 1.100 borrados.
 
