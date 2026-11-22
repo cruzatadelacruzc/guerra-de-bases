@@ -6,6 +6,7 @@ import { BattleSimulation } from '../game/ecs/BattleSimulation.ts';
 import { COMPONENTS } from '../game/ecs/components.ts';
 import type { ComponentName } from '../game/ecs/components.ts';
 import type { World } from '../game/ecs/World.ts';
+import { BattlefieldView } from './BattlefieldView.ts';
 import { CombatEffects } from './CombatEffects.ts';
 import { InstancedSoldierRenderer } from './InstancedSoldierRenderer.ts';
 import { ProjectilePool } from './ProjectilePool.ts';
@@ -50,4 +51,16 @@ export function createPresentationTestMatch(): PresentationTestMatch {
     pool: new ProjectilePool(scene),
     camera: new THREE.PerspectiveCamera(45, 1, 0.1, 1000)
   };
+}
+
+/** A battlefield view over the match's scene, renderers and effects, already attached to its world. */
+export function createBattlefieldTestView(match: PresentationTestMatch): BattlefieldView {
+  const view = new BattlefieldView({
+    scene: match.scene,
+    soldiers: match.soldiers,
+    effects: match.effects,
+    healthBarsVisible: true
+  });
+  view.attach(match.simulation.world);
+  return view;
 }

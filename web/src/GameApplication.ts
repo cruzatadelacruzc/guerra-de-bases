@@ -6,10 +6,7 @@ import type { SimulationPhase, SimulationProfiler } from './game/ecs/BattleSimul
 import { visitCombatPositions } from './game/ecs/combatFocus.ts';
 import { ENEMY_BASE_POSITION, PLAYER_BASE_POSITION } from './game/ecs/initialBattle.ts';
 import { requestUnitProduction } from './game/ecs/systems.ts';
-import type {
-    ProductionCompletedEvent,
-    ProductionOverrides
-} from './game/ecs/systems.ts';
+import type { ProductionOverrides } from './game/ecs/systems.ts';
 import { EnemyAiController } from './game/ai/EnemyAiController.ts';
 import type { EnemyAiTurn } from './game/ai/enemyAi.ts';
 import { getEnemyAiProfile } from './game/ai/enemyAiProfile.ts';
@@ -27,7 +24,6 @@ import type { FrameTiming } from './game/GameFrameLoop.ts';
 import { exceedsTapTolerance, GameInputController, isDoubleTap, type TapSample } from './game/GameInputController.ts';
 import { GameSession } from './game/GameSession.ts';
 import { DeathResolver } from './game/match/DeathResolver.ts';
-import type { MatchEvent } from './game/match/matchEvents.ts';
 import { createMatchState } from './game/match/MatchState.ts';
 import { advanceStrikes, clearStrikes } from './game/match/rewardExecution.ts';
 import type { StrikeEvent } from './game/match/rewardExecution.ts';
@@ -58,48 +54,17 @@ import type {
 import type { MapCameraController } from './rendering/MapCameraController.ts';
 import { createBattlefieldTerrain, MenuSoldiers, type BattlefieldTerrain } from './rendering/battlefieldScene.ts';
 import { airStrikeShots, artilleryShots } from './rendering/strikeCinematics.ts';
-import { BattlefieldRemains } from './rendering/BattlefieldRemains.ts';
+import { BattlefieldView } from './rendering/BattlefieldView.ts';
+import type { ExplosionCue } from './rendering/BattlefieldView.ts';
 import { ProjectileView } from './rendering/ProjectileView.ts';
 import type { ShotKind } from './rendering/ProjectileView.ts';
 import { PlacementGhost } from './rendering/PlacementGhost.ts';
-import {
-    createHQMesh,
-    createNexusShieldVisual,
-    createTankMesh,
-    disposeObjectResources,
-    instantiateBuildingMesh
-} from './rendering/battlefieldMeshes.ts';
-import { createHealthBar, type HealthBar } from './rendering/HealthBar.ts';
 import { muzzleOrigin, RewardEffectsView } from './rendering/RewardEffectsView.ts';
-import type { SoldierVisualHandle } from './rendering/InstancedSoldierRenderer.ts';
 import { DiagnosticsOverlay, formatDiagnosticsResult } from './dev/DiagnosticsOverlay.ts';
 import { parseDiagnosticsOptions } from './dev/diagnosticsOptions.ts';
 import { disableBackdropBlur } from './dev/backdropBlur.ts';
 import { countEntities, createEntityCensus } from './dev/entityCensus.ts';
 import { MetricRing } from './dev/MetricRing.ts';
-
-interface RuntimeStructure {
-    mesh: THREE.Group;
-    hp: number;
-    maxHp: number;
-    position: THREE.Vector3;
-    type: BuildingType | 'hq';
-    isPlayer: boolean;
-    healthBar?: HealthBar;
-    ecsEntityId?: Entity;
-}
-
-interface RuntimeUnit {
-    mesh: THREE.Group | SoldierVisualHandle;
-    hp: number;
-    maxHp: number;
-    type: UnitType;
-    isPlayer: boolean;
-    healthBar?: HealthBar;
-    ecsEntityId: Entity;
-}
-
-type RuntimeTarget = RuntimeStructure | RuntimeUnit;
 
 interface AudioWindow extends Window {
     webkitAudioContext?: typeof AudioContext;
@@ -373,21 +338,20 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let cameraController: MapCameraController;
     let soldierRenderer: ThreeRenderCoordinator['soldiers'];
     let combatEffects: ThreeRenderCoordinator['effects'];
-    let remains: BattlefieldRemains;
+    let battlefieldView: BattlefieldView;
     let projectilePool: ThreeRenderCoordinator['projectiles'];
     let rewardEffectsView: RewardEffectsView;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    // Active Game Collections
-    let playerBuildings: RuntimeStructure[] = [];
-    let enemyBuildings: RuntimeStructure[] = [];
-    let rewardScenarioBuildings: RuntimeStructure[] = [];
-    let playerUnits: RuntimeUnit[] = [];
-    let enemyUnits: RuntimeUnit[] = [];
+    let rewardScenarioEntities: Entity[] = [];
     let projectileView: ProjectileView;
     const shots: ShotKind[] = [];
     const heavyImpacts: Position[] = [];
+    /** Filled by each deathsResolved call and played right after it. */
+    const explosionCues: ExplosionCue[] = [];
+    /** Refilled from the match state before each syncShields call. */
+    const shieldState: Record<'player' | 'enemy', boolean> = { player: false, enemy: false };
     let menuSoldiers: MenuSoldiers;
     const diagnosticsEnabled = import.meta.env.DEV
         && new URLSearchParams(window.location.search).get('diagnostics') === '1';
@@ -424,10 +388,9 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     // Economy & AI Targets
     let gold = 200;
     let enemyGold = 200;
-    let playerHQ: RuntimeStructure | null = null;
-    let enemyHQ: RuntimeStructure | null = null;
     let battleSimulation: BattleSimulation | null = null;
-    const targetObjects = new Map<Entity, RuntimeTarget>();
+    /** The player's Nexus health one frame ago, for the damage alert. */
+    let lastPlayerNexusHealth = NEXUS_HEALTH;
     let selectedBuildType: BuildingType | null = null;
     let placementGhost: PlacementGhost | null = null;
     let isDemolishMode = false;
@@ -436,8 +399,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let aiDifficulty: 'easy' | 'normal' | 'hard' = 'normal';
     let gameplayClockMs = 0;
     let lastRewardUiUpdateMs = -Infinity;
-    let playerShieldVisual: THREE.Mesh | null = null;
-    let enemyShieldVisual: THREE.Mesh | null = null;
 
     let stats: { soldiersTrained: number; buildingsConstructed: number; startTime: number } = {
         soldiersTrained: 0,
@@ -475,7 +436,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         cameraController.onAutoZoomChange = (enabled) => ui.setAutoZoom(enabled);
         soldierRenderer = renderCoordinator.soldiers;
         combatEffects = renderCoordinator.effects;
-        remains = new BattlefieldRemains(scene, combatEffects);
+        battlefieldView = new BattlefieldView({
+            scene,
+            soldiers: soldierRenderer,
+            effects: combatEffects,
+            healthBarsVisible: !diagnosticsOptions || diagnosticsOptions.bars
+        });
         projectilePool = renderCoordinator.projectiles;
         projectileView = new ProjectileView(projectilePool, soldierRenderer);
         rewardEffectsView = new RewardEffectsView({ scene, shellOrigin: strikeShellOrigin });
@@ -569,49 +535,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         matchState = createMatchState();
         gameplayClockMs = 0;
         lastRewardUiUpdateMs = -Infinity;
-        playerShieldVisual = null;
-        enemyShieldVisual = null;
 
         // A fresh enemy AI per match: its own decision clock and structure targets.
         enemyAi = new EnemyAiController(getEnemyAiProfile(aiDifficulty), Math.random);
 
         updateResourceUI();
-
-        // Player Nexus (HQ)
-        playerHQ = {
-            mesh: createHQMesh(0x00f0ff),
-            hp: NEXUS_HEALTH,
-            maxHp: NEXUS_HEALTH,
-            position: new THREE.Vector3(PLAYER_BASE_POSITION.x, PLAYER_BASE_POSITION.y, PLAYER_BASE_POSITION.z),
-            type: 'hq',
-            isPlayer: true
-        };
-        playerHQ.mesh.position.copy(playerHQ.position);
-        playerHQ.healthBar = createHealthBar(true, 5.2, 4.0, !diagnosticsOptions || diagnosticsOptions.bars);
-        playerHQ.mesh.add(playerHQ.healthBar.group);
-        playerShieldVisual = createNexusShieldVisual(0x22d3ee);
-        playerHQ.mesh.add(playerShieldVisual);
-
-        scene.add(playerHQ.mesh);
-        playerBuildings.push(playerHQ);
-
-        // Enemy Nexus (HQ)
-        enemyHQ = {
-            mesh: createHQMesh(0xff3344),
-            hp: NEXUS_HEALTH,
-            maxHp: NEXUS_HEALTH,
-            position: new THREE.Vector3(ENEMY_BASE_POSITION.x, ENEMY_BASE_POSITION.y, ENEMY_BASE_POSITION.z),
-            type: 'hq',
-            isPlayer: false
-        };
-        enemyHQ.mesh.position.copy(enemyHQ.position);
-        enemyHQ.healthBar = createHealthBar(false, 5.2, 4.0, !diagnosticsOptions || diagnosticsOptions.bars);
-        enemyHQ.mesh.add(enemyHQ.healthBar.group);
-        enemyShieldVisual = createNexusShieldVisual(0xfb7185);
-        enemyHQ.mesh.add(enemyShieldVisual);
-
-        scene.add(enemyHQ.mesh);
-        enemyBuildings.push(enemyHQ);
+        lastPlayerNexusHealth = NEXUS_HEALTH;
 
         const enemyBaseIncome = getDifficultyProfile(aiDifficulty).enemyBaseIncome;
         battleSimulation = new BattleSimulation({
@@ -630,10 +559,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 );
             }
         });
-        playerHQ.ecsEntityId = battleSimulation.playerBase;
-        enemyHQ.ecsEntityId = battleSimulation.enemyBase;
-        targetObjects.set(playerHQ.ecsEntityId, playerHQ);
-        targetObjects.set(enemyHQ.ecsEntityId, enemyHQ);
+        // The Nexuses are drawn from the ECS once the simulation holds them, player first.
+        battlefieldView.attach(battleSimulation.world);
+        battlefieldView.structureBuilt(battleSimulation.playerBase);
+        battlefieldView.structureBuilt(battleSimulation.enemyBase);
 
         showToast("¡Construye Barracas para desplegar tropas!");
     }
@@ -672,32 +601,13 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             window.clearTimeout(matchEndTimeout);
             matchEndTimeout = undefined;
         }
-        remains.clear();
+        battlefieldView.clear();
         rewardEffectsView.clear();
-        disposeNexusShieldVisuals();
-        for (const building of [...playerBuildings, ...enemyBuildings]) {
-            scene.remove(building.mesh);
-            disposeObjectResources(building.mesh);
-        }
-        for (const unit of [...playerUnits, ...enemyUnits]) {
-            if (unit.type === 'rifleman') soldierRenderer.remove(unit.ecsEntityId);
-            else if (unit.mesh instanceof THREE.Object3D) {
-                scene.remove(unit.mesh);
-                disposeObjectResources(unit.mesh);
-            }
-        }
         projectileView.clear();
         combatEffects.clear();
         battleSimulation?.world.clear();
         cameraShake = 0;
-        playerBuildings = [];
-        enemyBuildings = [];
-        rewardScenarioBuildings = [];
-        playerUnits = [];
-        enemyUnits = [];
-        playerHQ = null;
-        enemyHQ = null;
-        targetObjects.clear();
+        rewardScenarioEntities = [];
         battleSimulation = null;
         cancelPlacement();
         isDemolishMode = false;
@@ -705,16 +615,15 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     }
 
     function updateResourceUI() {
-        const activeBarracks = playerBuildings.filter(isValidSoldierFactory);
         const production: BarracksProductionView[] = [];
+        let barracksCount = 0;
         let availableFactories = 0;
         const simulation = battleSimulation;
         if (simulation) {
+            const activeBarracks = liveFactories(simulation.world, ECS_FACTIONS.player);
+            barracksCount = activeBarracks.length;
             for (const barracks of activeBarracks) {
-                const order = simulation.world.getComponent(
-                    barracks.ecsEntityId,
-                    ECS_COMPONENTS.production
-                )?.order;
+                const order = simulation.world.getComponent(barracks, ECS_COMPONENTS.production)?.order;
                 if (!order) {
                     availableFactories++;
                     continue;
@@ -728,7 +637,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             gold = getFactionGold(ECS_FACTIONS.player);
             enemyGold = getFactionGold(ECS_FACTIONS.enemy);
         }
-        ui.updateResources(gold, enemyGold, activeBarracks.length, availableFactories, production);
+        ui.updateResources(gold, enemyGold, barracksCount, availableFactories, production);
         updateRewardUI();
     }
 
@@ -802,17 +711,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             difficulty: aiDifficulty,
             nowMs: gameplayClockMs
         };
-    }
-
-    function isValidSoldierFactory(
-        building: RuntimeStructure
-    ): building is RuntimeStructure & { ecsEntityId: Entity } {
-        if (building.ecsEntityId === undefined || !battleSimulation
-            || battleSimulation.world.getComponent(building.ecsEntityId, ECS_COMPONENTS.building)?.kind
-                !== 'barracks') return false;
-        if (!battleSimulation.world.getComponent(building.ecsEntityId, ECS_COMPONENTS.factory)) return false;
-        const health = battleSimulation.world.getComponent(building.ecsEntityId, ECS_COMPONENTS.health);
-        return health !== undefined && health.current > 0;
     }
 
     function toggleDemolishMode() {
@@ -925,37 +823,21 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         // Demolish Click
         if (isDemolishMode) {
             raycaster.setFromCamera(mouse, camera);
-            const playerMeshes = playerBuildings
-                .filter(b => b.type !== 'hq')
-                .map(b => b.mesh);
+            const entity = battlefieldView.pickOwnStructure(raycaster, ECS_FACTIONS.player);
+            if (entity !== undefined) {
+                const simulation = battleSimulation;
+                if (!simulation) return;
+                const sale = sellStructure(commandContext(simulation), ECS_FACTIONS.player, entity);
+                // Only non-Nexus structures are hit-tested above, so a rejection only happens outside play.
+                if (!sale.accepted) return;
+                syncGoldMirrors();
 
-            const intersects = raycaster.intersectObjects(playerMeshes, true);
-            if (intersects.length > 0) {
-                let hitMesh = intersects[0].object;
-                while (hitMesh.parent && hitMesh.parent.type === "Group" && !playerBuildings.some(b => b.mesh === hitMesh)) {
-                    hitMesh = hitMesh.parent;
-                }
+                SFX.playBuild();
+                battlefieldView.removedWithoutEffects(entity, 'sold');
 
-                const buildingIndex = playerBuildings.findIndex(b => b.mesh === hitMesh);
-                if (buildingIndex !== -1) {
-                    const b = playerBuildings[buildingIndex];
-                    const simulation = battleSimulation;
-                    if (!simulation || b.ecsEntityId === undefined) return;
-                    const sale = sellStructure(commandContext(simulation), ECS_FACTIONS.player, b.ecsEntityId);
-                    // Only non-Nexus meshes are hit-tested above, so a rejection only happens outside play.
-                    if (!sale.accepted) return;
-                    syncGoldMirrors();
-
-                    SFX.playBuild();
-                    scene.remove(b.mesh);
-                    disposeObjectResources(b.mesh);
-                    targetObjects.delete(b.ecsEntityId);
-                    playerBuildings.splice(buildingIndex, 1);
-
-                    showToast(`🗑️ Estructura vendida. Recuperas +${sale.refund} Oro.`);
-                    updateResourceUI();
-                    return;
-                }
+                showToast(`🗑️ Estructura vendida. Recuperas +${sale.refund} Oro.`);
+                updateResourceUI();
+                return;
             }
         }
 
@@ -985,7 +867,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     buildingsPlaced: stats.buildingsConstructed,
                     buildingType: type
                 });
-                representStructure(build.entity);
+                battlefieldView.structureBuilt(build.entity);
                 showToast(`¡${type.toUpperCase()} CONSTRUIDO!`);
             } else {
                 showToast("¡Recursos insuficientes!");
@@ -994,82 +876,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             cancelPlacement();
             updateResourceUI();
         }
-    }
-
-    /** Creates the visual of a structure the ECS already holds, from its ECS state. */
-    function representStructure(entity: Entity): RuntimeStructure {
-        const simulation = battleSimulation;
-        if (!simulation) throw new Error('Cannot represent a structure without a battle');
-        const { world } = simulation;
-        const type = world.getComponent(entity, ECS_COMPONENTS.building)?.kind;
-        const faction = world.getComponent(entity, ECS_COMPONENTS.faction);
-        const position = world.getComponent(entity, ECS_COMPONENTS.transform);
-        const health = world.getComponent(entity, ECS_COMPONENTS.health);
-        if (!type || type === 'hq' || !faction || !position || !health) {
-            throw new Error(`Entity ${entity} is not a placeable structure`);
-        }
-        const isPlayer = faction === ECS_FACTIONS.player;
-        const mesh = instantiateBuildingMesh(type, isPlayer);
-        mesh.position.set(position.x, position.y, position.z);
-        const building: RuntimeStructure = {
-            mesh,
-            hp: health.current,
-            maxHp: health.max,
-            position: new THREE.Vector3(position.x, position.y, position.z),
-            type,
-            isPlayer,
-            healthBar: createHealthBar(isPlayer, type === 'turret' ? 2.8 : 2.5, 2.2, !diagnosticsOptions || diagnosticsOptions.bars),
-            ecsEntityId: entity
-        };
-        if (building.healthBar) mesh.add(building.healthBar.group);
-        scene.add(mesh);
-        targetObjects.set(entity, building);
-        (isPlayer ? playerBuildings : enemyBuildings).push(building);
-        return building;
-    }
-
-    function createTroopVisual(event: ProductionCompletedEvent): void {
-        if (!battleSimulation || !soldierRenderer) {
-            throw new Error('Cannot render a completed production order before the battle renderer is initialized');
-        }
-        const { world } = battleSimulation;
-        const position = world.getComponent(event.soldier, ECS_COMPONENTS.transform);
-        const health = world.getComponent(event.soldier, ECS_COMPONENTS.health);
-        const kind = world.getComponent(event.soldier, ECS_COMPONENTS.soldierKind);
-        if (!position || !health || !kind) {
-            throw new Error(`Completed production entity ${event.soldier} is missing soldier state`);
-        }
-
-        const isPlayer = event.faction === ECS_FACTIONS.player;
-        const spawnPosition = new THREE.Vector3(position.x, position.y, position.z);
-        const mesh = kind === 'rifleman'
-            ? soldierRenderer.add(event.soldier, event.faction, spawnPosition)
-            : createTankMesh(isPlayer ? 0x00f0ff : 0xff3344);
-        mesh.position.copy(spawnPosition);
-
-        const unitObj: RuntimeUnit = {
-            mesh: mesh,
-            hp: health.current,
-            maxHp: health.max,
-            type: kind,
-            isPlayer: isPlayer,
-            ecsEntityId: event.soldier
-        };
-
-        if (kind !== 'rifleman') {
-            const healthBar = createHealthBar(isPlayer, 1.8, 1.4, !diagnosticsOptions || diagnosticsOptions.bars);
-            unitObj.healthBar = healthBar;
-            if (mesh instanceof THREE.Group) {
-                mesh.add(healthBar.group);
-                scene.add(mesh);
-            }
-        }
-
-        targetObjects.set(event.soldier, unitObj);
-
-        if (isPlayer) playerUnits.push(unitObj);
-        else enemyUnits.push(unitObj);
-        if (isPlayer) stats.soldiersTrained++;
     }
 
     function trainUnit(unitType: UnitType) {
@@ -1127,7 +933,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             if (!outcome.result.accepted) continue;
             const { command, result } = outcome;
             if (command.type === 'build' && 'entity' in result) {
-                representStructure(result.entity);
+                battlefieldView.structureBuilt(result.entity);
             } else if (command.type === 'activateReward' && 'definition' in result) {
                 representRewardActivation(ECS_FACTIONS.enemy, command.reward, result);
             }
@@ -1149,113 +955,23 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         representEnemyTurn(turn, simulation);
     }
 
-    function createMushroomCloud(position: THREE.Vector3) {
-        cameraShake = 4.5;
-        SFX.playCinematicExplosion(true);
-        haptics.nexusDestroyed();
-        combatEffects.createNuclearExplosion(position);
-    }
-
-    function createCinematicExplosion(position: THREE.Vector3, scale = 1.0, isHQ = false) {
-        if (isHQ) {
-            createMushroomCloud(position);
+    /** Sound and camera shake of one explosion; the haptic pulse too when a Nexus falls. */
+    function playExplosionFeedback(cue: ExplosionCue): void {
+        if (cue.nuclear) {
+            cameraShake = 4.5;
+            SFX.playCinematicExplosion(true);
+            haptics.nexusDestroyed();
             return;
         }
+        SFX.playCinematicExplosion(false);
+        cameraShake = Math.max(cameraShake, cue.scale * 0.7);
+    }
 
+    /** An explosion that is not a death: heavy impacts, strike impacts and the stress scenario. */
+    function createCinematicExplosion(position: THREE.Vector3, scale = 1.0) {
         SFX.playCinematicExplosion(false);
         cameraShake = Math.max(cameraShake, scale * 0.7);
         combatEffects.createExplosion(position, scale);
-    }
-
-    function representUnitDeath(event: Extract<MatchEvent, { type: 'unitDied' }>) {
-        for (const call of unlockEventsFor(event)) unlocks.recordEvent(call.name, call.payload);
-        targetObjects.delete(event.entity);
-        const units = event.faction === ECS_FACTIONS.player ? playerUnits : enemyUnits;
-        const index = units.findIndex((unit) => unit.ecsEntityId === event.entity);
-        if (index < 0) return;
-        const unit = units[index];
-        unit.mesh.position.set(event.position.x, event.position.y, event.position.z);
-        createCinematicExplosion(unit.mesh.position, event.kind === 'tank' ? 1.2 : 0.6, false);
-        if (event.kind === 'tank') {
-            remains.addTankWreck(unit.mesh.position);
-        } else {
-            remains.addSoldierCorpse(unit.mesh.position);
-        }
-        if (unit.type === 'rifleman') {
-            soldierRenderer.remove(event.entity);
-        } else if (unit.mesh instanceof THREE.Object3D) {
-            scene.remove(unit.mesh);
-            disposeObjectResources(unit.mesh);
-        }
-        units.splice(index, 1);
-    }
-
-    function representStructureDestruction(event: Extract<MatchEvent, { type: 'structureDestroyed' }>) {
-        targetObjects.delete(event.entity);
-        const buildings = event.faction === ECS_FACTIONS.player ? playerBuildings : enemyBuildings;
-        const index = buildings.findIndex((building) => building.ecsEntityId === event.entity);
-        if (index < 0) return;
-        const building = buildings[index];
-        const isHQ = event.kind === 'hq';
-        if (!isHQ) remains.addBuildingRuin(building.position, event.kind);
-        createCinematicExplosion(building.position, isHQ ? 3.0 : 1.2, isHQ);
-        scene.remove(building.mesh);
-        disposeObjectResources(building.mesh);
-        buildings.splice(index, 1);
-    }
-
-    function updateUnitGroup(units: RuntimeUnit[]) {
-        const simulation = battleSimulation;
-        if (!simulation) return;
-        for (let i = units.length - 1; i >= 0; i--) {
-            const unit = units[i];
-            const entity = unit.ecsEntityId;
-            const health = simulation.world.getComponent(entity, ECS_COMPONENTS.health);
-            const transform = simulation.world.getComponent(entity, ECS_COMPONENTS.transform);
-            if (health) {
-                unit.hp = health.current;
-                unit.maxHp = health.max;
-            }
-            if (transform) unit.mesh.position.set(transform.x, transform.y, transform.z);
-
-            if (unit.healthBar) {
-                unit.healthBar.update(unit.hp, unit.maxHp);
-                unit.healthBar.billboard(camera);
-            } else {
-                soldierRenderer.setHealth(entity, unit.hp, unit.maxHp);
-            }
-
-            const targetEntity = simulation.getTarget(entity);
-            const targetPosition = targetEntity === undefined
-                ? null
-                : simulation.world.getComponent(targetEntity, ECS_COMPONENTS.transform);
-            if (targetPosition && transform) {
-                unit.mesh.lookAt(targetPosition.x, transform.y, targetPosition.z);
-            }
-        }
-    }
-
-    function updateTurretAim(turret: RuntimeStructure) {
-        const simulation = battleSimulation;
-        const entity = turret.ecsEntityId;
-        if (!simulation || entity === undefined) return;
-        const target = simulation.getTarget(entity);
-        const targetPosition = target === undefined
-            ? undefined
-            : simulation.world.getComponent(target, ECS_COMPONENTS.transform);
-        const head = turret.mesh.userData.head as THREE.Object3D | undefined;
-        if (targetPosition && head) {
-            head.lookAt(targetPosition.x, head.position.y + turret.position.y, targetPosition.z);
-        }
-    }
-
-    function updateTurrets() {
-        for (const turret of playerBuildings) {
-            if (turret.type === 'turret') updateTurretAim(turret);
-        }
-        for (const turret of enemyBuildings) {
-            if (turret.type === 'turret') updateTurretAim(turret);
-        }
     }
 
     function advanceBattleSimulation(delta: number, time: number) {
@@ -1273,12 +989,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             if (shot === 'rifle') SFX.playRifleShot();
             else SFX.playHeavyCannon();
         }
-        for (const event of simulation.drainProductionEvents()) {
-            createTroopVisual(event);
-        }
+        stats.soldiersTrained += battlefieldView.unitsProduced(simulation.drainProductionEvents());
         projectileView.impacts(simulation.drainProjectileImpacts(), heavyImpacts);
         for (const position of heavyImpacts) {
-            createCinematicExplosion(new THREE.Vector3(position.x, position.y, position.z), 0.6, false);
+            createCinematicExplosion(new THREE.Vector3(position.x, position.y, position.z), 0.6);
         }
         projectileView.sync(simulation.world);
     }
@@ -1294,30 +1008,24 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         updateResourceUI();
 
-        if (playerHQ && enemyHQ) {
-            const playerHealth = playerHQ.ecsEntityId === undefined || !battleSimulation
-                ? undefined
-                : battleSimulation.world.getComponent(playerHQ.ecsEntityId, ECS_COMPONENTS.health);
-            const enemyHealth = enemyHQ.ecsEntityId === undefined || !battleSimulation
-                ? undefined
-                : battleSimulation.world.getComponent(enemyHQ.ecsEntityId, ECS_COMPONENTS.health);
+        if (battleSimulation) {
+            const playerHealth = battleSimulation.world.getComponent(battleSimulation.playerBase, ECS_COMPONENTS.health);
+            const enemyHealth = battleSimulation.world.getComponent(battleSimulation.enemyBase, ECS_COMPONENTS.health);
             if (playerHealth) {
-                if (nexusDamageAlert.report(playerHQ.hp, playerHealth.current, gameplayClockMs)) {
+                if (nexusDamageAlert.report(lastPlayerNexusHealth, playerHealth.current, gameplayClockMs)) {
                     ui.flashNexusAlert();
                     showToast('¡NEXUS BAJO ATAQUE!');
                     haptics.nexusUnderAttack();
                 }
-                playerHQ.hp = playerHealth.current;
-                playerHQ.maxHp = playerHealth.max;
+                lastPlayerNexusHealth = playerHealth.current;
             }
-            if (enemyHealth) {
-                enemyHQ.hp = enemyHealth.current;
-                enemyHQ.maxHp = enemyHealth.max;
+            // While PLAYING both bases exist here: a base only leaves in the resolve call below.
+            if (playerHealth && enemyHealth) {
+                ui.setBaseHealth(
+                    { current: playerHealth.current, maximum: playerHealth.max },
+                    { current: enemyHealth.current, maximum: enemyHealth.max }
+                );
             }
-            ui.setBaseHealth(
-                { current: playerHQ.hp, maximum: playerHQ.maxHp },
-                { current: enemyHQ.hp, maximum: enemyHQ.maxHp }
-            );
         }
 
         const resolution = battleSimulation
@@ -1326,42 +1034,26 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 enemy: battleSimulation.enemyBase
             })
             : undefined;
-        for (const event of resolution?.events ?? []) {
-            if (event.type === 'unitDied') representUnitDeath(event);
+        const events = resolution?.events ?? [];
+        for (const event of events) {
+            if (event.type !== 'unitDied') continue;
+            for (const call of unlockEventsFor(event)) unlocks.recordEvent(call.name, call.payload);
         }
+        battlefieldView.deathsResolved(events, 'units', explosionCues);
+        for (const cue of explosionCues) playExplosionFeedback(cue);
 
-        // Update Units with identical billboard camera health bars
-        updateUnitGroup(playerUnits);
-        updateUnitGroup(enemyUnits);
-
-        updateTurrets();
+        // Units, with billboarded health bars, then the turret heads
+        battlefieldView.syncUnitsAndTurrets(camera);
 
         const effectsStart = diagnosticsEnabled ? performance.now() : 0;
         combatEffects.update(delta);
         if (diagnosticsEnabled) diagnosticsEffectsMs = performance.now() - effectsStart;
 
-        for (const event of resolution?.events ?? []) {
-            if (event.type === 'structureDestroyed') representStructureDestruction(event);
-        }
+        battlefieldView.deathsResolved(events, 'structures', explosionCues);
+        for (const cue of explosionCues) playExplosionFeedback(cue);
 
         // Building Health Bars
-        const updateBuildingList = (bList: RuntimeStructure[]) => {
-            for (const b of bList) {
-                if (battleSimulation && b.ecsEntityId !== undefined) {
-                    const health = battleSimulation.world.getComponent(b.ecsEntityId, ECS_COMPONENTS.health);
-                    if (health) {
-                        b.hp = health.current;
-                        b.maxHp = health.max;
-                    }
-                }
-                if (b.healthBar) {
-                    b.healthBar.update(b.hp, b.maxHp);
-                    b.healthBar.billboard(camera);
-                }
-            }
-        };
-        updateBuildingList(playerBuildings);
-        updateBuildingList(enemyBuildings);
+        battlefieldView.syncStructures(camera);
 
         // HQ Nuclear Explosion Trigger. The result is reported as new only once, so this
         // relies on beginMatchEnding succeeding: updateCombat only runs while PLAYING.
@@ -1420,24 +1112,16 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             } else if (event.type === 'impact') {
                 createCinematicExplosion(
                     new THREE.Vector3(event.x, 0, event.z),
-                    event.kind === 'artillery_strike' ? 0.85 : 0.82,
-                    false
+                    event.kind === 'artillery_strike' ? 0.85 : 0.82
                 );
                 haptics.strikeImpact();
             }
         }
     }
 
-    function disposeNexusShieldVisuals(): void {
-        if (playerShieldVisual) disposeObjectResources(playerShieldVisual);
-        if (enemyShieldVisual) disposeObjectResources(enemyShieldVisual);
-        playerShieldVisual = null;
-        enemyShieldVisual = null;
-    }
-
     /** Player-only cinematic: show the salvo leaving the Nexus, then follow it to the impact zone. */
     function playArtilleryCinematic(impactCenter: StrikeAim): void {
-        if (!playerHQ) return;
+        if (!battleSimulation) return;
         cameraController.playShots(artilleryShots(nexusPosition(ECS_FACTIONS.player), impactCenter));
     }
 
@@ -1518,17 +1202,11 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         return session.state === 'PLAYING' && activateRewardForFaction(ECS_FACTIONS.player, id);
     }
 
-    function updateNexusShieldVisuals(): void {
-        if (playerShieldVisual) {
-            playerShieldVisual.visible = isShieldActiveForFaction(ECS_FACTIONS.player);
-            const scale = 1 + Math.sin(gameplayClockMs * 0.004) * 0.035;
-            playerShieldVisual.scale.setScalar(scale);
-        }
-        if (enemyShieldVisual) {
-            enemyShieldVisual.visible = isShieldActiveForFaction(ECS_FACTIONS.enemy);
-            const scale = 1 + Math.sin(gameplayClockMs * 0.004) * 0.035;
-            enemyShieldVisual.scale.setScalar(scale);
-        }
+    /** Refills the reused shield flags from the match state; the view only draws them. */
+    function currentShieldState(): Readonly<Record<'player' | 'enemy', boolean>> {
+        shieldState.player = isShieldActiveForFaction(ECS_FACTIONS.player);
+        shieldState.enemy = isShieldActiveForFaction(ECS_FACTIONS.enemy);
+        return shieldState;
     }
 
     function updateUnlockUI() {
@@ -1583,9 +1261,14 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         const durationSec = Math.floor((Date.now() - stats.startTime) / 1000);
         const mins = Math.floor(durationSec / 60).toString().padStart(2, '0');
         const secs = (durationSec % 60).toString().padStart(2, '0');
-        const enemyHQDamage = enemyHQ
-            ? Math.round((1 - Math.max(0, Math.min(enemyHQ.maxHp, enemyHQ.hp)) / enemyHQ.maxHp) * 100)
-            : 0;
+        // A Nexus that is gone was destroyed: it counts as 0 health, so 100 % damage.
+        const simulation = battleSimulation;
+        const enemyHealth = simulation?.world.getComponent(simulation.enemyBase, ECS_COMPONENTS.health);
+        const enemyBaseDamage = !simulation
+            ? 0
+            : enemyHealth
+                ? Math.round((1 - Math.max(0, Math.min(enemyHealth.max, enemyHealth.current)) / enemyHealth.max) * 100)
+                : 100;
 
         const summary = {
             victory: isVictory,
@@ -1593,7 +1276,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             losses: matchState.playerUnitsLost,
             buildingsConstructed: stats.buildingsConstructed,
             duration: `${mins}:${secs}`,
-            enemyBaseDamagePercent: enemyHQDamage
+            enemyBaseDamagePercent: enemyBaseDamage
         };
         teardownMatch();
         ui.showGameOver(summary);
@@ -1669,9 +1352,12 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         ring.record('emitters', effectStats.activeEmitters);
         ring.record('projectiles', projectileView.stats().active);
         ring.record('cachedProjectiles', projectileStats.cached);
-        ring.record('soldiers', playerUnits.length + enemyUnits.length);
-        ring.record('playerSoldiers', playerUnits.length);
-        ring.record('enemySoldiers', enemyUnits.length);
+        const visuals = battlefieldView.stats();
+        const playerSoldiers = visuals.player.tanks + visuals.player.riflemen;
+        const enemySoldiers = visuals.enemy.tanks + visuals.enemy.riflemen;
+        ring.record('soldiers', playerSoldiers + enemySoldiers);
+        ring.record('playerSoldiers', playerSoldiers);
+        ring.record('enemySoldiers', enemySoldiers);
     }
 
     function animate({ deltaSeconds: delta, elapsedSeconds: time }: FrameTiming) {
@@ -1691,7 +1377,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             runEnemyAIUpdate(delta);
             advanceBattleSimulation(delta, time);
             advanceRewardStrikes(delta);
-            updateNexusShieldVisuals();
+            battlefieldView.syncShields(currentShieldState(), gameplayClockMs);
             updateCombat(delta);
             if (gameplayClockMs - lastRewardUiUpdateMs >= 250) {
                 lastRewardUiUpdateMs = gameplayClockMs;
@@ -1751,15 +1437,11 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             const playerNexusHealth = simulation?.world
                 .getComponent(simulation.playerBase, ECS_COMPONENTS.health)?.current ?? null;
             const rewardScenarioHealth = simulation
-                ? rewardScenarioBuildings.reduce((total, building) => total + (
-                    building.ecsEntityId === undefined
-                        ? 0
-                        : simulation.world.getComponent(
-                            building.ecsEntityId,
-                            ECS_COMPONENTS.health
-                        )?.current ?? 0
+                ? rewardScenarioEntities.reduce((total, entity) => total + (
+                    simulation.world.getComponent(entity, ECS_COMPONENTS.health)?.current ?? 0
                 ), 0)
                 : null;
+            const visuals = battlefieldView.stats();
             const factionCounts = (prefix: 'player' | 'enemy') => {
                 const counts = census[prefix];
                 return simulation
@@ -1826,8 +1508,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 cachedProjectiles: projectileStats.cached,
                 soldiers: lastOr('soldiers', 0),
                 maxSoldiers: maximum('soldiers'),
-                playerSoldiers: lastOr('playerSoldiers', playerUnits.length),
-                enemySoldiers: lastOr('enemySoldiers', enemyUnits.length),
+                playerSoldiers: lastOr('playerSoldiers', visuals.player.tanks + visuals.player.riflemen),
+                enemySoldiers: lastOr('enemySoldiers', visuals.enemy.tanks + visuals.enemy.riflemen),
                 ecsEntities: simulation ? census.total : null,
                 ecsProjectiles: simulation ? census.projectiles : null,
                 ...factionCounts('player'),
@@ -1854,7 +1536,16 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             const simulation = battleSimulation;
             if (!simulation) throw new Error('Start a match before placing scenario structures');
             const faction = isPlayer ? ECS_FACTIONS.player : ECS_FACTIONS.enemy;
-            return representStructure(placeDiagnosticStructure(simulation.world, faction, type, position));
+            const entity = placeDiagnosticStructure(simulation.world, faction, type, position);
+            battlefieldView.structureBuilt(entity);
+            return entity;
+        };
+        /** C11: a scenario deletes an entity directly, so it tells the view itself. */
+        const discardEntity = (entity: Entity) => {
+            const simulation = battleSimulation;
+            if (!simulation) throw new Error('Start a match before discarding scenario entities');
+            simulation.world.removeEntity(entity);
+            battlefieldView.removedWithoutEffects(entity, 'diagnostic');
         };
         window.__gameDiagnostics = {
             read: readDiagnostics,
@@ -1914,18 +1605,17 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 let ordersPlaced = 0;
                 const feeder = window.setInterval(() => {
                     if (session.state !== 'PLAYING' || battleSimulation !== simulation) return;
-                    for (const building of [...playerBuildings, ...enemyBuildings]) {
-                        if (!isValidSoldierFactory(building)) continue;
-                        if (simulation.world.getComponent(building.ecsEntityId, ECS_COMPONENTS.production)?.order) {
-                            continue;
+                    for (const faction of [ECS_FACTIONS.player, ECS_FACTIONS.enemy]) {
+                        for (const factory of liveFactories(simulation.world, faction)) {
+                            if (simulation.world.getComponent(factory, ECS_COMPONENTS.production)?.order) continue;
+                            const accepted = requestUnitProduction(
+                                simulation.world,
+                                factory,
+                                faction === ECS_FACTIONS.player ? simulation.playerBase : simulation.enemyBase,
+                                ordersPlaced % 4 === 3 ? 'tank' : 'rifleman'
+                            ).accepted;
+                            if (accepted) ordersPlaced++;
                         }
-                        const accepted = requestUnitProduction(
-                            simulation.world,
-                            building.ecsEntityId,
-                            building.isPlayer ? simulation.playerBase : simulation.enemyBase,
-                            ordersPlaced % 4 === 3 ? 'tank' : 'rifleman'
-                        ).accepted;
-                        if (accepted) ordersPlaced++;
                     }
                 }, 250);
                 try {
@@ -1947,30 +1637,18 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 rewardEffectsView.clear();
                 matchState.rewards.player.cooldownUntilMs = gameplayClockMs;
                 matchState.rewards.player.shieldUntilMs = 0;
-                if (playerShieldVisual) playerShieldVisual.visible = false;
-                for (const building of enemyBuildings.filter((candidate) => candidate.type !== 'hq')) {
-                    scene.remove(building.mesh);
-                    if (building.ecsEntityId !== undefined) {
-                        battleSimulation.world.removeEntity(building.ecsEntityId);
-                        targetObjects.delete(building.ecsEntityId);
-                    }
+                battlefieldView.syncShields(currentShieldState(), gameplayClockMs);
+                const { world } = battleSimulation;
+                for (const entity of world.query(ECS_COMPONENTS.building, ECS_COMPONENTS.faction)) {
+                    if (world.getComponent(entity, ECS_COMPONENTS.faction) !== ECS_FACTIONS.enemy) continue;
+                    if (world.getComponent(entity, ECS_COMPONENTS.building)?.kind === 'hq') continue;
+                    discardEntity(entity);
                 }
-                enemyBuildings = enemyBuildings.filter((building) => building.type === 'hq');
-                rewardScenarioBuildings = [];
+                rewardScenarioEntities = [];
                 if (mode === 'no-target') {
-                    for (const unit of enemyUnits) {
-                        const entity = unit.ecsEntityId;
-                        if (entity === undefined) continue;
-                        battleSimulation.world.removeEntity(entity);
-                        targetObjects.delete(entity);
-                        if (unit.type === 'rifleman') {
-                            soldierRenderer.remove(entity);
-                        } else if (unit.mesh instanceof THREE.Object3D) {
-                            scene.remove(unit.mesh);
-                            disposeObjectResources(unit.mesh);
-                        }
+                    for (const entity of world.query(ECS_COMPONENTS.soldier, ECS_COMPONENTS.faction)) {
+                        if (world.getComponent(entity, ECS_COMPONENTS.faction) === ECS_FACTIONS.enemy) discardEntity(entity);
                     }
-                    enemyUnits = [];
                 }
                 const playerEconomy = battleSimulation.world.getComponent(
                     battleSimulation.playerBase,
@@ -1980,13 +1658,11 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 playerEconomy.gold = mode === 'insufficient-gold' ? 0 : 1200;
                 gold = playerEconomy.gold;
                 matchState.combatPoints.player = 100;
-                const previousBuildings = enemyBuildings.length;
                 if (mode !== 'no-target') {
                     for (const x of [-56, -25, 7, 38]) {
-                        spawnScenarioStructure('turret', false, { x, y: 0, z: -15 });
+                        rewardScenarioEntities.push(spawnScenarioStructure('turret', false, { x, y: 0, z: -15 }));
                     }
-                    spawnScenarioStructure('turret', false, { x: 0, y: 0, z: 30 });
-                    rewardScenarioBuildings = enemyBuildings.slice(previousBuildings);
+                    rewardScenarioEntities.push(spawnScenarioStructure('turret', false, { x: 0, y: 0, z: 30 }));
                 }
                 updateResourceUI();
                 updateRewardUI();
@@ -2061,7 +1737,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     }
                 }
                 for (let index = 0; index < 21; index++) simulation.advance(0.1);
-                for (const event of simulation.drainProductionEvents()) createTroopVisual(event);
+                stats.soldiersTrained += battlefieldView.unitsProduced(simulation.drainProductionEvents());
                 for (const factory of testFactories) simulation.world.removeEntity(factory);
                 for (const x of [-5, 0, 5]) spawnScenarioStructure('turret', false, { x, y: 0, z: 0 });
                 resetSamples();
@@ -2070,8 +1746,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                     const timer = window.setInterval(() => {
                         createCinematicExplosion(
                             new THREE.Vector3((explosionIndex % 5 - 2) * 2, 0, (explosionIndex % 3 - 1) * 2),
-                            0.6,
-                            false
+                            0.6
                         );
                         explosionIndex++;
                         if (explosionIndex >= explosionCount) {

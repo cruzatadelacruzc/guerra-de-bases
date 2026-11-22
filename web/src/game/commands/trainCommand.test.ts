@@ -3,7 +3,7 @@ import test from 'node:test';
 import { COMPONENTS } from '../ecs/components.ts';
 import type { Position } from '../ecs/components.ts';
 import { SOLDIER_PRODUCTION } from '../ecs/initialBattle.ts';
-import { buildStructure } from './structureCommands.ts';
+import { buildStructure, sellStructure } from './structureCommands.ts';
 import { idleFactories, liveFactories, trainUnit } from './trainCommand.ts';
 import { createCommandTestContext, goldOf, setGold, snapshotCommandState } from './commandTestState.ts';
 import type { CommandContext } from './CommandContext.ts';
@@ -86,4 +86,21 @@ test('factory queries keep creation order and skip dead, foreign and busy barrac
 
   assert.deepEqual(liveFactories(ctx.world, 'player'), [first, second, third]);
   assert.deepEqual(idleFactories(ctx.world, 'player'), [first, third]);
+});
+
+test("liveFactories keeps the HUD's former barracks filter", () => {
+  const ctx = createCommandTestContext();
+  const a = barracks(ctx, 'player', -20);
+  const b = barracks(ctx, 'player', -10);
+  const c = barracks(ctx, 'player', 0);
+  const d = barracks(ctx, 'player', 10);
+  barracks(ctx, 'enemy', 0);
+  const turret = buildStructure(ctx, 'player', 'turret', at(20, 40));
+  assert.ok(turret.accepted);
+  const health = ctx.world.getComponent(b, COMPONENTS.health);
+  if (!health) throw new Error('missing health');
+  health.current = 0;
+  assert.equal(sellStructure(ctx, 'player', c).accepted, true);
+
+  assert.deepEqual(liveFactories(ctx.world, 'player'), [a, d]);
 });
