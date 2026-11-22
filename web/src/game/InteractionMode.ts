@@ -40,8 +40,7 @@ export function nextInteractionMode(mode: InteractionMode, event: InteractionEve
     case 'reset':
       return mode.kind === 'none' ? mode : NO_INTERACTION;
     case 'selectStructure':
-      if (mode.kind === 'none') return { kind: 'placing', structure: event.structure };
-      if (mode.kind !== 'placing') return mode;
+      if (mode.kind !== 'placing') return { kind: 'placing', structure: event.structure };
       return mode.structure === event.structure
         ? NO_INTERACTION
         : { kind: 'placing', structure: event.structure };

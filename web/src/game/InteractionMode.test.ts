@@ -34,6 +34,12 @@ test('placing + selectStructure of another structure switches', () => {
   );
 });
 
+test('selling and confirmingSale + selectStructure leave for placing', () => {
+  const expected = { kind: 'placing', structure: 'turret' };
+  assert.deepEqual(nextInteractionMode(selling, { type: 'selectStructure', structure: 'turret' }), expected);
+  assert.deepEqual(nextInteractionMode(confirming, { type: 'selectStructure', structure: 'turret' }), expected);
+});
+
 test('none and placing + toggleSell enter selling', () => {
   assert.deepEqual(nextInteractionMode(NO_INTERACTION, { type: 'toggleSell' }), selling);
   assert.deepEqual(nextInteractionMode(placingGenerator, { type: 'toggleSell' }), selling);
@@ -88,9 +94,7 @@ test('events without a row return the very same object', () => {
     [selling, { type: 'built' }],
     [selling, { type: 'saleConfirmed' }],
     [selling, { type: 'targetGone' }],
-    [confirming, { type: 'built' }],
-    [confirming, { type: 'selectStructure', structure: 'turret' }],
-    [selling, { type: 'selectStructure', structure: 'turret' }]
+    [confirming, { type: 'built' }]
   ];
   for (const [mode, event] of noRow) {
     assert.equal(nextInteractionMode(mode, event), mode, `${mode.kind} + ${event.type}`);
