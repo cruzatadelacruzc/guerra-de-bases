@@ -129,31 +129,28 @@ select {
       max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
   }
 
-  #game-hud > div:first-child {
+  #game-hud .game-status-rail {
     gap: 0.4rem;
   }
 
-  #game-hud > div:first-child > .cyber-panel,
-  #game-hud > div:first-child > .cyber-panel-red {
+  #game-hud .game-faction-status {
     flex: 1 1 0;
     min-width: 0;
     padding: 0.55rem;
     gap: 0.35rem;
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:first-child,
-  #game-hud > div:first-child > .cyber-panel-red > div:first-child {
+    div.game-faction-heading {
     gap: 0.2rem;
     align-items: flex-start;
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:first-child span,
-  #game-hud > div:first-child > .cyber-panel-red > div:first-child span {
+    div.game-faction-heading span {
     font-size: 0.58rem;
     line-height: 1rem;
   }
 
-  #game-hud > div:nth-child(2) {
+  #game-hud > div.game-toast-anchor {
     position: absolute;
     top: max(0.55rem, env(safe-area-inset-top));
     left: 50%;
@@ -168,7 +165,7 @@ select {
     background-color: rgba(10, 15, 29, 0.92);
   }
 
-  #game-hud > div:last-child {
+  #game-hud > div.game-controls-drawer {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 0.35rem;
@@ -178,20 +175,7 @@ select {
     scrollbar-width: thin;
   }
 
-  #game-hud > div:last-child > .cyber-panel {
-    width: auto;
-    min-width: 0;
-    gap: 0.35rem;
-    padding: 0.5rem;
-  }
-
-  #game-hud > div:last-child > .cyber-panel > div:last-child {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.35rem;
-  }
-
-  #game-hud > div:last-child .cyber-button {
+  #game-hud > div.game-controls-drawer .cyber-button {
     min-width: 0;
     min-height: 44px;
     padding: 0.4rem;
@@ -199,12 +183,8 @@ select {
     line-height: 1rem;
   }
 
-  #game-hud > div:last-child .cyber-button span {
+  #game-hud > div.game-controls-drawer .cyber-button span {
     font-size: 0.62rem;
-  }
-
-  #game-hud > div:last-child > .cyber-panel > div:first-child > span:first-child {
-    font-size: 0.58rem;
   }
 
   #cancel-build-hint,
@@ -233,21 +213,15 @@ select {
       max(0.35rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
   }
 
-  #game-hud > div:first-child > .cyber-panel,
-  #game-hud > div:first-child > .cyber-panel-red {
+  #game-hud .game-faction-status {
     padding: 0.35rem 0.55rem;
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:last-child,
-  #game-hud > div:first-child > .cyber-panel-red > div:last-child {
+    div.game-faction-meta {
     flex-wrap: nowrap;
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:last-child > div {
-    gap: 0.3rem;
-  }
-
-  #game-hud > div:nth-child(2) {
+  #game-hud > div.game-toast-anchor {
     top: auto;
     right: max(0.5rem, env(safe-area-inset-right));
     bottom: calc(43dvh + 0.5rem);
@@ -255,15 +229,12 @@ select {
     transform: none;
   }
 
-  #game-hud > div:last-child {
+  #game-hud > div.game-controls-drawer {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-height: 40dvh;
     overflow-y: visible;
   }
 
-  #game-hud > div:last-child > .cyber-panel {
-    align-self: end;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -284,10 +255,6 @@ select {
   flex-direction: column-reverse;
   align-items: flex-start;
   gap: 0.5rem;
-}
-
-#game-hud > .game-controls-drawer {
-  display: flex;
 }
 
 .game-controls-toggle {
@@ -351,13 +318,12 @@ select {
       max(0.5rem, env(safe-area-inset-bottom)) max(0.4rem, env(safe-area-inset-left));
   }
 
-  #game-hud > div:first-child {
+  #game-hud .game-status-rail {
     align-items: flex-start;
     gap: 0.35rem;
   }
 
-  #game-hud > div:first-child > .cyber-panel,
-  #game-hud > div:first-child > .cyber-panel-red {
+  #game-hud .game-faction-status {
     flex: 1 1 0;
     min-width: 0;
     gap: 0.25rem;
@@ -366,29 +332,19 @@ select {
     backdrop-filter: blur(8px);
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:first-child,
-  #game-hud > div:first-child > .cyber-panel-red > div:first-child {
+    div.game-faction-heading {
     gap: 0.2rem;
     padding-bottom: 0.15rem;
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:first-child span,
-  #game-hud > div:first-child > .cyber-panel-red > div:first-child span {
+    div.game-faction-heading span {
     font-size: 0.56rem;
     line-height: 0.8rem;
   }
 
-  #game-hud > div:first-child > .cyber-panel > div:last-child,
-  #game-hud > div:first-child > .cyber-panel-red > div:last-child {
+    div.game-faction-meta {
     gap: 0.1rem;
     margin-top: 0;
-  }
-
-  #game-hud > div:first-child > div:nth-child(2) {
-    position: absolute;
-    top: max(0.35rem, env(safe-area-inset-top));
-    left: 50%;
-    transform: translateX(-50%);
   }
 
   #btn-pause-game {
@@ -399,7 +355,7 @@ select {
     white-space: nowrap;
   }
 
-  #game-hud > div:nth-child(2) {
+  #game-hud > div.game-toast-anchor {
     position: absolute;
     top: 18%;
     left: 50%;
@@ -419,10 +375,6 @@ select {
     left: max(0.45rem, env(safe-area-inset-left));
     width: auto;
     align-items: stretch;
-  }
-
-  #game-hud > .game-controls-drawer {
-    display: flex;
   }
 
   .game-controls-toggle {
@@ -474,9 +426,6 @@ select {
 }
 
 @media (max-width: 767px) and (orientation: landscape), (max-height: 500px) {
-  #game-hud > .game-controls-drawer {
-    display: flex;
-  }
 
   .game-controls-content:not(.hidden) {
     display: grid;
@@ -506,28 +455,8 @@ select {
   min-width: 0;
 }
 
-#game-hud > .game-status-rail > .game-center-controls > #btn-pause-game {
+.game-pause-button {
   position: static;
-  top: auto;
-  left: auto;
-  transform: none;
-}
-
-/* The legacy mobile rule `#game-hud > div:first-child > div:nth-child(2)`
-   absolutely positions whatever div sits second in the rail; the
-   pause + AUTO column must stay in the rail's grid flow. Same specificity,
-   later in source, so this wins. */
-#game-hud > div.game-status-rail > div.game-center-controls {
-  position: static;
-  top: auto;
-  left: auto;
-  transform: none;
-}
-
-#game-hud > .game-toast-anchor {
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
 }
 
 .game-status-rail {
@@ -1551,7 +1480,7 @@ select {
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
-  #game-hud > div.game-controls-drawer:last-child {
+  #game-hud > div.game-controls-drawer {
     max-height: 75dvh;
   }
 

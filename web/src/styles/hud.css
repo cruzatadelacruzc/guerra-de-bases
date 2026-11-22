@@ -1,0 +1,14 @@
+/* In-game combat HUD: design tokens and scale. Rules are added by later tasks. */
+:root {
+  --hud-player: #22d3ee;
+  --hud-enemy: #f43f5e;
+  --hud-gold: #facc15;
+  /* Same violet as the combat points in the main menu (--reward-cp). */
+  --hud-cp: #a78bfa;
+  --hud-warn: #fb923c;
+  --hud-panel: rgba(3, 12, 21, 0.88);
+  --hud-text-min: 11px;
+  --hud-target: 44px;
+  --hud-gap: 8px;
+  --hud-tile: 60px;
+}
