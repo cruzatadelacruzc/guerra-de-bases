@@ -791,6 +791,8 @@ Todos están en `main`, después del diseño (`38b0ae7`) y del plan (`d8fb2f1`):
 
 ### 13.2 Pruebas y comprobaciones
 
+Todo lo de esta sección se ejecutó sobre el estado final del código: `76812b9`, igual en `d12120d` (el commit de cierre solo cambia documentos). `npm test` y `npm run typecheck` se ejecutaron antes del commit de cierre y otra vez sobre `d12120d`; el build, las búsquedas en `dist/` y las búsquedas con límites de palabra se ejecutaron sobre `76812b9`, antes de un reinicio del portátil, y otra vez sobre `d12120d` en la ronda de corrección de la revisión, con los mismos resultados. El grafo y el análisis de ciclos son de `76812b9`; después solo cambiaron documentos.
+
 - **`npm test`:** 463 de 463, frente a 391 antes de R6. Las nuevas: `WorldReader.test.ts`, `presentationBoundary.test.ts`, `battlefieldMeshes.test.ts`, `HealthBar.test.ts`, `BattlefieldRemains.test.ts`, `battlefieldScene.test.ts`, `strikeCinematics.test.ts`, `PlacementGhost.test.ts`, `ProjectileView.test.ts`, `BattlefieldView.test.ts` y `visualConsistency.test.ts`, más ajustes en `trainCommand.test.ts` y `testUtilitiesBoundary.test.ts`.
 - **`npm run typecheck`:** sin errores.
 - **`npm run build`:** código de salida 0. Avisa de un fragmento de más de 500 kB (`index-*.js`, 694,85 kB; 184,36 kB con gzip), como antes de R6 (690,81 kB en R5).
@@ -869,10 +871,12 @@ Chrome 155 headless con GPU (Intel UHD 620 por Vulkan), servidor de desarrollo c
 | Fantasma visible / tras cancelar (×20, ×20) | 29 / 27 | – |
 | Barraca vendida / generador vendido | −5 / −5 | −5 / −5 |
 | `'no-target'` ↔ `'ready'`, tres veces en la misma partida | 24 ↔ 30 | 23 ↔ 29 |
-| Fin de partida (`GAMEOVER`) | 17 | 17 |
+| Fin de partida (`GAMEOVER`), página nueva sin disparos | 15 | 15 |
+| Fin de partida (`GAMEOVER`) en el paso 12, después de combates | 17 | 17 |
 | Partida nueva tras combates (batería de §6) | 23 | 22 |
 | Menú tras tres ciclos de combate | 98 (95 + 3 compartidas) | 97 (95 + 2 compartidas) |
 
+- **Fin de partida:** 15 en una página nueva (partida, `setNexusHealth('enemy', 0)` y `GAMEOVER`, medido en los dos perfiles en la ronda de corrección), y 17 en el paso 12, cuando ya se habían usado las dos geometrías compartidas de `ProjectilePool`.
 - **Texturas:** 1 en escritorio (el mapa de sombras) y 0 en móvil emulado, en todo momento.
 - **Geometrías y materiales de la escena** (`sceneGeometries` / `sceneMaterials`): en el menú, 94 / 103 antes y después de todas las partidas, en los dos perfiles.
 - **Lo que libera R6, comprobado en el navegador:**
@@ -901,7 +905,7 @@ En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.6:
 - **Escudo:** la pulsación no se midió en el navegador (la fija la prueba de Node) y el escudo enemigo no se inspeccionó en pantalla.
 - **Toque en la barra de vida en escritorio:** los píxeles de la barra se solapan con el borde superior del edificio, así que el rayo pudo dar en la barra o en la caja; las dos llevan a la misma entidad. En móvil emulado sí se tocó la barra fuera del cuerpo del Nexo.
 - **El paso 6 se ejecutó antes que el 5** (§13.3).
-- **El reinicio del portátil** a mitad de la tarea borró los scripts y capturas del directorio temporal. Los resultados ya estaban anotados; solo se repitieron la partida larga en móvil emulado y la batería de medición.
+- **El reinicio del portátil** a mitad de la tarea borró los scripts y capturas del directorio temporal. Los resultados ya estaban anotados; se repitieron la partida larga en móvil emulado y la batería de medición y, en la ronda de corrección, `npm test`, `npm run typecheck`, el build y las búsquedas de §13.2.
 
 **Registrado, sin corregir:**
 
@@ -920,7 +924,7 @@ En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.6:
 
 ### 13.7 Alcance
 
-`git diff 38b0ae7 --stat`, con el commit de cierre preparado (sin contar `AGENTS.md`, un cambio del usuario sin confirmar que no forma parte de R6): 30 ficheros, 4.681 inserciones y 1.100 borrados.
+`git diff 38b0ae7 d12120d --stat` (hasta el commit de cierre; la ronda de corrección posterior solo cambia este informe): 30 ficheros, 4.681 inserciones y 1.100 borrados.
 
 - **Producción:** `GameApplication.ts` (+308 y −1.095 líneas), `game/ecs/WorldReader.ts`, `dev/visualConsistency.ts` y, en `rendering/`, `BattlefieldView.ts`, `ProjectileView.ts`, `PlacementGhost.ts`, `battlefieldMeshes.ts`, `HealthBar.ts`, `BattlefieldRemains.ts`, `battlefieldScene.ts` y `strikeCinematics.ts`.
 - **Utilidad de prueba:** `rendering/presentationTestState.ts`.
