@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { COMPONENTS as ECS_COMPONENTS, FACTIONS as ECS_FACTIONS } from './game/ecs/components.ts';
 import type { Entity, Position } from './game/ecs/components.ts';
 import { BattleSimulation } from './game/ecs/BattleSimulation.ts';
+import { NO_INTERACTION, nextInteractionMode } from './game/InteractionMode.ts';
+import type { InteractionEvent, InteractionMode } from './game/InteractionMode.ts';
 import type { SimulationPhase, SimulationProfiler } from './game/ecs/BattleSimulation.ts';
 import { visitCombatPositions } from './game/ecs/combatFocus.ts';
 import { ENEMY_BASE_POSITION, PLAYER_BASE_POSITION, SOLDIER_PRODUCTION } from './game/ecs/initialBattle.ts';
@@ -415,9 +417,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     let battleSimulation: BattleSimulation | null = null;
     /** The player's Nexus health one frame ago, for the damage alert. */
     let lastPlayerNexusHealth = NEXUS_HEALTH;
-    let selectedBuildType: BuildingType | null = null;
+    let interaction: InteractionMode = NO_INTERACTION;
     let placementGhost: PlacementGhost | null = null;
-    let isDemolishMode = false;
     let terrain: BattlefieldTerrain | null = null;
     let cameraShake = 0;
     /** Camera position when a defeat began; the end-sequence shake jitters around it. */
@@ -479,17 +480,17 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             onPointerDown,
             onPointerUp,
             onPointerCancel,
-            onEscape: cancelPlacement,
+            onEscape: () => dispatchInteraction({ type: 'cancel' }),
             onCancelPlacement: () => {
-                if (selectedBuildType || isDemolishMode) {
-                    cancelPlacement();
-                    isDemolishMode = false;
-                    updateDemolishUI();
-                    return true;
-                }
-                return false;
+                if (interaction.kind === 'none') return false;
+                dispatchInteraction({ type: 'cancel' });
+                return true;
             },
             onNativeBack: () => {
+                if (session.state === 'PLAYING' && interaction.kind !== 'none') {
+                    dispatchInteraction({ type: 'back' });
+                    return true;
+                }
                 if (session.state === 'PLAYING' || session.state === 'PAUSED') {
                     togglePause();
                     return true;
@@ -526,7 +527,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         nexusDamageAlert.reset();
 
         aiDifficulty = settings.difficulty;
-        cancelPlacement();
+        dispatchInteraction({ type: 'reset' });
 
         // Reset Nuclear Explosion Sequence Flags
         hqExplodingSequence = false;
@@ -552,8 +553,6 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         // BOTH sides start CLEAN with ONLY the Nexus and 200 Gold
         gold = 200;
         enemyGold = 200;
-        isDemolishMode = false;
-        updateDemolishUI();
 
         stats.soldiersTrained = 0;
         stats.buildingsConstructed = 0;
@@ -640,9 +639,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         cameraShake = 0;
         rewardScenarioEntities = [];
         battleSimulation = null;
-        cancelPlacement();
-        isDemolishMode = false;
-        updateDemolishUI();
+        dispatchInteraction({ type: 'reset' });
     }
 
     function updateResourceUI() {
@@ -744,36 +741,36 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         };
     }
 
+    /** Every mode change goes through the pure transition table. */
+    function dispatchInteraction(event: InteractionEvent): void {
+        // A reset is applied even when already idle so the ghost and UI are always cleared.
+        const next = nextInteractionMode(interaction, event);
+        if (next === interaction && event.type !== 'reset') return;
+        applyInteraction(next);
+    }
+
+    function applyInteraction(next: InteractionMode): void {
+        interaction = next;
+        if (next.kind === 'placing') placementGhost?.show(next.structure);
+        else placementGhost?.hide();
+        ui.setPlacementActive(next.kind === 'placing');
+        ui.setDemolishMode(next.kind === 'selling' || next.kind === 'confirmingSale');
+    }
+
     function toggleDemolishMode() {
-        cancelPlacement();
-        isDemolishMode = !isDemolishMode;
-        updateDemolishUI();
-        if (isDemolishMode) {
+        dispatchInteraction({ type: 'toggleSell' });
+        if (interaction.kind === 'selling') {
             showToast("🗑️ MODO BORRAR: Haz click en una de tus estructuras para venderla.");
         }
     }
 
-    function updateDemolishUI() {
-        ui.setDemolishMode(isDemolishMode);
-    }
-
     function selectBuildingToPlace(type: BuildingType) {
-        if (isDemolishMode) {
-            isDemolishMode = false;
-            updateDemolishUI();
-        }
         if (!placementGhost) return;
 
-        selectedBuildType = type;
-        placementGhost.show(type);
-        ui.setPlacementActive(true);
-        showToast("Haz click en tu territorio para posicionar la estructura.");
-    }
-
-    function cancelPlacement() {
-        placementGhost?.hide();
-        selectedBuildType = null;
-        ui.setPlacementActive(false);
+        dispatchInteraction({ type: 'selectStructure', structure: type });
+        if (interaction.kind === 'placing') {
+            showToast("Haz click en tu territorio para posicionar la estructura.");
+        }
     }
 
     function onPointerMove(event: PointerEvent) {
@@ -786,7 +783,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
     }
 
     function updatePlacementGhost() {
-        if (!selectedBuildType || !placementGhost) return;
+        if (interaction.kind !== 'placing' || !placementGhost) return;
         placementGhost.track(getPlacementPosition());
     }
 
@@ -835,7 +832,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
 
         // Double tap only refocuses the camera outside build/demolish modes so
         // a single tap there still commits instantly.
-        if (!selectedBuildType && !isDemolishMode) {
+        if (interaction.kind === 'none') {
             const tap: TapSample = { timeMs: event.timeStamp, x: event.clientX, y: event.clientY };
             if (isDoubleTap(lastFocusTap, tap, DOUBLE_TAP_INTERVAL_MS, DOUBLE_TAP_DISTANCE_PX)) {
                 lastFocusTap = null;
@@ -852,7 +849,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         updatePlacementGhost();
 
         // Demolish Click
-        if (isDemolishMode) {
+        if (interaction.kind === 'selling') {
             raycaster.setFromCamera(mouse, camera);
             const entity = battlefieldView.pickOwnStructure(raycaster, ECS_FACTIONS.player);
             if (entity !== undefined) {
@@ -873,8 +870,8 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         }
 
         // Building Placement Click
-        if (selectedBuildType && committedPosition) {
-            const type = selectedBuildType;
+        if (interaction.kind === 'placing' && committedPosition) {
+            const type = interaction.structure;
             const simulation = battleSimulation;
             if (!simulation) return;
             const build = buildStructure(
@@ -891,6 +888,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
             if (!build.accepted && build.reason !== 'insufficient-gold') return;
 
             if (build.accepted) {
+                dispatchInteraction({ type: 'built' });
                 syncGoldMirrors();
                 SFX.playBuild();
                 stats.buildingsConstructed++;
@@ -901,10 +899,10 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
                 battlefieldView.structureBuilt(build.entity);
                 showToast(`¡${type.toUpperCase()} CONSTRUIDO!`);
             } else {
+                dispatchInteraction({ type: 'cancel' });
                 showToast("¡Recursos insuficientes!");
             }
 
-            cancelPlacement();
             updateResourceUI();
         }
     }
@@ -1255,7 +1253,7 @@ export function createGameRuntime(ui: GameUiPort, unlocks: UnlockService) {
         hqExplodeTimer = 0;
         pendingVictoryState = isVictory;
         defeatShakeAnchor.copy(camera.position);
-        cancelPlacement();
+        dispatchInteraction({ type: 'reset' });
         matchEndTimeout = window.setTimeout(() => completeMatchEnd(), 5000);
     }
 
