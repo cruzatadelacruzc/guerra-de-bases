@@ -53,9 +53,16 @@ La partida arranca con dos Nexos opuestos y sin soldados gratuitos. El Nexo es e
 
   Las pruebas comparan la ejecución del dominio con una referencia heredada (`legacyRewardTimeline.ts`, transcripción de la versión anterior) en 14 escenarios y 6 secuencias de delta. Esa referencia y las demás utilidades de prueba (`strikeScenarios.ts`, `matchHarness.ts`, `legacyEnemyExecutor.ts`, `aiMatchRunner.ts`, `commandTestState.ts`) no llegan al build: una prueba recorre las importaciones desde `main.ts` y falla si alcanza alguna.
 - `web/src/game/definitions/structures.ts` es la única fuente del coste y la vida de Generadores, Barracas y Torretas, y de la vida del Nexo. La usan el ECS, la construcción y venta del jugador, la IA enemiga y la interfaz (botones y etiquetas de coste).
-- `web/src/rendering/` contiene adaptadores Three.js: los fusileros compatibles comparten geometría/materiales mediante `InstancedMesh`; las mallas de proyectiles se sincronizan con entidades ECS y se reutilizan en un pool; los efectos visuales también reutilizan recursos con límites de actividad y ciclos de vida finitos. `RewardEffectsView.ts` dibuja los proyectiles, el avión y las bombas de los ataques leyendo solo `MatchState.strikes`: no aplica daño, no recibe la cámara y libera las mallas de cada ataque al terminar o al desmontar la partida.
+- `web/src/rendering/` contiene adaptadores Three.js: los fusileros compatibles comparten geometría/materiales mediante `InstancedMesh`; las mallas de proyectiles se reutilizan en un pool; los efectos visuales también reutilizan recursos con límites de actividad y ciclos de vida finitos. `RewardEffectsView.ts` dibuja los proyectiles, el avión y las bombas de los ataques leyendo solo `MatchState.strikes`: no aplica daño, no recibe la cámara y libera las mallas de cada ataque al terminar o al desmontar la partida. Desde R6, la presentación del campo de batalla vive aquí y no en `GameApplication.ts`:
+  - `BattlefieldView.ts`: el registro de visuales por `Entity` de cada edificio, Nexo, tanque y fusilero. Cada camino del ciclo de vida le avisa exactamente una vez (construir, producir, morir, vender, descartar en diagnóstico y limpiar al terminar la partida); registrar dos veces la misma entidad lanza un error. Sincroniza posiciones, barras de vida, torretas y escudos desde el ECS, elige el edificio propio que se toca en modo vender (nunca el Nexo) y devuelve las explosiones de cada muerte como datos (`ExplosionCue`): el audio, los hápticos y el temblor siguen en `GameApplication`;
+  - `ProjectileView.ts`: los visuales de los proyectiles sobre `ProjectilePool`; el tipo de disparo se lee del ECS (`soldierKind`);
+  - `PlacementGhost.ts`: el fantasma de construcción y el raycast al terreno. Es dueño de sus recursos y los libera al cancelar, al cambiar de edificio, al construir y al desmontar;
+  - `battlefieldMeshes.ts`, `HealthBar.ts` y `BattlefieldRemains.ts`: las fábricas de mallas, las barras de vida 3D y las ruinas, chatarra y cadáveres (como mucho 64, en orden de llegada);
+  - `battlefieldScene.ts` (terreno y soldados del menú) y `strikeCinematics.ts` (planos de cámara de los ataques, funciones puras).
+
+  La presentación lee el ECS a través de `game/ecs/WorldReader.ts`, un tipo de solo lectura, y nunca lo escribe: no importa `World` ni los módulos que lo modifican. Lo vigila `rendering/presentationBoundary.test.ts`, y las pruebas de `BattlefieldView` congelan los componentes antes de cada paso. En desarrollo, `web/src/dev/visualConsistency.ts` compara el registro con el ECS una vez por segundo de juego y avisa por consola de cualquier diferencia; no existe en el build de producción.
 - `web/index.html` es el shell del documento; `web/src/main.ts` crea las dependencias de UI y desbloqueos y arranca la aplicación.
-- `web/src/GameApplication.ts` compone una partida: conecta los comandos de UI, las órdenes de la IA enemiga (que decide en `web/src/game/ai/`), los eventos de la partida (que se deciden en `web/src/game/match/`), el ECS y los adaptadores visuales. Los meshes, barras de salud, audio, efectos, colocación por raycast y animación de torretas permanecen en la capa de aplicación/rendering; no determinan targeting, cooldowns, vuelo de proyectiles ni daño. La UI no accede al almacenamiento interno del ECS.
+- `web/src/GameApplication.ts` compone una partida: conecta los comandos de UI, las órdenes de la IA enemiga (que decide en `web/src/game/ai/`), los eventos de la partida (que se deciden en `web/src/game/match/`), el ECS y los adaptadores visuales. Reparte cada evento a la vista que corresponde y conserva el audio, los hápticos, el temblor de cámara, la UI y el diagnóstico. Ninguna parte de la presentación determina targeting, cooldowns, vuelo de proyectiles ni daño. La UI no accede al almacenamiento interno del ECS.
 - `web/src/game/GameSession.ts`, `GameFrameLoop.ts` y `GameInputController.ts` separan transiciones de partida, scheduling con delta acotado y ciclo de vida idempotente de listeners.
 - `web/src/rendering/ThreeRenderCoordinator.ts` posee la escena, cámara, renderer, controles y recursos visuales de Three.js; sincroniza soldados instanciados y delega efectos y proyectiles a los módulos existentes.
 - La UI del jugador y la estrategia de la IA envían órdenes unitarias a la misma API ECS, que valida facción, disponibilidad y recursos y los deduce al aceptar. La simulación actualiza el progreso y crea la entidad del soldado al completar; la aplicación solo enlaza el evento de finalización con las visuales existentes. El saldo ECS también es la autoridad para construcción, ingresos y reembolsos.
@@ -116,6 +123,8 @@ El panel resume unos dos segundos recientes y muestra:
 - entidades por tipo y facción;
 - partículas, emisores y memoria JS (cuando el navegador la expone).
 
+`read()` incluye además `visualInconsistencies`, el número de diferencias que encontró la última comprobación automática del registro de visuales.
+
 API de consola, en `window.__gameDiagnostics`:
 
 | Método | Uso |
@@ -128,6 +137,13 @@ API de consola, en `window.__gameDiagnostics`:
 | `runStressScenario(count, intervalMs)` | Escenario de estrés de explosiones existente |
 | `prepareRewardScenario(mode)` | Escenario de recompensas existente |
 | `setNexusHealth(faction, value)` | Escribe solo la vida ECS de un Nexo. Con `0`, la resolución normal de muertes del siguiente fotograma produce la victoria (`'enemy'`) o la derrota (`'player'`) |
+| `setHealth(entity, value)` | Escribe solo la vida ECS de cualquier entidad con vida. Nunca la quita: con `0`, la quita la resolución normal de muertes del siguiente fotograma |
+| `setEnemyAiEnabled(enabled)` | Activa o desactiva la IA enemiga (los escenarios la desactivan y una partida nueva no la reactiva) |
+| `entities({ faction, kind })` | Lista las entidades de la partida, filtradas por facción y tipo (`hq`, `generator`, `barracks`, `turret`, `rifleman`, `tank`) |
+| `assertConsistency()` | Lanza un error si el registro de visuales y el ECS no coinciden. Se llama entre fotogramas; en el menú, el registro debe estar vacío |
+| `lifecycleCounts()` | Contadores acumulados de la página por camino del ciclo de vida: `built`, `produced`, `unitDied`, `structureDestroyed`, `sold`, `discarded` y `clears` |
+| `screenPointFor(x, z)` | Coordenadas de pantalla (píxeles CSS) del punto del suelo `(x, 0, z)` con la cámara actual, para tocar el canvas en pruebas |
+| `readResources()` | Geometrías y texturas de `renderer.info.memory`, geometrías y materiales únicos colgados de la escena y recursos de los efectos. `renderer.info` cuenta una geometría desde que se dibuja por primera vez |
 
 Parámetros de experimento, solo junto a `?diagnostics=1`. No cambian nada sin el parámetro:
 

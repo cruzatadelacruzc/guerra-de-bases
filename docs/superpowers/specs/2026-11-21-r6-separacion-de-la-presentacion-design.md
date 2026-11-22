@@ -764,3 +764,166 @@ Nada más cambia. En concreto no cambian el equilibrio, la IA, los comandos, los
 7. **El fantasma se recrea** al cambiar de edificio, después de liberar los recursos exclusivos del anterior. No se añade reutilización ni caché.
 8. **`setHealth(entity, value)` se añade junto a `setNexusHealth`.** Las dos son solo de desarrollo y quedan fuera del bundle de producción. Solo modifican la vida en el ECS: nunca quitan entidades ni fijan el resultado, y la destrucción la decide `DeathResolver` (§5.9).
 9. **El diseño y el plan de R6 están en español.**
+
+## 13. Informe de entrega
+
+### 13.1 Commits
+
+Todos están en `main`, después del diseño (`38b0ae7`) y del plan (`d8fb2f1`):
+
+1. `1438b55` test(rendering): el contrato de solo lectura (`WorldReader`) y la prueba de límites de la presentación. **Solo pruebas y tipos.**
+2. `c6b351d` la prueba de límites compara las rutas de importación resueltas.
+3. `0a97008` fábricas de mallas, barras de vida y restos fuera de `GameApplication` (movimiento literal).
+4. `5d3c1ad` terreno, soldados del menú y planos de cámara de los ataques fuera de `GameApplication`.
+5. `23ee9cd` el fantasma de construcción es dueño de sus recursos y los libera al cancelar, al cambiar y al desmontar.
+6. `24238af` los visuales de los proyectiles pasan a `ProjectileView`, que lee el tipo del tirador del ECS.
+7. `0351771` `BattlefieldView` es dueño de los visuales por `Entity` y la aplicación pierde sus copias de juego.
+8. `38fe490` comprobación del registro contra el ECS y operaciones de diagnóstico del ciclo de vida.
+9. `76812b9` comprobación de consistencia después de cada paso en las pruebas de `BattlefieldView` (ronda de corrección de la revisión de la Tarea 7).
+10. El commit de cierre (este informe, README, auditoría, informe de rendimiento y casillas del plan).
+
+**Decisiones del controlador durante la ejecución:**
+
+- **R1:** `EXTRA_PRESENTATION_MODULES` sigue siendo una constante privada de `presentationBoundary.test.ts`; la Tarea 7 la cambió a `['dev/visualConsistency.ts']` en el mismo sitio.
+- **R2:** `BattlefieldView` crea y posee su propio `BattlefieldRemains` (§5.3: `clear()` vacía los restos); la instancia que la Tarea 2 dejó en `GameApplication` se borró en la Tarea 6.
+- **R3:** la prueba de compilación con `@ts-expect-error` vive en una función que nunca se llama; la comprobación la hace `npm run typecheck`.
+- **R4:** la búsqueda del paso 6 de la Tarea 6 no tenía límites de palabra y encontraba el campo de dominio `matchState.playerUnitsLost`. En el cierre se repite con límites de palabra (§13.2).
+
+### 13.2 Pruebas y comprobaciones
+
+- **`npm test`:** 463 de 463, frente a 391 antes de R6. Las nuevas: `WorldReader.test.ts`, `presentationBoundary.test.ts`, `battlefieldMeshes.test.ts`, `HealthBar.test.ts`, `BattlefieldRemains.test.ts`, `battlefieldScene.test.ts`, `strikeCinematics.test.ts`, `PlacementGhost.test.ts`, `ProjectileView.test.ts`, `BattlefieldView.test.ts` y `visualConsistency.test.ts`, más ajustes en `trainCommand.test.ts` y `testUtilitiesBoundary.test.ts`.
+- **`npm run typecheck`:** sin errores.
+- **`npm run build`:** código de salida 0. Avisa de un fragmento de más de 500 kB (`index-*.js`, 694,85 kB; 184,36 kB con gzip), como antes de R6 (690,81 kB en R5).
+- **`dist/`:** no aparecen «Visual consistency failed» (texto del error de la comprobación) ni «Entity health must be a finite number» (texto propio de `setHealth`). Como control, «Ubicación ocupada» y «BattlefieldView already has a World attached», textos de producción, sí aparecen.
+- **Copias de juego en `GameApplication.ts`** (con límites de palabra, decisión R4): `grep -nwE "RuntimeStructure|RuntimeUnit|targetObjects|playerBuildings|enemyBuildings|playerUnits|enemyUnits|playerHQ|enemyHQ"` y `grep -nE "\.(hp|maxHp)\b"`: sin resultados.
+- **Grafo** (`graphify update .`; `built_at_commit` = `76812b9`, 1.617 nodos y 3.921 aristas):
+  - Tarjan sobre las 258 aristas de importación entre ficheros de producción de `web/src`: ningún componente fuertemente conexo, ni con todas las aristas ni solo con las de valor (174). Mi análisis de las importaciones reales de los 80 `.ts` de producción da las mismas 258 aristas, sin diferencias con el grafo. Es un complemento de la prueba de límites, no la sustituye.
+  - **Comunidades de `rendering/` (información, no criterio):** `BattlefieldView` con `HealthBar`; `battlefieldMeshes` con `PlacementGhost`; `CombatEffects` con `BattlefieldRemains`; `ProjectilePool` y `ProjectileView` con `game/ecs/systems.ts` (vocabulario común de proyectiles; `ProjectileView` no importa `systems.ts`); `battlefieldScene` con `TerrainGrid`; `strikeCinematics` sola; `RewardEffectsView` con `ballisticArc`. `GameApplication.ts` queda con `game/ai/aiSnapshot`, `executeEnemyTurn` y tres comandos, sin ningún módulo de `rendering/` (antes de R6 compartía la comunidad 21 con `TerrainGrid`, §3.6).
+
+### 13.3 Navegador (§6.2 y comprobaciones añadidas por las revisiones)
+
+Chrome 155 headless con GPU (Intel UHD 620 por Vulkan), servidor de desarrollo con `?diagnostics=1&overlay=0` y `playwright-cli`. Sin el panel en vivo, para que no tape los puntos que se tocan; la API es la misma. Se usó la interfaz real (botones, y clics o toques en el canvas en `screenPointFor(x, z)` calculado justo antes). Los errores se recogieron en la propia página (`error`, `unhandledrejection`, `console.error` y `console.warn`), porque `pageerror` no se puede escuchar entre llamadas de `playwright-cli`; una prueba con un error provocado confirmó que se capturan. **Sin errores ni avisos en ningún paso.** El informe completo, con la salida de cada `eval`, está en `.superpowers/sdd/2026-11-21-r6-separacion-de-la-presentacion/task-8-report.md`.
+
+`lifecycleCounts()` acumula por página, y empezar una partida suma también `clears +1` (el desmontaje previo). El tamaño del registro se lee como `entities().length`, porque `assertConsistency()` demuestra que coincide con el registro.
+
+**Escritorio (1280×720):**
+
+| Paso | Resultado |
+|---|---|
+| 0 Menú | Contadores a 0, `entities()` vacío, consistencia correcta. Línea base: 95 geometrías, 1 textura, 94 geometrías y 103 materiales en la escena |
+| 1 C1 | `built` +2; Nexos `[1, 2]` |
+| 2 C2 | Barraca en `(10, 30)`: `built` +1, oro −150, geometrías 22 → 27 |
+| 3 Fantasma | 27 antes; 29 con el fantasma visible; 27 después de cada serie de 20 |
+| 3b | Torreta sobre la barraca: «Ubicación ocupada»; el fantasma sigue (+3 geometrías) y sigue al puntero; Escape → 27 |
+| 4 C6 | `produced` +1 a los 2,0 s; el HUD pasa de «1 disponible» a «0 disponibles · Soldado 1,9 s» y vuelve |
+| 6 C8 | `setHealth(fusilero, 0)`: justo después sigue en `entities()` y los contadores no cambian; 100 ms después, `unitDied` +1, fusileros del jugador 1 → 0, dos emisores nuevos (cadáver y explosión) |
+| 5 C10 | Toque en el Nexo: nada. Toque en la barraca: `sold` +1, registro −1, geometrías 40 → 35. Toque en la barra de vida de un generador: `sold` +1, registro −1, geometrías 35 → 30 |
+| 7 C9 | `prepareRewardScenario('ready')` y `setHealth(torreta, 0)`: `structureDestroyed` +1; explosión y ruina en la captura |
+| 8 C3 | Partida nueva con la IA activa: su primer generador a los 0,8 s, `built` +1 |
+| 9 C8/C9 | Combate de 12 s con `assertConsistency()` cada segundo: 12 comprobaciones sin fallos; `produced` +16, `unitDied` +5 |
+| 10 C11 | Con 1 barraca y 2 fusileros enemigos: `discarded` +3; geometrías de la escena 33 → 28; después `'ready'`: `built` +5 |
+| 11 C5 | `runStressScenario(10, 200)`: consistencia correcta, sin `staleExemption` |
+| 12 C9 Nexo | En los tres primeros fotogramas de `MATCH_ENDING` la base enemiga no está en `entities()` y la consistencia es correcta. En `GAMEOVER` (4,0 s): registro vacío, `clears` +1, «VICTORIA» |
+| 13 C12 + C1 | «Jugar de nuevo»: Nexos `[1, 2]`, sin errores de duplicado |
+| 13b | Fantasma de barraca, artillería real en vuelo, pausa y «Reiniciar batalla»: sin errores, consistencia correcta, 0 ataques activos. Geometrías 25 frente a 24 tras el paso 13 (ver abajo); repetido: 25 → 25 |
+| 14 | Tres ciclos de partida → combate → menú: 98 geometrías en los tres, 1 textura, 94 geometrías y 103 materiales en la escena. El paso 0 dio 95 (ver abajo) |
+
+- **El paso 6 se ejecutó antes que el 5.** Con el zoom automático, la cámara siguió al fusilero hasta el Nexo enemigo y el punto `(−10, 30)` quedó fuera de la pantalla: el primer toque para el generador no construyó nada. Al morir el fusilero volvió la cámara y el paso 5 se hizo tal cual.
+- **Paso 10:** `renderer.info` no bajó (24 → 24) porque la barraca enemiga descartada nunca se había dibujado: estaba fuera del encuadre y `renderer.info` solo cuenta lo que se ha subido a la GPU (limitación de §5.9). La liberación con objetos dibujados la muestra la comprobación 3 de abajo.
+- **Geometrías por encima de lo esperado en los pasos 13b y 14 (+1 y +3).** Solo cambia `renderer.info.memory.geometries`; las geometrías y materiales de la escena y las texturas son iguales a la línea base. Una ejecución de control en una página nueva lo explica:
+  - menú 95 → tras una partida sin disparos 95 → tras un combate 96 → tras otro 96 → tras una artillería 97 → tras otra 97;
+  - son tres geometrías compartidas que viven lo que vive la aplicación y que `renderer.info` cuenta desde que se dibujan por primera vez: las dos de `ProjectilePool` (`light` y `heavy`) y la de los proyectiles de artillería de `RewardEffectsView` («only released by dispose()»);
+  - ninguna la cambió R6, y no crecen: el paso 13b repetido y los tres ciclos del paso 14 se quedan iguales.
+
+  No es una fuga, pero **el valor literal esperado no se cumple**, porque la línea base se tomó antes de que se usaran por primera vez. Se deja anotado así, sin cambiar la expectativa.
+
+**Comprobaciones añadidas por las revisiones de las Tareas 6 y 7:**
+
+| # | Resultado |
+|---|---|
+| 1 | Sin errores «already» ni «no World attached» con «Jugar de nuevo» ni al volver al menú tras una victoria |
+| 2 | `assertConsistency()` correcto en el menú después de salir, con `entities()` vacío |
+| 3 | Tres veces `'no-target'` y `'ready'` en la misma partida: geometrías 30 ↔ 24, geometrías de la escena 58 ↔ 28, objetos de escena 40 cada vez. En R5 cada llamada sumaba de 3 a 12 geometrías (§10.5 del diseño de R5) |
+| 4 | En modo vender, el toque en la barra de vida vende el edificio; ni el cuerpo ni la barra del Nexo venden |
+| 5 | Instrumentando el audio (`AudioBufferSourceNode.start`) y `navigator.vibrate` en la página: una torreta destruida da un sonido de explosión y un temblor (3 px por fotograma como máximo, 0 en reposo). Dos torretas y el Nexo en el mismo fotograma dan dos sonidos normales, uno nuclear y una vibración de 400 ms. **El temblor nuclear no se ve** (0 px): `cameraShake = 4,5` se fija, pero solo se aplica en `updateCombat`, que se detiene en `MATCH_ENDING`. Ya era así en `38b0ae7`, así que no es de R6 |
+| 6 | El escudo del Nexo del jugador (tarjeta real) se ve solo mientras está activo y desaparece en cuanto `prepareRewardScenario` lo reinicia. La pulsación (±3,5 %) no se puede medir en capturas con la cámara en movimiento; la fija la prueba de `BattlefieldView`. El escudo enemigo no se inspeccionó en pantalla |
+| 7 | Con dos barracas, el HUD muestra «2 Barraca(s)» y una línea por orden (fusilero y tanque), y vuelve a «2 disponibles» al terminar |
+| 8 | El resumen tras el escenario de estrés da 5 soldados entrenados (los 5 fusileros del jugador); el combate mantiene la producción de los dos bandos |
+| 9 | La victoria muestra un 100 % de daño a la base enemiga (al terminar la animación del contador) |
+| 10 | Partida real de 204 s (escritorio) y de 202 s (móvil emulado) con la IA activa: `visualInconsistencies` = 0 en todas las lecturas y ningún `console.error`. El Nexo del jugador se mantuvo con `setNexusHealth` para que la partida durase. También 0 en el escenario de estrés y en el de recompensas |
+| 11 | `screenPointFor` acierta: los toques en `(10, 30)` y `(−10, 30)` construyen, chocan y venden el edificio previsto |
+| 12 | `setHealth(entidad, 0)` no quita nada en el acto; el ciclo normal de muerte llega en el fotograma siguiente (pasos 6 y 7) |
+
+**Móvil emulado** (412×915, DPR 2,625 → 1,5, táctil; **sin teléfono real**). Filas 0, 1, 2, 4, 5, 6, 9, 12, 13 y 14, con toques, y las comprobaciones 3, 4, 7 y 10:
+
+- iguales que en escritorio, salvo los valores propios del perfil (21 geometrías al empezar la partida frente a 22, y 0 texturas porque no hay sombras);
+- en el menú, las geometrías suben de 67 a 95 en los primeros segundos: la cámara del menú gira y las va subiendo según entran en el encuadre. La línea base es 95;
+- paso 14: 97 en el menú después de cada ciclo (+2 de `ProjectilePool`; en esta sesión no hubo artillería).
+
+### 13.4 Recursos
+
+| Momento | Escritorio | Móvil emulado |
+|---|---:|---:|
+| Menú al cargar (línea base) | 95 geometrías · 1 textura | 95 · 0 |
+| Partida nueva | 22 | 21 |
+| Fantasma visible / tras cancelar (×20, ×20) | 29 / 27 | – |
+| Barraca vendida / generador vendido | −5 / −5 | −5 / −5 |
+| `'no-target'` ↔ `'ready'`, tres veces en la misma partida | 24 ↔ 30 | 23 ↔ 29 |
+| Fin de partida (`GAMEOVER`) | 17 | 17 |
+| Partida nueva tras combates (batería de §6) | 23 | 22 |
+| Menú tras tres ciclos de combate | 98 (95 + 3 compartidas) | 97 (95 + 2 compartidas) |
+
+- **Texturas:** 1 en escritorio (el mapa de sombras) y 0 en móvil emulado, en todo momento.
+- **Geometrías y materiales de la escena** (`sceneGeometries` / `sceneMaterials`): en el menú, 94 / 103 antes y después de todas las partidas, en los dos perfiles.
+- **Lo que libera R6, comprobado en el navegador:**
+  - el fantasma: las geometrías vuelven al valor previo tras 40 cambios y cancelaciones (§8.1);
+  - el escenario de recompensas ya no acumula: 24 ↔ 30 estable, frente a +3…+12 por llamada en R5 (§8.2);
+  - vender y morir quitan las geometrías exclusivas del edificio (−5 por barraca o generador vendido).
+- **Lo que no baja y por qué:** las dos geometrías de `ProjectilePool` y la de los proyectiles de artillería son compartidas, se suben a la GPU la primera vez que se dibujan y viven lo que vive la aplicación. Por eso el menú pasa de 95 a 96-98 después del primer combate o la primera artillería y ya no se mueve (§13.3). R6 no las cambió.
+
+### 13.5 Medición
+
+En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.6:
+
+- sin cambios estructurales: draw calls, geometrías y la repetición (105 y 90 geometrías tras tres combates; 23 y 22 en la partida siguiente) coinciden con R0-R5;
+- ritmo de la IA igual (1 llamada por fotograma, 1,40 decisiones/s);
+- resto gameplay sin aumento claro: 0,43-0,46 ms en partida y 1,12-1,22 ms en combate de escritorio (R5: 0,42-0,47 y 1,15-1,19), 1,00-1,06 ms en combate de móvil emulado (R5: 0,97-1,03);
+- la primera ejecución del combate de escritorio fue atípica en todos los componentes, también en los que R6 no toca, y se repitió dos veces;
+- carga del portátil ~2,3-4,7. No se presenta ninguna mejora.
+
+### 13.6 Limitaciones y lo no verificado
+
+- **Sin dispositivo real.** Todo se comprobó y midió en Chrome headless del portátil, con el perfil móvil emulado.
+- **Orden de los efectos:** la equivalencia con el orden anterior se apoya en las pruebas de Node (orden de `deathsResolved` y de las señales) y en la captura visual; en el navegador solo se comprobó un sonido por muerte y la secuencia nuclear.
+- **Expectativas literales de los pasos 13b y 14:** no se cumplen por las geometrías compartidas que se suben la primera vez (§13.3). Se dejó anotado sin cambiar la expectativa.
+- **Lo que el diagnóstico no expone:** el número de restos (`stats().remains`) y el tamaño del registro. Se leyeron a través de `sceneObjects` y los emisores (restos) y de `entities()` junto con `assertConsistency()` (registro).
+- **`renderer.info` solo cuenta lo dibujado** (§5.9): en el paso 10, la barraca enemiga descartada no se había dibujado y su liberación se ve en las geometrías de la escena, no en `renderer.info`.
+- **Escudo:** la pulsación no se midió en el navegador (la fija la prueba de Node) y el escudo enemigo no se inspeccionó en pantalla.
+- **Toque en la barra de vida en escritorio:** los píxeles de la barra se solapan con el borde superior del edificio, así que el rayo pudo dar en la barra o en la caja; las dos llevan a la misma entidad. En móvil emulado sí se tocó la barra fuera del cuerpo del Nexo.
+- **El paso 6 se ejecutó antes que el 5** (§13.3).
+- **El reinicio del portátil** a mitad de la tarea borró los scripts y capturas del directorio temporal. Los resultados ya estaban anotados; solo se repitieron la partida larga en móvil emulado y la batería de medición.
+
+**Registrado, sin corregir:**
+
+- **Observación anterior a R6:** el temblor de la explosión nuclear no se ve, porque `cameraShake` solo se aplica en `updateCombat`, que deja de ejecutarse en `MATCH_ENDING`; `updateMatchEnding` solo lo reduce. El sonido nuclear y la vibración sí ocurren. Igual en `38b0ae7`.
+- **Procedimiento del plan:** las líneas base de geometrías del menú y de la partida deberían tomarse después de un primer combate y una primera artillería, o comparar `sceneGeometries`, para no contar las geometrías compartidas que se suben la primera vez.
+- **Menores de las revisiones de las tareas:**
+  - **Tarea 1:** las listas de ficheros vigilados no comprueban que no estén vacías (riesgo de pasar en vacío); la prueba del clasificador no prueba cada regla con una muestra negativa ni una importación de varias líneas; el clasificador es conservador en algunos casos (por defecto + `{type A}` cuenta como valor; `typeof import()` como valor; coincidencias en comentarios o cadenas); `rendering/` se recorre sin subcarpetas (hoy no hay); las reglas ancladas de `game/` ya no encajarían en subcarpetas hipotéticas `game/ui` o `game/platform` (no existen).
+  - **Tarea 2:** las pruebas de las fábricas no fijan los segmentos por defecto de Three.js; los restos se fijan solo por número de hijos y el material compartido de la ruina de la barraca no está documentado (anterior a R6; liberar dos veces es inocuo); el `+ 0` para `-0` en `HealthBar.test`; `!diagnosticsOptions || diagnosticsOptions.bars` repetido cuatro veces en `GameApplication`.
+  - **Tarea 3:** `BattlefieldTerrain.dispose()` no se usa en producción (lo pide el diseño); `let menuSoldiers` sin inicializar hasta `init`; el respaldo del origen del proyectil enemigo difiere solo durante el desmontaje; la prueba de `clear` de los soldados del menú solo mira el primero.
+  - **Tarea 4:** las pruebas del borde de la zona (z = 5 y z = 73) dependen del valor exacto del raycast en el límite exclusivo; «liberado antes de añadir el fantasma nuevo» no se comprueba por orden; la guarda de `selectBuildingToPlace` antes de `init`; `dispose()` equivale a `hide()`.
+  - **Tarea 5:** la prueba de congelación no tenía un canario (se añadió en la Tarea 6); el filtro de omisión solo cubre la falta de facción del origen; la prueba del número de impactos deriva lo esperado de sus propias entradas.
+  - **Tarea 6:** `prepareRewardScenario` llama a `syncShields` antes de los descartes (el brief decía después; sin efecto visible); `dispose()` del runtime no limpia los visuales de una partida en curso (anterior a R6).
+  - **Tarea 7:** `checkVisualConsistency` asigna memoria en cada llamada (solo desarrollo, una vez por segundo); la prueba de categorías no comprueba que las demás estén vacías ni cubre la falta de `transform`; `describeInconsistencies` con un informe vacío; `staleExemption` detectado por la falta de facción; el `Set` de duplicados está fuera de la guarda de `DEV`; la prueba 3 de `missingVisual` depende del orden de recorrido del comprobador.
+- **Sin cambios, como se acordó (§9):** R7 y R8, los espejos de oro, `SFX` y los hápticos, el temblor dentro de `MapCameraController`, compartir geometrías entre barras y edificios, `enemyAIEnabled` al empezar otra partida, la zona de construcción duplicada y `aiMs` con la creación de mallas.
+- **Al terminar R6 no se empieza R7.**
+
+### 13.7 Alcance
+
+`git diff 38b0ae7 --stat`, con el commit de cierre preparado (sin contar `AGENTS.md`, un cambio del usuario sin confirmar que no forma parte de R6): 30 ficheros, 4.681 inserciones y 1.100 borrados.
+
+- **Producción:** `GameApplication.ts` (+308 y −1.095 líneas), `game/ecs/WorldReader.ts`, `dev/visualConsistency.ts` y, en `rendering/`, `BattlefieldView.ts`, `ProjectileView.ts`, `PlacementGhost.ts`, `battlefieldMeshes.ts`, `HealthBar.ts`, `BattlefieldRemains.ts`, `battlefieldScene.ts` y `strikeCinematics.ts`.
+- **Utilidad de prueba:** `rendering/presentationTestState.ts`.
+- **Pruebas:** 13 ficheros `.test.ts`; dos ya existían (`trainCommand` y `testUtilitiesBoundary`).
+- **Documentos:** README, auditoría, informe de rendimiento, este diseño y su plan.
+- **Nada fuera de §5:** ni el ECS (salvo el tipo `WorldReader`), ni la IA, ni los comandos, ni la UI, ni el paso fijo. `ThreeRenderCoordinator`, `CombatEffects`, `ProjectilePool`, `InstancedSoldierRenderer`, `MapCameraController`, `RewardEffectsView`, `ballisticArc` y `TerrainGrid` no cambian.

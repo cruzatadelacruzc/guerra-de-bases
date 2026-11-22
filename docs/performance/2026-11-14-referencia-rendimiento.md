@@ -576,6 +576,70 @@ El servidor del worktree de `f54dc77` devolvió 403 a las fuentes de `@fontsourc
 - **IA:** el máximo de 7,3 ms en la partida 2 de escritorio es un turno que construye, como en §8.4. R5 no cambia la IA salvo el rumbo fijo de su ataque aéreo.
 - **Sin dispositivo real:** no hay medición en el teléfono para R5.
 
+### 8.6 R6 — separación de la presentación
+
+Cambio medido:
+- `BattlefieldView` (`rendering/`) posee los visuales de edificios, Nexos, tanques y fusileros por `Entity` y los sincroniza desde el ECS a través de `WorldReader`; `ProjectileView` y `PlacementGhost` hacen lo mismo con los proyectiles y el fantasma de construcción;
+- `GameApplication` ya no guarda copias de vida y posición (`RuntimeStructure`, `RuntimeUnit`, `targetObjects`) y solo reparte los eventos a la vista;
+- solo en desarrollo, una comprobación compara el registro con el ECS una vez por segundo de juego. Entra en «resto gameplay», porque esta batería se ejecuta en desarrollo.
+
+Misma batería de §6 y mismos perfiles, con el Chrome del sistema (Chrome 155 headless, la misma GPU Intel UHD 620 por Vulkan), en el puerto 5173 de `npm run dev`. Cada escenario se ejecutó con `playwright-cli run-code` y una sola sesión del navegador abierta. **Carga media del portátil: ~2,3-4,7**; durante las mediciones había abierto otro Chrome del sistema, ajeno a la medición. El portátil acababa de reiniciarse.
+
+| Escenario · perfil | Métrica | R5 (1 / 2) | R6 (1 / 2) |
+|---|---|---:|---:|
+| Partida · escritorio | Fotograma · CPU (ms) | 22,66 · 2,52 / 22,11 · 2,24 | 24,44 · 2,43 / 24,50 · 2,50 |
+| | Simulación · resto gameplay (ms) | 0,111 · 0,468 / 0,085 · 0,424 | 0,109 · 0,463 / 0,103 · 0,426 |
+| | IA llamadas/fotograma · decisiones/s | 1,00 · 1,40 / 1,00 · 1,40 | 1,00 · 1,40 / 1,00 · 1,40 |
+| | IA media · máx. (ms) | 0,029 · 3,5 / 0,026 · 7,3 | 0,028 · 6,5 / 0,025 · 3,0 |
+| | Draw calls · geometrías máx. | 13,0 · 22 / 11,8 · 22 | 13,1 · 23 / 10,2 · 22 |
+| Partida · móvil emulado | Fotograma · CPU (ms) | 18,14 · 1,95 / 18,42 · 1,97 | 18,42 · 1,85 / 19,10 · 1,87 |
+| | Simulación · resto gameplay (ms) | 0,112 · 0,470 / 0,093 · 0,458 | 0,079 · 0,437 / 0,093 · 0,435 |
+| | IA media · máx. (ms) | 0,020 · 2,9 / 0,022 · 2,8 | 0,010 · 1,8 / 0,018 · 2,0 |
+| | Draw calls · geometrías máx. | 16,6 · 22 / 13,4 · 22 | 18,3 · 22 / 14,6 · 22 |
+| Combate · escritorio (IA desactivada) | Fotograma · CPU (ms) | 31,44 · 10,93 / 31,21 · 10,54 | 40,72 · 19,70 / 32,57 · 10,86 |
+| | Simulación · resto gameplay (ms) | 0,665 · 1,194 / 0,673 · 1,145 | 0,899 · 1,883 / 0,552 · 1,115 |
+| | Draw calls · geometrías máx. | 213 · 339 / 207 · 320 | 208 · 329 / 204 · 319 |
+| Combate · escritorio, dos ejecuciones más | Fotograma · CPU (ms) | – | 32,93 · 10,41 / 33,05 · 11,38 |
+| | Simulación · resto gameplay (ms) | – | 0,597 · 1,125 / 0,642 · 1,221 |
+| | Draw calls · geometrías máx. | – | 206 · 315 / 209 · 323 |
+| Combate · móvil emulado (IA desactivada) | Fotograma · CPU (ms) | 25,17 · 7,71 / 25,46 · 7,70 | 28,28 · 8,79 / 27,39 · 8,10 |
+| | Simulación · resto gameplay (ms) | 0,467 · 0,969 / 0,510 · 1,027 | 0,572 · 1,055 / 0,542 · 1,004 |
+| | Draw calls · geometrías máx. | 212 · 319 / 206 · 319 | 205 · 337 / 209 · 331 |
+| Estrés · escritorio / móvil emulado | Fotograma (ms) · draw calls · geometrías | 23,65 · 46,1 · 52 / 21,83 · 44,8 · 51 | 26,67 · 46,1 · 52 / 21,22 · 44,9 · 51 |
+| Menú · escritorio / móvil emulado | Fotograma (ms) · draw calls | 22,23 · 84 / 16,67 · 40,7 | 20,72 · 84 / 16,75 · 42,6 |
+
+Otras métricas de R6 (las referencias anteriores no las anotaron por escenario):
+
+| Escenario · perfil | Draw calls máx. · triángulos medios · máx. | `renderMs` | Proyectiles máx. · en caché · soldados máx. · partículas máx. · emisores máx. |
+|---|---|---:|---|
+| Partida · escritorio (1 / 2) | 19 · 951 · 2.662 / 17 · 461 · 686 | 1,73 / 1,83 | 2 · 0 · 9 · 0 · 0 / 0 · 0 · 1 · 0 · 0 |
+| Partida · móvil emulado (1 / 2) | 21 · 1.377 · 2.086 / 19 · 1.123 · 2.834 | 1,24 / 1,24 | 4 · 1 · 6 · 0 · 0 / 2 · 1 · 10 · 0 · 0 |
+| Combate · escritorio (1 / 2 / 3 / 4) | 312 / 304 / 290 / 306 · 26.000-26.350 · 37.170-41.818 | 16,35 / 8,85 / 8,37 / 9,15 | 14-16 · 17-24 · 31-33 · 426-484 · 12 |
+| Combate · móvil emulado (1 / 2) | 327 / 323 · 26.054 / 26.150 · 37.612 / 38.874 | 6,81 / 6,23 | 14 · 16 / 12 · 32 / 33 · 431 / 441 · 12 |
+
+Repetición en R6: tres combates seguidos terminan con 105, 105 y 105 geometrías (escritorio) y 90, 90 y 90 (móvil emulado), y la partida nueva posterior vuelve a 23 y 22, igual que en R0-R5. Las texturas se quedan en 1 (escritorio, el mapa de sombras) y 0 (móvil emulado).
+
+**La primera ejecución del combate en escritorio es un valor atípico en todo:** fotograma 40,7 ms, CPU 19,7, render 16,35, simulación 0,90 y resto gameplay 1,88. La carga del portátil pasó de 2,3 a 4,5 durante esa ejecución. R6 no toca la simulación ni el render, y los dos subieron en la misma proporción. Se repitió dos veces más justo después: 1,13 y 1,22 ms de resto gameplay y 8,4-9,2 ms de render, como la segunda ejecución. No se atribuye a R6.
+
+**Conclusión:**
+
+- **Sin cambios estructurales:**
+  - draw calls medios en el rango de R0-R5 en todos los escenarios;
+  - geometrías máximas en el rango de R0-R5, salvo la primera ejecución del combate en móvil emulado: 337, frente a un máximo anterior de 331 (R2). Las geometrías del combate dependen de las unidades vivas en cada momento (33 soldados como máximo en esa ejecución), igual que las 339 de R5 en escritorio (§8.5);
+  - la repetición vuelve a 23 y 22 geometrías, sin crecimiento;
+  - el ritmo de la IA no cambia: 1 llamada por fotograma y 1,40 decisiones/s.
+- **Resto gameplay** (donde están ahora la sincronización de `BattlefieldView` y, en desarrollo, la comprobación del registro):
+  - en partida, 0,43-0,46 ms en escritorio y 0,44 en móvil emulado, frente a 0,42-0,47 y 0,46-0,47 en R5;
+  - en combate, 1,12-1,22 ms en escritorio (sin la ejecución atípica) frente a 1,15-1,19 en R5, y 1,00-1,06 en móvil emulado frente a 0,97-1,03;
+  - en las fases anteriores, el combate de escritorio dio 1,13 (R0), 1,10 (R3), 1,01-1,08 (R4) y 1,15-1,19 ms (R5), y el de móvil emulado 1,17-1,73, 0,98-1,05, 1,19-1,21 y 0,97-1,03 ms;
+  - no hay un aumento claro. La diferencia con R5 en móvil emulado (~0,03 ms) es menor que la variación entre sesiones (§8.2).
+- **IA:** los máximos (6,5 y 3,0 ms en escritorio) son turnos en que la IA construye, como en §8.4 y §8.5. R6 no movió la creación de mallas fuera del tiempo medido como IA (§7 del diseño de R6).
+- **Fotogramas y CPU:**
+  - la partida sale algo más lenta que en R5 (24,4 frente a 22,1-22,7 ms en escritorio) con la misma CPU de la aplicación (2,4-2,5 frente a 2,2-2,5 ms), así que la diferencia está fuera del trabajo de la aplicación;
+  - el combate en móvil emulado sale en 27,4-28,3 ms y 8,1-8,8 ms de CPU, frente a 25,2-25,5 y 7,7 en R5. La simulación y el resto gameplay apenas cambian; la diferencia está sobre todo en el envío del render (6,2-6,8 ms), que R6 no toca (las mallas y las barras son las mismas, y los draw calls también). R4 dio 29,7-29,9 ms y 10,9-12,0 ms con más carga (§8.4);
+  - coincide con más carga del portátil. No se presenta como efecto de R6, ni como mejora ni como empeoramiento.
+- **Sin dispositivo real:** no hay medición en el teléfono para R6.
+
 ## 9. Próximos pasos de medición
 
 - **Referencia definitiva en el Samsung Galaxy A05 de §4.4**, con el procedimiento de §6 y estas condiciones (decisión del usuario):

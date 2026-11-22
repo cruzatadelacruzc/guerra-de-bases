@@ -95,10 +95,10 @@
   ```
 - `presentationBoundary.test.ts` exporta, para la Tarea 7, la constante `EXTRA_PRESENTATION_MODULES: string[]`, que por ahora está vacía.
 
-- [ ] **Paso 1: Pruebas** (`WorldReader.test.ts`):
+- [x] **Paso 1: Pruebas** (`WorldReader.test.ts`):
   - `a World is a WorldReader without an adapter`: `const reader: WorldReader = new World();` y una lectura (`reader.getComponent(base, COMPONENTS.health)?.current === NEXUS_HEALTH`).
   - `writes through a WorldReader do not compile`: dos líneas con `// @ts-expect-error`, una que asigna `health.current` y otra `production.order.spawnPosition.x`. Si alguna dejara de ser un error, `npm run typecheck` fallaría.
-- [ ] **Paso 2: Prueba de límites** (`presentationBoundary.test.ts`), siguiendo el modelo de `game/match/rewardExecutionBoundary.test.ts`:
+- [x] **Paso 2: Prueba de límites** (`presentationBoundary.test.ts`), siguiendo el modelo de `game/match/rewardExecutionBoundary.test.ts`:
   - **Módulos vigilados:** todos los `.ts` de producción de `web/src/rendering/` (con `readdirSync`, sin `.test.ts` ni `presentationTestState.ts`) más `EXTRA_PRESENTATION_MODULES`.
   - **Clasificación de cada importación:** de valor o de tipo. Es de tipo si es `import type` o si todos los nombres entre llaves llevan `type `.
   - **Casos:**
@@ -107,15 +107,15 @@
     - `entity views import neither platform, the camera controller nor audio`, solo para `BattlefieldView.ts`, `ProjectileView.ts` y `BattlefieldRemains.ts`, cuando existan;
     - `game modules import neither three, rendering, ui nor platform`, sobre todo `web/src/game/**` sin pruebas;
     - `the boundary check recognises value, type-only, mixed, re-export, side-effect and dynamic imports`, con muestras de texto como en R5.
-- [ ] **Paso 3:** `npx tsx --test web/src/game/ecs/WorldReader.test.ts web/src/rendering/presentationBoundary.test.ts`
+- [x] **Paso 3:** `npx tsx --test web/src/game/ecs/WorldReader.test.ts web/src/rendering/presentationBoundary.test.ts`
   Expected: PASS. Después, `npm run typecheck` limpio.
-- [ ] **Paso 4: Comprobar que la prueba de límites muerde.** Añadir temporalmente `import { World } from '../game/ecs/World.ts';` a `rendering/TerrainGrid.ts` → la prueba falla; quitarlo → vuelve a pasar. No se hace commit de la línea temporal.
-- [ ] **Paso 5:** `npm test` (las 391 de partida más las nuevas, todas en verde) y `npm run typecheck`.
+- [x] **Paso 4: Comprobar que la prueba de límites muerde.** Añadir temporalmente `import { World } from '../game/ecs/World.ts';` a `rendering/TerrainGrid.ts` → la prueba falla; quitarlo → vuelve a pasar. No se hace commit de la línea temporal.
+- [x] **Paso 5:** `npm test` (las 391 de partida más las nuevas, todas en verde) y `npm run typecheck`.
 
 **Rendimiento y recursos:** ninguno; solo hay tipos y pruebas.
 **Riesgos y vuelta atrás:** riesgo bajo. Si el `@ts-expect-error` no falla con alguna versión de `tsc`, la revisión lo detecta. Vuelta atrás: `git revert`.
 
-- [ ] **Paso 6: Commit**
+- [x] **Paso 6: Commit**
   ```bash
   git add web/src/game/ecs/WorldReader.ts web/src/game/ecs/WorldReader.test.ts web/src/rendering/presentationBoundary.test.ts
   git commit -m "test(rendering): pin the read-only world contract and the presentation boundary"
@@ -176,7 +176,7 @@
   }
   ```
 
-- [ ] **Paso 1: Pruebas que fallan**, con los valores copiados de `GameApplication.ts` en `9057331`:
+- [x] **Paso 1: Pruebas que fallan**, con los valores copiados de `GameApplication.ts` en `9057331`:
   - **`battlefieldMeshes.test.ts`**, una prueba por fábrica (`createTankMesh keeps its three parts…`, etc.). Cada una afirma el número de hijos, la clase y los `parameters` de cada geometría, el `color`, `emissive`, `emissiveIntensity`, `metalness`, `roughness`, `transparent`, `opacity`, `side`, `wireframe` y `depthWrite` de cada material, y las posiciones y rotaciones locales. Además:
     - `instantiateBuildingMesh uses the player and enemy colors of today`: generador `0xeab308`/`0xff2244`, barraca y torreta `0x00f0ff`/`0xff3344`;
     - `two calls never share a geometry or a material`, recorriendo los dos árboles;
@@ -190,20 +190,20 @@
     - `each remains adds one burning emitter with today's scale` (los seis valores de Global Constraints, a través de `effects.stats().activeEmitters` y un espía sobre `addBurningEmitter`);
     - `the 65th remains disposes the oldest`: los `dispose` de la primera ruina y `count === 64`;
     - `clear disposes every remains and leaves the scene without them`.
-- [ ] **Paso 2:** `npx tsx --test web/src/rendering/battlefieldMeshes.test.ts web/src/rendering/HealthBar.test.ts web/src/rendering/BattlefieldRemains.test.ts`
+- [x] **Paso 2:** `npx tsx --test web/src/rendering/battlefieldMeshes.test.ts web/src/rendering/HealthBar.test.ts web/src/rendering/BattlefieldRemains.test.ts`
   Expected: FAIL (los módulos no existen).
-- [ ] **Paso 3: Mover tal cual** los cuerpos a los tres módulos.
+- [x] **Paso 3: Mover tal cual** los cuerpos a los tres módulos.
   - `BattlefieldRemains` convierte `Position` a `THREE.Vector3` una vez por resto, para `addBurningEmitter` y para `group.position`.
   - En `GameApplication`:
     - `trackBattlefieldRemains` y `clearBattlefieldRemains` pasan a ser una instancia `remains`, que se crea en `initEngine` después de `combatEffects`;
     - `create3DHealthBar(…)` pasa a `createHealthBar(…, !diagnosticsOptions || diagnosticsOptions.bars)`.
-- [ ] **Paso 4:** pruebas del paso 2 → PASS; `npm test`; `npm run typecheck`; `npm run build` → código 0.
-- [ ] **Paso 5: Comprobar que es un movimiento literal.** `git diff --color-moved=zebra -- web/src/GameApplication.ts web/src/rendering/` no muestra cambios dentro de los cuerpos movidos, salvo las conversiones de tipo de `Position` y el parámetro `visible`.
+- [x] **Paso 4:** pruebas del paso 2 → PASS; `npm test`; `npm run typecheck`; `npm run build` → código 0.
+- [x] **Paso 5: Comprobar que es un movimiento literal.** `git diff --color-moved=zebra -- web/src/GameApplication.ts web/src/rendering/` no muestra cambios dentro de los cuerpos movidos, salvo las conversiones de tipo de `Position` y el parámetro `visible`.
 
 **Rendimiento y recursos:** las mallas y los recursos por objeto son los mismos que hoy; no se comparte nada nuevo. Las barras siguen siendo 3 geometrías + 3 materiales por entidad (§9).
 **Riesgos y vuelta atrás:** el riesgo es cambiar un detalle al mover. Lo cubren las pruebas de estructura y la revisión con `--color-moved`. Vuelta atrás: `git revert`.
 
-- [ ] **Paso 6: Commit**
+- [x] **Paso 6: Commit**
   ```bash
   git add web/src/rendering/battlefieldMeshes.ts web/src/rendering/HealthBar.ts web/src/rendering/BattlefieldRemains.ts \
     web/src/rendering/battlefieldMeshes.test.ts web/src/rendering/HealthBar.test.ts web/src/rendering/BattlefieldRemains.test.ts \
@@ -254,24 +254,24 @@
   export function airStrikeShots(target: Readonly<StrikeAim>, heading: Readonly<StrikeAim>): CameraShot[];
   ```
 
-- [ ] **Paso 1: Pruebas que fallan:**
+- [x] **Paso 1: Pruebas que fallan:**
   - `artilleryShots frames the Nexus then the impact with today's timings`: dos planos. El primero, en `(nexus.x, nexus.z)`, con `durationSeconds = 0.7`, `holdSeconds = 0.8` y `distance = 38`. El segundo, en el centro del impacto, con `durationSeconds = (0.7 + 2.2 - 0.15) - 1.5`, `holdSeconds = artilleryStrikeDurationSeconds(3) - 2.75 + 0.8` y `distance = 50`. Comparación con tolerancia de `1e-9`.
   - `airStrikeShots holds until the last bomb lands`, con los rumbos `{1,0}`, `{0,-1}` y `{-0.6,0.8}`: un plano con `durationSeconds = 1`, `holdSeconds = max(nominalBombLandingSeconds(...)) + 0.6 - 1` y `distance = 45`.
   - `createBattlefieldTerrain adds floor, outer ground, grid and center line in that order`; `dispose` libera sus geometrías y materiales (eventos `dispose`) y los quita de la escena.
   - `MenuSoldiers.show places 8 player and 8 enemy soldiers…`, con un `random` fijo (`() => 0.5`): posiciones `(-10, 0, 15)` y `(-10, 0, -15)`, colores `0x00f0ff` y `0xff3344`. `clear` libera y deja `count === 0`.
-- [ ] **Paso 2:** `npx tsx --test web/src/rendering/battlefieldScene.test.ts web/src/rendering/strikeCinematics.test.ts` → FAIL.
-- [ ] **Paso 3: Implementar** moviendo los cuerpos y cambiar `GameApplication`:
+- [x] **Paso 2:** `npx tsx --test web/src/rendering/battlefieldScene.test.ts web/src/rendering/strikeCinematics.test.ts` → FAIL.
+- [x] **Paso 3: Implementar** moviendo los cuerpos y cambiar `GameApplication`:
   - `terrainFloor` pasa a ser `terrain.floor`;
   - `menuUnits` pasa a ser una instancia `menuSoldiers`;
   - `playArtilleryCinematic(aim)` pasa a `cameraController.playShots(artilleryShots(playerNexusPosition(), aim))`. `playerNexusPosition()` lee el `transform` de `simulation.playerBase` y, si falta, usa `PLAYER_BASE_POSITION` (§5.7);
   - `strikeShellOrigin` usa la misma función para el jugador y su equivalente enemigo con `ENEMY_BASE_POSITION`;
   - `terrain.dispose()` **no** se llama desde `dispose()` del runtime (decisión menor de §11). El terreno vive lo que vive la aplicación, como hoy.
-- [ ] **Paso 4:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`.
+- [x] **Paso 4:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`.
 
 **Rendimiento y recursos:** los mismos objetos. `strikeShellOrigin` hace una búsqueda en un `Map` por proyectil, en lugar de leer `playerHQ.position`; no es un camino de cada fotograma.
 **Riesgos y vuelta atrás:** que cambie el orden de los objetos de la escena. Lo cubre la prueba de orden. Vuelta atrás: `git revert`.
 
-- [ ] **Paso 5: Commit**
+- [x] **Paso 5: Commit**
   ```bash
   git add web/src/rendering/battlefieldScene.ts web/src/rendering/strikeCinematics.ts \
     web/src/rendering/battlefieldScene.test.ts web/src/rendering/strikeCinematics.test.ts web/src/GameApplication.ts
@@ -311,7 +311,7 @@
   }
   ```
 
-- [ ] **Paso 1: Pruebas que fallan** (`PlacementGhost.test.ts`):
+- [x] **Paso 1: Pruebas que fallan** (`PlacementGhost.test.ts`):
   - `hide disposes every geometry and material of the ghost once`.
   - `show replaces the previous ghost and disposes it first`: `show('barracks')` y después `show('turret')` → `dispose` de todos los recursos de la barraca antes de añadir la torreta; un solo fantasma en la escena.
   - `show of the same kind creates a fresh ghost` (aclaración 7: sin reutilización).
@@ -319,20 +319,20 @@
   - `no other object's resources are disposed`: la escena tiene además una malla de edificio y un `InstancedSoldierRenderer`, y se escuchan los `dispose` de sus recursos (Review Focus 2: `track` no recrea).
   - `track keeps the same mesh and hides it at y = -100 when undefined`.
   - `placementAt rounds inside the zone and rejects the edges`. Con un `Raycaster` y una `PerspectiveCamera` reales mirando al suelo: el punto `(10.4, 0, 20.6)` da `{ x: 10, y: 0, z: 21 }`; `z = 5`, `z = 73` y `|x| = 53` dan `undefined`.
-- [ ] **Paso 2:** `npx tsx --test web/src/rendering/PlacementGhost.test.ts` → FAIL.
-- [ ] **Paso 3: Implementar** y conectar en `GameApplication`:
+- [x] **Paso 2:** `npx tsx --test web/src/rendering/PlacementGhost.test.ts` → FAIL.
+- [x] **Paso 3: Implementar** y conectar en `GameApplication`:
   - `selectBuildingToPlace` pasa a `placementGhost.show(type)`;
   - `cancelPlacement` pasa a `placementGhost.hide()`;
   - `getPlacementPosition` pasa a `placementGhost.placementAt(raycaster, camera, mouse)`;
   - `updatePlacementGhost` pasa a `placementGhost.track(...)`, solo si hay `selectedBuildType`.
 
   Los sitios que hoy llaman a `cancelPlacement` (Escape, atrás nativo, construcción, `toggleDemolishMode`, `startNewGame`, `teardownMatch`, `beginMatchEnding`) no cambian; solo cambia lo que hace `cancelPlacement`. `dispose()` del runtime llama a `placementGhost.dispose()`.
-- [ ] **Paso 4:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`.
+- [x] **Paso 4:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`.
 
 **Rendimiento y recursos:** cancelar o cambiar de edificio ya no pierde geometrías ni materiales. El coste es el mismo que hoy (una malla por selección).
 **Riesgos y vuelta atrás:** liberar algo compartido. Lo cubre la prueba de "otros recursos". El fantasma no comparte nada (§3.4). Vuelta atrás: `git revert`, que devuelve la fuga.
 
-- [ ] **Paso 5: Commit**
+- [x] **Paso 5: Commit**
   ```bash
   git add web/src/rendering/PlacementGhost.ts web/src/rendering/PlacementGhost.test.ts web/src/GameApplication.ts
   git commit -m "fix(rendering): the placement ghost owns and disposes its resources on cancel, replace and teardown"
@@ -387,7 +387,7 @@
   ```
 - **Clasificación:** el disparo es `'rifle'` si `world.getComponent(source, COMPONENTS.soldierKind) === 'rifleman'`; en cualquier otro caso, `'heavy'`. El destello solo sale en los de fusil.
 
-- [ ] **Paso 1: Pruebas que fallan** (`ProjectileView.test.ts`, con `createPresentationTestMatch` y combate real con `simulation.advance`):
+- [x] **Paso 1: Pruebas que fallan** (`ProjectileView.test.ts`, con `createPresentationTestMatch` y combate real con `simulation.advance`):
   - `a rifleman's shot is a rifle shot with a muzzle flash; tank and turret shots are heavy`. Un espía sobre `showMuzzleFlash` recibe `(source, elapsed + 0.05)` solo para el fusil.
   - `an impact releases the mesh and reports heavy impacts only`.
   - `a projectile removed without an impact is released by sync`.
@@ -395,20 +395,20 @@
   - `fired skips a shot whose source has no faction` (sin sonido, sin visual).
   - `fired, impacts and sync never write the ECS`: `freezeWorldComponents` antes de llamarlos, sin excepciones; e instantánea (`snapshotCommandState`) igual antes y después.
   - `clear releases every active projectile`.
-- [ ] **Paso 2:** `npx tsx --test web/src/rendering/ProjectileView.test.ts` → FAIL.
-- [ ] **Paso 3: Implementar** y conectar en `advanceBattleSimulation` (orden de §5.8):
+- [x] **Paso 2:** `npx tsx --test web/src/rendering/ProjectileView.test.ts` → FAIL.
+- [x] **Paso 3: Implementar** y conectar en `advanceBattleSimulation` (orden de §5.8):
   - `projectileView.fired(world, simulation.drainWeaponEvents(), time, shots)` → un `SFX.playRifleShot()` o `SFX.playHeavyCannon()` por cada `shot`;
   - producción, sin cambios todavía;
   - `projectileView.impacts(simulation.drainProjectileImpacts(), heavyImpacts)` → `createCinematicExplosion(vector(pos), 0.6, false)` por cada impacto;
   - `projectileView.sync(world)`.
 
   `shots` y `heavyImpacts` son arrays del cierre, que se reutilizan. Quitar la lectura de `targetObjects` (`:1781`). En `teardownMatch`, `projectilePool.clear()` pasa a `projectileView.clear()`. Las métricas `projectiles` (`:2250`, `:2404`) pasan a `projectileView.stats().active`.
-- [ ] **Paso 4:** pruebas → PASS; `npm test` (incluida `testUtilitiesBoundary`); `npm run typecheck`; `npm run build`.
+- [x] **Paso 4:** pruebas → PASS; `npm test` (incluida `testUtilitiesBoundary`); `npm run typecheck`; `npm run build`.
 
 **Rendimiento y recursos:** el mismo pool, las mismas mallas y la misma cadencia. Se añade una lectura de `soldierKind` por disparo en lugar de una búsqueda en `targetObjects`. No hay asignaciones nuevas por fotograma.
 **Riesgos y vuelta atrás:** que la clasificación sea distinta. Es equivalente por §5.4 y lo cubre la prueba. Vuelta atrás: `git revert`.
 
-- [ ] **Paso 5: Commit**
+- [x] **Paso 5: Commit**
   ```bash
   git add web/src/rendering/ProjectileView.ts web/src/rendering/ProjectileView.test.ts web/src/rendering/presentationTestState.ts \
     web/src/game/match/testUtilitiesBoundary.test.ts web/src/GameApplication.ts
@@ -490,8 +490,8 @@
 - **Selección:** un `WeakMap<THREE.Object3D, Entity>` de raíces registradas. `pickOwnStructure` sube por `parent` hasta encontrar una raíz.
 - **Escudos:** `GameApplication` reutiliza un objeto `shieldState: Record<Faction, boolean>` que rellena en cada fotograma, sin asignar uno nuevo.
 
-- [ ] **Paso 1: Prueba del HUD** (`trainCommand.test.ts`): `liveFactories keeps the HUD's former barracks filter`. Barracas creadas en orden A, B, C y D; B a vida 0 sin resolver; C vendida; una barraca enemiga y una torreta del jugador → `liveFactories(world, 'player')` deep-equal `[A, D]`. Debe pasar ya, porque caracteriza el comportamiento.
-- [ ] **Paso 2: Pruebas que fallan** (`BattlefieldView.test.ts`). Usan `createPresentationTestMatch()` con los comandos de R4, `simulation.advance` y `DeathResolver` reales. **Después de cada paso,** `view.entries()` coincide con las entidades `building`/`soldier` del ECS (comprobación local de la prueba; la función de desarrollo llega en la Tarea 7).
+- [x] **Paso 1: Prueba del HUD** (`trainCommand.test.ts`): `liveFactories keeps the HUD's former barracks filter`. Barracas creadas en orden A, B, C y D; B a vida 0 sin resolver; C vendida; una barraca enemiga y una torreta del jugador → `liveFactories(world, 'player')` deep-equal `[A, D]`. Debe pasar ya, porque caracteriza el comportamiento.
+- [x] **Paso 2: Pruebas que fallan** (`BattlefieldView.test.ts`). Usan `createPresentationTestMatch()` con los comandos de R4, `simulation.advance` y `DeathResolver` reales. **Después de cada paso,** `view.entries()` coincide con las entidades `building`/`soldier` del ECS (comprobación local de la prueba; la función de desarrollo llega en la Tarea 7).
   1. `attach and the two Nexuses`: entradas = bases; barras llenas; el escudo es hijo del Nexo, oculto, con los colores de Global Constraints.
   2. `structureBuilt represents each accepted build once`. Jugador y enemigo con `buildStructure`; un segundo `structureBuilt(entity)` lanza un error y deja `entries()` igual; los rechazos `insufficient-gold` y `too-close` no crean entrada; las alturas de barra son 2.8 (torreta) y 2.5.
   3. `unitsProduced`: `trainUnit` + `advance` hasta terminar → un fusilero en `soldiers` y un tanque con malla y barra a 1.8/1.4; devuelve 1 para el jugador y 0 para el enemigo; `produced` +2.
@@ -509,9 +509,9 @@
   15. `pickOwnStructure climbs to the registered root` (Review Focus 1): un rayo que solo corta el plano de la barra de vida devuelve la entidad; el Nexo nunca se devuelve; un edificio enemigo no se devuelve para `'player'`.
   16. `presentation never writes the ECS`: `freezeWorldComponents` y después `syncUnitsAndTurrets`, `syncStructures`, `syncShields` y cada alta; sin excepciones. La instantánea es igual antes y después de un fotograma de presentación.
   17. `syncShields`: la visibilidad sigue a `active` y la escala es `1 + sin(t·0.004)·0.035`.
-- [ ] **Paso 3:** `npx tsx --test web/src/rendering/BattlefieldView.test.ts` → FAIL.
-- [ ] **Paso 4: Implementar `BattlefieldView`** con los cuerpos actuales de `representStructure`, `createTroopVisual`, `representUnitDeath`, `representStructureDestruction`, `updateUnitGroup`, `updateTurretAim` y `updateBuildingList`. Solo cambia de dónde salen los datos: el ECS a través de `WorldReader`, o el evento.
-- [ ] **Paso 5: Reparto en `GameApplication`** (tabla de §5.8):
+- [x] **Paso 3:** `npx tsx --test web/src/rendering/BattlefieldView.test.ts` → FAIL.
+- [x] **Paso 4: Implementar `BattlefieldView`** con los cuerpos actuales de `representStructure`, `createTroopVisual`, `representUnitDeath`, `representStructureDestruction`, `updateUnitGroup`, `updateTurretAim` y `updateBuildingList`. Solo cambia de dónde salen los datos: el ECS a través de `WorldReader`, o el evento.
+- [x] **Paso 5: Reparto en `GameApplication`** (tabla de §5.8):
   - **C1:** `startNewGame` crea `BattleSimulation`, después `view.attach(world)`, `structureBuilt(playerBase)` y `structureBuilt(enemyBase)`.
   - **C2/C3/C4:** `view.structureBuilt(entity)`. `spawnScenarioStructure` devuelve `Entity`.
   - **C6:** `stats.soldiersTrained += view.unitsProduced(...)`, en `advanceBattleSimulation` y en el escenario de estrés.
@@ -541,9 +541,9 @@
     - `playerShieldVisual`, `enemyShieldVisual` y `disposeNexusShieldVisuals`;
     - `isValidSoldierFactory`, `representStructure`, `createTroopVisual`, `representUnitDeath`, `representStructureDestruction`, `updateUnitGroup`, `updateTurretAim`, `updateTurrets` y `updateBuildingList`;
     - `updateNexusShieldVisuals`, que pasa a `view.syncShields(shieldState, gameplayClockMs)`.
-- [ ] **Paso 6: Comprobar que no queda nada del registro antiguo.** `grep -nE "RuntimeStructure|RuntimeUnit|targetObjects|playerBuildings|enemyBuildings|playerUnits|enemyUnits|playerHQ|enemyHQ|\.hp\b|\.maxHp\b" web/src/GameApplication.ts`
+- [x] **Paso 6: Comprobar que no queda nada del registro antiguo.** `grep -nE "RuntimeStructure|RuntimeUnit|targetObjects|playerBuildings|enemyBuildings|playerUnits|enemyUnits|playerHQ|enemyHQ|\.hp\b|\.maxHp\b" web/src/GameApplication.ts`
   Expected: ninguna coincidencia.
-- [ ] **Paso 7:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`. Prueba rápida en el navegador: partida, construir, vender y una muerte, sin errores de consola. La verificación completa es la de la Tarea 8.
+- [x] **Paso 7:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`. Prueba rápida en el navegador: partida, construir, vender y una muerte, sin errores de consola. La verificación completa es la de la Tarea 8.
 
 **Rendimiento y recursos:**
 - por fotograma, las mismas consultas `getComponent` por entidad que hoy y sin las escrituras de las copias;
@@ -553,7 +553,7 @@
 
 **Riesgos y vuelta atrás:** es la tarea más grande, a propósito, para no tener dos registros a la vez. Los riesgos son el orden de los efectos y que falte un camino. Los cubren las pruebas 5-9 y 13-14, el `grep` del paso 6 y la Tarea 8. Vuelta atrás: un solo `git revert`.
 
-- [ ] **Paso 8: Commit**
+- [x] **Paso 8: Commit**
   ```bash
   git add web/src/rendering/BattlefieldView.ts web/src/rendering/BattlefieldView.test.ts web/src/rendering/presentationTestState.ts \
     web/src/game/commands/trainCommand.test.ts web/src/GameApplication.ts
@@ -623,7 +623,7 @@
   - `kindMismatch`: el `VisualKind` no coincide con `building.kind` / `soldierKind`;
   - **exenciones:** `exemptWithVisual` (la exenta tiene visual) y `staleExemption` (la exenta ya no existe).
 
-- [ ] **Paso 1: Pruebas que fallan:**
+- [x] **Paso 1: Pruebas que fallan:**
   - **`visualConsistency.test.ts`**, sobre un `World` y una `ConsistencyView` de prueba:
     - un informe vacío en un caso consistente;
     - cada una de las seis categorías provocada por separado;
@@ -634,19 +634,19 @@
   - **`BattlefieldView.test.ts`:** después de **cada** paso de las pruebas 1-14 de la Tarea 6, `isConsistent(checkVisualConsistency(world, view))`; esto sustituye a la comprobación local. Además:
     - `declareWithoutVisual` sobre una entidad registrada lanza un error;
     - `clear()` vacía las excepciones.
-- [ ] **Paso 2:** `npx tsx --test web/src/dev/visualConsistency.test.ts web/src/rendering/BattlefieldView.test.ts` → FAIL.
-- [ ] **Paso 3: Implementar.** En `GameApplication`:
+- [x] **Paso 2:** `npx tsx --test web/src/dev/visualConsistency.test.ts web/src/rendering/BattlefieldView.test.ts` → FAIL.
+- [x] **Paso 3: Implementar.** En `GameApplication`:
   - **escenario de estrés** (`:2612-2645`): `view.declareWithoutVisual(factory)` al crear cada fábrica invisible y `view.forgetWithoutVisual(factory)` justo después de su `removeEntity`;
   - **comprobación automática:** al final de la rama `PLAYING` de `animate`, `if (import.meta.env.DEV)`, como mucho una vez por segundo de `gameplayClockMs`. Hace `console.error` una sola vez por cada firma `categoría:entidad` (el conjunto se vacía en `startNewGame`) y deja el último informe a mano para `read()` (`visualInconsistencies: number`);
   - **operaciones nuevas:** dentro del bloque `if (diagnosticsEnabled && diagnosticsSamples)`, junto a las que ya existen. `setHealth` copia las validaciones de `setNexusHealth` (`:2574-2585`) y no quita entidades ni toca `matchState`.
-- [ ] **Paso 4:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`.
-- [ ] **Paso 5: Producción limpia.** `grep -rl "Visual consistency failed" dist/` y `grep -rl "Entity health must be a finite number" dist/` (el texto de error de `setHealth`).
+- [x] **Paso 4:** pruebas → PASS; `npm test`; `npm run typecheck`; `npm run build`.
+- [x] **Paso 5: Producción limpia.** `grep -rl "Visual consistency failed" dist/` y `grep -rl "Entity health must be a finite number" dist/` (el texto de error de `setHealth`).
   Expected: sin resultados en los dos casos.
 
 **Rendimiento y recursos:** en producción, nada. En desarrollo, una consulta `queryInto` por segundo con un array reutilizado.
 **Riesgos y vuelta atrás:** que la comprobación se quede en el bundle. Lo cubre el paso 5. Falsos positivos entre fotogramas: los momentos válidos están en §5.9 y Playwright solo llama entre fotogramas. Vuelta atrás: `git revert`.
 
-- [ ] **Paso 6: Commit**
+- [x] **Paso 6: Commit**
   ```bash
   git add web/src/dev/visualConsistency.ts web/src/dev/visualConsistency.test.ts web/src/rendering/BattlefieldView.ts \
     web/src/rendering/BattlefieldView.test.ts web/src/rendering/presentationBoundary.test.ts web/src/GameApplication.ts
@@ -666,7 +666,7 @@
 - Modify: `docs/superpowers/specs/2026-11-21-r6-separacion-de-la-presentacion-design.md` (nueva §13, informe de entrega)
 - Modify: este plan (casillas)
 
-- [ ] **Paso 1: Navegador, escritorio** (1280×720), con `npm run dev`, `playwright-cli open "http://localhost:5173/?diagnostics=1"` y `pageerror` y consola registrados. En cada paso se guarda la salida de `eval` en el informe.
+- [x] **Paso 1: Navegador, escritorio** (1280×720), con `npm run dev`, `playwright-cli open "http://localhost:5173/?diagnostics=1"` y `pageerror` y consola registrados. En cada paso se guarda la salida de `eval` en el informe.
 
   **Antes de cada paso:**
   - `c0 = lifecycleCounts()`;
@@ -698,9 +698,9 @@
   | 14 | Repetición | 3 × (partida → `runCombatScenario({ warmupSeconds: 2, durationSeconds: 10 })` → salir al menú) | `geometries` y `textures` iguales a `r0` del paso 0; `sceneMaterials` como complemento |
 
   Expected: todas las filas cumplen.
-- [ ] **Paso 2: Navegador, perfil móvil emulado** (412×915, DPR 1,5, táctil; informe de rendimiento §6). Se repiten las filas 1, 2, 4, 5, 9, 12 y 14, con toques en lugar de clics.
+- [x] **Paso 2: Navegador, perfil móvil emulado** (412×915, DPR 1,5, táctil; informe de rendimiento §6). Se repiten las filas 1, 2, 4, 5, 9, 12 y 14, con toques en lugar de clics.
   Expected: igual que en escritorio. En el informe se dice que no hubo teléfono real, si no lo hubo.
-- [ ] **Paso 3: Medición.** La batería de §6 del informe de rendimiento en los dos perfiles (partida Normal de 25 s y combate de 30 s, dos ejecuciones cada uno), comparada con R0, R3, R4 y R5:
+- [x] **Paso 3: Medición.** La batería de §6 del informe de rendimiento en los dos perfiles (partida Normal de 25 s y combate de 30 s, dos ejecuciones cada uno), comparada con R0, R3, R4 y R5:
   - draw calls medios y máximos;
   - triángulos;
   - geometrías y texturas;
@@ -709,12 +709,12 @@
   - repetición de tres combates y la partida siguiente.
 
   Expected: las métricas estructurales coinciden con R5; tras la repetición, las geometrías vuelven a 23 (escritorio) y 22 (móvil emulado); `gameplayOtherMs` no sube de forma clara. Se anota la carga del portátil. No se presenta ninguna mejora sin medición.
-- [ ] **Paso 4: Producción y grafo:**
+- [x] **Paso 4: Producción y grafo:**
   - `npm test`, `npm run typecheck` y `npm run build` en verde;
   - las dos búsquedas en `dist/` de la Tarea 7, sin resultados;
   - `graphify update .` y el análisis de ciclos de §3.5 sobre el grafo nuevo: sin ciclos. Es complementario a la prueba de límites;
   - las comunidades nuevas de `rendering/` se anotan como información, no como criterio.
-- [ ] **Paso 5: Informe de entrega** (§13 nueva del diseño):
+- [x] **Paso 5: Informe de entrega** (§13 nueva del diseño):
   - commits;
   - número de pruebas;
   - resultados de los pasos 1-4;
@@ -723,7 +723,7 @@
   - `git diff 38b0ae7 --stat`, para confirmar el alcance.
 
   Se actualizan también el README, la auditoría y el informe de rendimiento.
-- [ ] **Paso 6: Commit**
+- [x] **Paso 6: Commit**
   ```bash
   git add README.md docs/audits/2026-11-14-auditoria-responsabilidades.md docs/performance/2026-11-14-referencia-rendimiento.md \
     docs/superpowers/specs/2026-11-21-r6-separacion-de-la-presentacion-design.md docs/superpowers/plans/2026-11-21-r6-separacion-de-la-presentacion.md
