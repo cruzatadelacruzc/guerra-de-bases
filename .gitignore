@@ -15,3 +15,10 @@ android/captures/
 
 # Impeccable design-critique history (local only)
 .impeccable/
+
+# Graphify: share only the graph and its report; everything else is local
+graphify-out/*
+!graphify-out/graph.json
+!graphify-out/GRAPH_REPORT.md
+!graphify-out/.graphify_labels.json
+!graphify-out/.graphify_labels.json.sig
