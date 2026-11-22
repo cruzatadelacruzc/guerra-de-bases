@@ -248,6 +248,20 @@ Orden sugerido: **R0 → R1 → R2 → R3 → R4 → (fases 3-4 de la IA) → R5
 
 R5 puede adelantarse si se quiere medir recompensas en el banco antes de la fase 4. Las mecánicas futuras (órdenes globales y niebla) se apoyan en R3, R4 y R6.
 
+**Punto de partida para R7 (verificado en `03b2125`, 2026-11-22).** No es un diseño de R7; es lo que esa fase hereda:
+
+- **La limitación de 250 ms sigue anulada.** `updateCombat` llama a `updateResourceUI()` en cada fotograma, y esta llama a su vez a `updateRewardUI()`. Por tanto, el `if (gameplayClockMs - lastRewardUiUpdateMs >= 250)` de `animate` no limita nada. Es el problema de §5.4.
+- **Llamadas a la UI sueltas.** `updateResourceUI()` y `updateRewardUI()` se invocan también desde los comandos del jugador, las recompensas, el turno de la IA y el diagnóstico. `ui.setBaseHealth` se llama en cada fotograma desde `updateCombat`.
+- **Siguen en `GameApplication`:**
+  - los espejos `gold`/`enemyGold`, con `syncGoldMirrors` y el respaldo de `getFactionGold` cuando la base ya no existe (R7/R8);
+  - el aviso al Nexo (`lastPlayerNexusHealth`, `nexusDamageAlert`), que es estado de presentación de la UI.
+- **Pendientes de R6 que encajan en R7 o R8** (diseño de R6, §13.7):
+  - sonido y temblor de explosión duplicados entre `createCinematicExplosion` y `playExplosionFeedback`;
+  - la lista de categorías de consistencia, duplicada;
+  - `stats()` asignando memoria en cada fotograma en modo diagnóstico;
+  - `dispose()` del runtime sin limpiar la vista, los soldados del menú ni el terreno (R8).
+- **Fuera de R7, a menos que se decida:** el sistema de desbloqueos (§4.6), los dos mecanismos de fin de partida, la duración con reloj real y `enemyAIEnabled` al empezar otra partida.
+
 **Decisión de producto pendiente (no técnica):** qué hacer con el sistema de desbloqueos (§4.6): retirarlo, o definir de verdad sus condiciones y efectos. Hasta decidirlo, R3 mantiene las llamadas actuales a `recordEvent`, aunque no tengan efecto.
 
 ## 8. Riesgos y pruebas necesarias

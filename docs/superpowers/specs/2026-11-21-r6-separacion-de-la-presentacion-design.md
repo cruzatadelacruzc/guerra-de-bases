@@ -909,7 +909,7 @@ En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.6:
 
 **Registrado, sin corregir:**
 
-- **Observación anterior a R6:** el temblor de la explosión nuclear no se ve, porque `cameraShake` solo se aplica en `updateCombat`, que deja de ejecutarse en `MATCH_ENDING`; `updateMatchEnding` solo lo reduce. El sonido nuclear y la vibración sí ocurren. Igual en `38b0ae7`.
+- **Observación anterior a R6:** el temblor de la explosión nuclear no se ve, porque `cameraShake` solo se aplica en `updateCombat`, que deja de ejecutarse en `MATCH_ENDING`; `updateMatchEnding` solo lo reduce. El sonido nuclear y la vibración sí ocurren. Igual en `38b0ae7`. **Resuelto después de R6 en `03b2125`** (ver §13.7).
 - **Procedimiento del plan:** las líneas base de geometrías del menú y de la partida deberían tomarse después de un primer combate y una primera artillería, o comparar `sceneGeometries`, para no contar las geometrías compartidas que se suben la primera vez.
 - **Menores de las revisiones de las tareas:**
   - **Tarea 1:** las listas de ficheros vigilados no comprueban que no estén vacías (riesgo de pasar en vacío); la prueba del clasificador no prueba cada regla con una muestra negativa ni una importación de varias líneas; el clasificador es conservador en algunos casos (por defecto + `{type A}` cuenta como valor; `typeof import()` como valor; coincidencias en comentarios o cadenas); `rendering/` se recorre sin subcarpetas (hoy no hay); las reglas ancladas de `game/` ya no encajarían en subcarpetas hipotéticas `game/ui` o `game/platform` (no existen).
@@ -938,7 +938,15 @@ En `docs/performance/2026-11-14-referencia-rendimiento.md` §8.6:
   - `declareWithoutVisual` se acepta sin un `World` conectado (desarrollo);
   - `PlacementGhost` usa `private` de TypeScript en lugar de `#`;
   - para R8: el `dispose()` del runtime también debería limpiar la vista del campo de batalla, los soldados del menú y el terreno;
-  - tras R6, a petición del usuario: arreglar el temblor invisible de la caída del Nexo, manteniendo la intensidad 4,5 y **solo en la derrota**.
+  - ~~tras R6, a petición del usuario: arreglar el temblor invisible de la caída del Nexo, manteniendo la intensidad 4,5 y **solo en la derrota**.~~ **Resuelto en `03b2125` (2026-11-22).**
+    - El cálculo pasa a `rendering/cameraShake.ts` (`applyCameraShake`), que también usa `updateCombat`, así que el temblor durante la partida no cambia.
+    - En una derrota, `updateMatchEnding` hace temblar la cámara alrededor de la posición que tenía al caer el Nexo y la devuelve exactamente ahí. Así se evita que el temblor se acumule mientras el controlador de cámara no se actualiza.
+    - En una victoria el temblor solo se reduce, sin mover la cámara.
+    - Comprobado en Chrome headless con la GPU del portátil (Vulkan, unos 50 FPS), midiendo `screenPointFor(0, 45)` fotograma a fotograma:
+      - **derrota:** tiembla unos 1,08 s, con saltos de hasta 50 px entre fotogramas, y vuelve a 0 px de desplazamiento;
+      - **victoria:** 0 px;
+      - en los dos casos, consistencia correcta y sin errores de consola.
+    - 468 pruebas, tipado y build en verde. **Sin probar en un teléfono real.**
 
 ### 13.8 Alcance
 
